@@ -1,0 +1,15 @@
+# project artifacts
+export X_PROJECT_NAME="XGame"
+export X_TARGET_BIN_NAME="XGame"
+
+# build
+export X_BUILD_ID="DEV"
+export X_BUILD_TYPE="RELEASE"
+
+# project viewport settings
+export X_WINDOW_NAME="XGame"
+export X_WINDOW_LOGO_PATH="Source/Resources/Textures/ProjectLogo.png"
+
+# features
+export X_DEV_FEATURES_ENABLED="ON"
+export X_EXPERIMENTAL_FEATURES_ENABLED="ON"
