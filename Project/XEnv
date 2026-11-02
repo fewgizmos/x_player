@@ -8,8 +8,8 @@ export X_BUILD_TYPE="RELEASE"
 
 # project viewport settings
 export X_WINDOW_NAME="XGame"
-export X_WINDOW_LOGO_PATH="Source/Resources/Textures/ProjectLogo.png"
+export X_WINDOW_LOGO_PATH="Resources/Images/ProjectLogo.png"
 
 # features
-export X_DEV_FEATURES_ENABLED="ON"
-export X_EXPERIMENTAL_FEATURES_ENABLED="ON"
+export XP_DEV_FEATURES_ENABLED="ON"
+export XP_EXPERIMENTAL_FEATURES_ENABLED="ON"

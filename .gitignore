@@ -1,0 +1,12 @@
+# builds
+Build/
+.CmakeBuild/
+CMakeFiles/
+compile_commands.json
+/Source/CodeProject/Head/X/Configs/Dynamic.hpp
+
+# caches
+/.cache
+/.vscode
+/imgui.ini
+*.spv
