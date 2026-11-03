@@ -1,5 +1,8 @@
 #include "X/Engine/Base/Viewport/Inputs.hpp"
 
+#include "X/Engine/Base/JobSystem/DeferredTaskRegistration.hpp"
+#include "X/Engine/Base/Runtime/EngineCore.hpp"
+
 #include "X/Engine/Base/Platform/SDL3App.hpp"
 
 #include <SDL3/SDL_events.h>
@@ -11,6 +14,10 @@ namespace Engine::Base::Viewport::Inputs
 
 namespace
 {
+
+const JobSystem::DeferredTaskRegistration::Registrar RegisterTask(
+    Runtime::EngineCore::GameTh, "inputs_pump", ParseFrameInputs, 70
+);
 
 Util::StateMachine::State<KeyboardInputCodes> m_PreviousKeys;
 Util::StateMachine::State<KeyboardInputCodes> m_CurrentKeys;

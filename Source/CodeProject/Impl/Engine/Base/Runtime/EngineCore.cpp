@@ -3,11 +3,11 @@
 #include "X/Engine/Util/Timer.hpp"
 
 #include "X/Engine/Base/JobSystem/JobManager.hpp"
+#include "X/Engine/Base/JobSystem/DeferredTaskRegistration.hpp"
 
 #include "X/Engine/Base/Platform/SDL3App.hpp"
 #include "X/Engine/Base/Platform/SDL3WM.hpp"
 
-#include "X/Engine/Base/Viewport/Inputs.hpp"
 #include "X/Engine/Base/Viewport/Surface.hpp"
 
 #include <cstdlib>
@@ -56,14 +56,12 @@ void StartUp()
     Viewport::Surface::SetupForVulkan();
 
     JobSystem::It::AttachCurrentThread(EngineThreadTag::GameTh);
+    JobSystem::It::CreateThread(       EngineThreadTag::RenderTh);
+    JobSystem::It::CreateThread(       EngineThreadTag::ResourceLoaderTh);
 
-    JobSystem::It::CreateThread(EngineThreadTag::RenderTh);
-    JobSystem::It::CreateThread(EngineThreadTag::ResourceLoaderTh);
+    JobSystem::DeferredTaskRegistration::Apply();
 
-    JobSystem::It::AddTask(EngineThreadTag::GameTh, "sdl3app",       Platform::SDL3App::PumpEvents,         90);
-    JobSystem::It::AddTask(EngineThreadTag::GameTh, "sdl3wm",        Platform::SDL3WM::PumpEventsToWindows, 80);
-    JobSystem::It::AddTask(EngineThreadTag::GameTh, "inputs",        Viewport::Inputs::ParseFrameInputs,    70);
-    JobSystem::It::AddTask(EngineThreadTag::GameTh, "checking_exit", CheckExit,                             0);
+    JobSystem::It::AddTask(EngineThreadTag::GameTh, "checking_exit", CheckExit, 0);
 }
 
 void CleanUp()

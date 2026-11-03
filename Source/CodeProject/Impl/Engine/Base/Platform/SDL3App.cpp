@@ -1,9 +1,21 @@
 #include "X/Engine/Base/Platform/SDL3App.hpp"
 
+#include "X/Engine/Base/JobSystem/DeferredTaskRegistration.hpp"
+#include "X/Engine/Base/Runtime/EngineCore.hpp"
+
 #include <SDL3/SDL_init.h>
 
 namespace Engine::Base::Platform::SDL3App
 {
+
+namespace
+{
+
+const JobSystem::DeferredTaskRegistration::Registrar RegisterTask(
+    Runtime::EngineCore::GameTh, "sdl3app_event_pump", PumpEvents, 90
+);
+
+}
 
 std::vector<SDL_Event> m_EventsBuf;
 
