@@ -14,6 +14,8 @@ file(GLOB_RECURSE XP_HEADERS CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/CodeProject/Head/*.hpp
 )
 
+find_package(Threads REQUIRED)
+
 add_executable(XProjectExecutable
     ${XP_SOURCES}
     ${XP_HEADERS}
@@ -33,5 +35,6 @@ target_link_libraries(XProjectExecutable PRIVATE
     stb
     GPUOpen::VulkanMemoryAllocator
     vkbootstrap
+    Threads::Threads
     ${CMAKE_DL_LIBS}
 )

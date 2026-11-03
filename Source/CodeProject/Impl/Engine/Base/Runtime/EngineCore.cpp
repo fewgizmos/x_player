@@ -2,6 +2,8 @@
 
 #include "X/Engine/Util/Timer.hpp"
 
+#include "X/Engine/Base/JobSystem/JobManager.hpp"
+
 #include "X/Engine/Base/Platform/SDL3App.hpp"
 #include "X/Engine/Base/Platform/SDL3WM.hpp"
 
@@ -14,6 +16,18 @@
 
 namespace Engine::Base::Runtime::EngineCore
 {
+
+namespace
+{
+
+void CheckExit()
+{
+    if (Platform::SDL3App::WantsExit || Viewport::Surface::GetWantsExit()) {
+        WantsStop = true;
+    }
+}
+
+}
 
 int Run()
 {
@@ -40,10 +54,22 @@ void StartUp()
     Platform::SDL3App::Init();
 
     Viewport::Surface::SetupForVulkan();
+
+    JobSystem::It::AttachCurrentThread(EngineThreadTag::GameTh);
+
+    JobSystem::It::CreateThread(EngineThreadTag::RenderTh);
+    JobSystem::It::CreateThread(EngineThreadTag::ResourceLoaderTh);
+
+    JobSystem::It::AddTask(EngineThreadTag::GameTh, "sdl3app",       Platform::SDL3App::PumpEvents,         90);
+    JobSystem::It::AddTask(EngineThreadTag::GameTh, "sdl3wm",        Platform::SDL3WM::PumpEventsToWindows, 80);
+    JobSystem::It::AddTask(EngineThreadTag::GameTh, "inputs",        Viewport::Inputs::ParseFrameInputs,    70);
+    JobSystem::It::AddTask(EngineThreadTag::GameTh, "checking_exit", CheckExit,                             0);
 }
 
 void CleanUp()
 {
+    JobSystem::It::Shutdown();
+
     Viewport::Surface::Destroy();
 
     Platform::SDL3WM::Cleanup();
@@ -54,14 +80,8 @@ void TickFrame()
 {
     Util::Timer::NextFrame();
 
-    Platform::SDL3App::PumpEvents();
-    Platform::SDL3WM::PumpEventsToWindows();
-
-    Viewport::Inputs::ParseFrameInputs();
-
-    if (Platform::SDL3App::WantsExit || Viewport::Surface::GetWantsExit()) {
-        WantsStop = true;
-    }
+    JobSystem::It::RunAll();
+    JobSystem::It::WaitAll();
 }
 
 }
