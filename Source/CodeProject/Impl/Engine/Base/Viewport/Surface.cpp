@@ -40,16 +40,16 @@ void SetupForVulkan()
 
     CreateInfo.Title = X_WINDOW_NAME;
 
-    CreateInfo.Width  = Configs::Static::WINDOW_WIDTH;
-    CreateInfo.Height = Configs::Static::WINDOW_HEIGHT;
+    CreateInfo.Width  = Configs::Static::Viewport::WINDOW_WIDTH;
+    CreateInfo.Height = Configs::Static::Viewport::WINDOW_HEIGHT;
 
-    CreateInfo.IsFullscreen = Configs::Static::WINDOW_FULLSCREEN;
-    CreateInfo.IsResizable  = Configs::Static::WINDOW_RESIZABLE;
+    CreateInfo.IsFullscreen = Configs::Static::Viewport::WINDOW_FULLSCREEN;
+    CreateInfo.IsResizable  = Configs::Static::Viewport::WINDOW_RESIZABLE;
 
-    CreateInfo.IsBordered = Configs::Static::WINDOW_BORDERED;
-    CreateInfo.IsVisible  = Configs::Static::WINDOW_VISIBLE;
+    CreateInfo.IsBordered = Configs::Static::Viewport::WINDOW_BORDERED;
+    CreateInfo.IsVisible  = Configs::Static::Viewport::WINDOW_VISIBLE;
 
-    CreateInfo.IsCursorCaptured = Configs::Static::WINDOW_CURSOR_CAPTURED;
+    CreateInfo.IsCursorCaptured = Configs::Static::Viewport::WINDOW_CURSOR_CAPTURED;
 
     CreateInfo.ExtraSDLFlags |= SDL_WINDOW_VULKAN;
 
