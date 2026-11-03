@@ -1,6 +1,6 @@
 #include "X/Engine/Base/Viewport/Surface.hpp"
 
-#include "X/Configs/Compiled/Dynamic.hpp"
+#include "X/Configs/PreCompiled/Dynamic.hpp"
 #include "X/Configs/Static.hpp"
 
 #include <SDL3/SDL_pixels.h>

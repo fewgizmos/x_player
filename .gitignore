@@ -3,7 +3,7 @@ Build/
 .CmakeBuild/
 CMakeFiles/
 compile_commands.json
-/Source/CodeProject/Head/X/Configs/Dynamic.hpp
+/Source/CodeProject/Head/X/Configs/PreCompiled/Dynamic.hpp
 
 # caches
 /.cache

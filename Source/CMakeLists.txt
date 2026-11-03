@@ -2,7 +2,7 @@ add_subdirectory(CodeThirdParty)
 
 configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/CodeProject/Head/X/Configs/Dynamic.hpp.in
-    ${CMAKE_CURRENT_SOURCE_DIR}/CodeProject/Head/X/Configs/Compiled/Dynamic.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/CodeProject/Head/X/Configs/PreCompiled/Dynamic.hpp
     @ONLY
 )
 
