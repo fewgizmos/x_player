@@ -22,6 +22,7 @@ void CleanAll()
         try {
             Item.Func();
         }
+
         catch (...) {
             if (!Failure) {
                 Failure = std::current_exception();

@@ -1,23 +1,21 @@
 #pragma once
 
-#include "X/Engine/Base/Platform/SDL3WM.hpp"
+#include <SDL3/SDL_video.h>
 
 #include <glm/vec2.hpp>
 
 namespace Engine::Base::Viewport::Surface
 {
 
-inline Platform::SDL3WM::Window* m_Win = nullptr;
-
 void SetupForVulkan();
 void Destroy();
 
-inline SDL_Window* GetNative() { return Platform::SDL3WM::GetNative(m_Win); }
-inline glm::ivec2 GetExtent()  { return Platform::SDL3WM::GetExtent(m_Win); }
+SDL_Window* GetNative();
+glm::ivec2 GetExtent();
 
-inline bool GetWantsExit() { return m_Win->WantsClose; }
+bool GetWantsExit();
 
-inline bool GetUnhandleResized() { return m_Win->UnhandleResized; }
-inline void ClearUnhandleResized() { m_Win->UnhandleResized = false; }
+bool GetUnhandleResized();
+void ClearUnhandleResized();
 
 }

@@ -1,0 +1,47 @@
+#include "X/Engine/Base/Render/ArtifactsDeletor.hpp"
+
+#include <vector>
+#include <exception>
+#include <utility>
+
+namespace Engine::Base::Render::ArtifactsDeletor
+{
+
+namespace
+{
+
+std::vector<std::function<void()>> m_Deletors;
+
+}
+
+void Push(std::function<void()> p_Function)
+{
+    m_Deletors.push_back(std::move(p_Function));
+}
+
+void CleanAll()
+{
+    std::exception_ptr Failure;
+
+    while (!m_Deletors.empty()) {
+        auto Function = std::move(m_Deletors.back());
+
+        m_Deletors.pop_back();
+
+        try {
+            Function();
+        }
+
+        catch (...) {
+            if (!Failure) {
+                Failure = std::current_exception();
+            }
+        }
+    }
+
+    if (Failure) {
+        std::rethrow_exception(Failure);
+    }
+}
+
+}

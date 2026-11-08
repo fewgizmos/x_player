@@ -10,7 +10,6 @@ namespace Engine::Base::BootstrapManager::DeferredBootstrapRegistration
 void AddInit(std::string p_Name, Task p_Func, int p_Order = DEFAULT_ORDER);
 void AddClean(std::string p_Name, Task p_Func, int p_Order = DEFAULT_ORDER);
 
-// Sorted snapshots let callbacks execute without holding the registry mutex.
 std::vector<Entry> GetInitEntries();
 std::vector<Entry> GetCleanEntries();
 

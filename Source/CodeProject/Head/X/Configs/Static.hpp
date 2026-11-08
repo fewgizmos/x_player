@@ -26,6 +26,9 @@ inline constexpr bool WINDOW_CURSOR_CAPTURED = false;
 namespace Graphics
 {
 
+inline constexpr unsigned char BACKGROUND_RGB[3] = {13, 17, 23};
+inline constexpr const char* SHADERS_DIR = "Resources/Shaders/";
+
 inline constexpr int MAX_FRAMES_IN_FLIGHT = 4;
 
 inline constexpr uint32_t MAX_SAMPLERS = 64;
