@@ -1,3 +1,5 @@
+#include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
+
 #include "X/Engine/Base/Viewport/Surface.hpp"
 
 #include "X/Configs/PreCompiled/Dynamic.hpp"
@@ -14,6 +16,12 @@ namespace Engine::Base::Viewport::Surface
 
 namespace
 {
+
+const BootstrapManager::DeferredBootstrapRegistration::InitRegistrar
+    RegisterInit("surface_init", SetupForVulkan, 80);
+
+const BootstrapManager::DeferredBootstrapRegistration::CleanRegistrar
+    RegisterClean("surface_clean", Destroy, 40);
 
 void ApplyWindowIcon()
 {

@@ -1,3 +1,7 @@
+#include "X/Engine/Base/JobSystem/DeferredTaskRegistration.hpp"
+#include "X/Engine/Base/Runtime/EngineCore.hpp"
+#include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
+
 #include "X/Engine/Base/JobSystem/JobManager.hpp"
 
 #include "X/Engine/Util/Base/Assert.hpp"
@@ -15,6 +19,20 @@ namespace Engine::Base::JobSystem::It
 
 namespace
 {
+
+void Init()
+{
+    AttachCurrentThread(Runtime::EngineCore::GameTh);
+    CreateThread(Runtime::EngineCore::RenderTh);
+    CreateThread(Runtime::EngineCore::ResourceLoaderTh);
+
+    DeferredTaskRegistration::Apply();
+}
+
+const BootstrapManager::DeferredBootstrapRegistration::InitRegistrar
+    RegisterInit("jobsystem_init", Init, 60);
+const BootstrapManager::DeferredBootstrapRegistration::CleanRegistrar
+    RegisterClean("jobsystem_clean", Shutdown, 100);
 
 FrameSync m_Sync;
 

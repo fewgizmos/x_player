@@ -1,3 +1,5 @@
+#include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
+
 #include "X/Engine/Base/Platform/SDL3App.hpp"
 
 #include "X/Engine/Base/JobSystem/DeferredTaskRegistration.hpp"
@@ -10,6 +12,12 @@ namespace Engine::Base::Platform::SDL3App
 
 namespace
 {
+
+const BootstrapManager::DeferredBootstrapRegistration::InitRegistrar
+    RegisterInit("sdl3app_init", Init, 100);
+
+const BootstrapManager::DeferredBootstrapRegistration::CleanRegistrar
+    RegisterClean("sdl3app_clean", Cleanup, 0);
 
 const JobSystem::DeferredTaskRegistration::Registrar RegisterTask(
     Runtime::EngineCore::GameTh, "sdl3app_event_pump", PumpEvents, 90

@@ -6,7 +6,7 @@
 #include "X/Engine/Base/JobSystem/DeferredTaskRegistration.hpp"
 
 #include "X/Engine/Base/Platform/SDL3App.hpp"
-#include "X/Engine/Base/Platform/SDL3WM.hpp"
+#include "X/Engine/Base/BootstrapManager/BootstrapManager.hpp"
 
 #include "X/Engine/Base/Viewport/Surface.hpp"
 
@@ -27,52 +27,65 @@ void CheckExit()
     }
 }
 
+const JobSystem::DeferredTaskRegistration::Registrar RegisterTask(
+    GameTh, "checking_exit", CheckExit, 0
+);
+
 }
 
 int Run()
 {
+    std::exception_ptr Failure;
+
     try {
         StartUp();
 
         while (!WantsStop) {
             TickFrame();
         }
-
-        CleanUp();
+    }
+    catch (...) {
+        Failure = std::current_exception();
     }
 
-    catch (const std::exception& Error) {
-        std::cerr << Error.what() << "\n";
+    try {
+        CleanUp();
+    }
+    catch (...) {
+        if (Failure) {
+            try {
+                throw;
+            }
+            catch (const std::exception& Error) {
+                std::cerr << "Cleanup failed: " << Error.what() << "\n";
+            }
+            catch (...) {
+                std::cerr << "Cleanup failed: unknown exception\n";
+            }
+        } else {
+            Failure = std::current_exception();
+        }
+    }
+
+    if (Failure) {
+        try {
+            std::rethrow_exception(Failure);
+        }
+        catch (const std::exception& Error) {
+            std::cerr << Error.what() << "\n";
+        }
+        catch (...) {
+            std::cerr << "Unknown engine exception\n";
+        }
         return EXIT_FAILURE;
     }
 
     return EXIT_SUCCESS;
 }
 
-void StartUp()
-{
-    Platform::SDL3App::Init();
+void StartUp() { BootstrapManager::It::InitAll(); }
 
-    Viewport::Surface::SetupForVulkan();
-
-    JobSystem::It::AttachCurrentThread(EngineThreadTag::GameTh);
-    JobSystem::It::CreateThread(       EngineThreadTag::RenderTh);
-    JobSystem::It::CreateThread(       EngineThreadTag::ResourceLoaderTh);
-
-    JobSystem::DeferredTaskRegistration::Apply();
-
-    JobSystem::It::AddTask(EngineThreadTag::GameTh, "checking_exit", CheckExit, 0);
-}
-
-void CleanUp()
-{
-    JobSystem::It::Shutdown();
-
-    Viewport::Surface::Destroy();
-
-    Platform::SDL3WM::Cleanup();
-    Platform::SDL3App::Cleanup();
-}
+void CleanUp() { BootstrapManager::It::CleanAll(); }
 
 void TickFrame()
 {

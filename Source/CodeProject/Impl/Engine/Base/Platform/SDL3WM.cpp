@@ -1,3 +1,5 @@
+#include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
+
 #include "X/Engine/Base/Platform/SDL3WM.hpp"
 
 #include "X/Engine/Util/Base/Assert.hpp"
@@ -18,6 +20,9 @@ namespace Engine::Base::Platform::SDL3WM
 
 namespace
 {
+
+const BootstrapManager::DeferredBootstrapRegistration::CleanRegistrar
+    RegisterClean("sdl3wm_clean", Cleanup, 20);
 
 const JobSystem::DeferredTaskRegistration::Registrar RegisterTask(
     Runtime::EngineCore::GameTh, "sdl3wm_events_pump", PumpEventsToWindows, 80
