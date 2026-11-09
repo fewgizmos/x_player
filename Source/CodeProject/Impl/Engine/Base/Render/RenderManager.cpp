@@ -69,13 +69,13 @@ void ClearBackground(VkCommandBuffer p_Cmd)
     Attachment.loadOp      = VK_ATTACHMENT_LOAD_OP_CLEAR;
     Attachment.storeOp     = VK_ATTACHMENT_STORE_OP_STORE;
 
-    const bool Srgb = Vk::Frame::GetSwapchain().image_format == VK_FORMAT_B8G8R8A8_SRGB
+    const bool SRGB = Vk::Frame::GetSwapchain().image_format == VK_FORMAT_B8G8R8A8_SRGB
         || Vk::Frame::GetSwapchain().image_format == VK_FORMAT_R8G8B8A8_SRGB;
 
     for (int I = 0; I < 3; ++I) {
-        float Value = Configs::Static::Graphics::BACKGROUND_RGB[I] / 255.0f;
+        const float Value = Configs::Static::Graphics::BACKGROUND_RGB[I] / 255.0f;
 
-        Attachment.clearValue.color.float32[I] = Srgb
+        Attachment.clearValue.color.float32[I] = SRGB
             ? (Value <= 0.04045f ? Value / 12.92f : std::pow((Value + 0.055f) / 1.055f, 2.4f))
             : Value;
     }
@@ -149,6 +149,11 @@ void WaitIdle()
     if (Vk::Device::GetDevice().device != VK_NULL_HANDLE) {
         X_ASSERT(Vk::Device::GetDisp().deviceWaitIdle() != VK_SUCCESS, "Failed to wait for Vulkan device");
     }
+}
+
+const vkb::Instance& GetInstance()
+{
+    return m_Instance;
 }
 
 void Cleanup()
