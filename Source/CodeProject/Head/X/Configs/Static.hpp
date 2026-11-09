@@ -44,4 +44,11 @@ inline constexpr VkFormat GTAO_FORMAT = VK_FORMAT_R32_SFLOAT;
 
 }
 
+namespace Tests
+{
+
+inline constexpr bool TRIANGLE_RENDERER_ENABLED = true;
+
+}
+
 }

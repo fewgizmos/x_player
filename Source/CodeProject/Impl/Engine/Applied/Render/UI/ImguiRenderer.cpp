@@ -35,8 +35,14 @@ namespace
 
 VkDescriptorPool m_DescriptorPool = VK_NULL_HANDLE;
 std::mutex m_FrameMutex;
+
+void UploadFontTexture();
+
 const ::Engine::Base::BootstrapManager::DeferredBootstrapRegistration::InitRegistrar
     RegisterInit("imgui_renderer_init", Init, 50);
+
+const ::Engine::Base::BootstrapManager::DeferredBootstrapRegistration::InitRegistrar
+    RegisterFontUpload("imgui_font_upload", UploadFontTexture, 40);
 
 const ::Engine::Base::BootstrapManager::DeferredBootstrapRegistration::CleanRegistrar
     RegisterClean("imgui_renderer_cleanup", Cleanup, 70);
@@ -50,6 +56,15 @@ const ::Engine::Base::JobSystem::DeferredTaskRegistration::Registrar
 void CheckVulkanResult(VkResult p_Result)
 {
     X_ASSERT(p_Result != VK_SUCCESS, "ImGui Vulkan backend failed");
+}
+
+void UploadFontTexture()
+{
+    ImGuiIO& Io = ImGui::GetIO();
+
+    if (Io.Fonts->TexData != nullptr) {
+        ImGui_ImplVulkan_UpdateTexture(Io.Fonts->TexData);
+    }
 }
 
 std::vector<uint32_t> CompileVertexShader()
