@@ -2,15 +2,12 @@
 
 #include "X/Configs/Static.hpp"
 #include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
-#include "X/Engine/Base/Render/ArtifactsDeletor.hpp"
 #include "X/Engine/Base/Render/RenderingPool.hpp"
 #include "X/Engine/Base/Render/Vulkan/Commands.hpp"
 #include "X/Engine/Base/Render/Vulkan/Device.hpp"
 #include "X/Engine/Base/Render/Vulkan/Frame.hpp"
 #include "X/Engine/Base/Render/Vulkan/GpuResources.hpp"
 #include "X/Engine/Base/Render/Vulkan/Shader.hpp"
-#include "X/Engine/Util/Base/Assert.hpp"
-
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/mat4x4.hpp>
 #include <glm/vec2.hpp>

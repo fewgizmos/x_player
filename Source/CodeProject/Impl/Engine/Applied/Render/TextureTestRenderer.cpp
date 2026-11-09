@@ -18,6 +18,7 @@
 #include <array>
 #include <cstddef>
 #include <vulkan/vulkan_core.h>
+#include <vk_mem_alloc.h>
 
 namespace Engine::Applied::Render::TextureTestRenderer
 {
