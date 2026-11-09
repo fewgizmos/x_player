@@ -59,6 +59,7 @@ void AddMergedFonts(FontGroup& p_Group)
         Source.Config.DstFont = p_Group.Font;
         Source.Config.GlyphRanges = Source.GlyphRanges;
         Source.Config.GlyphExcludeRanges = Source.GlyphExcludeRanges;
+        Source.Config.GlyphOffset.y = -1.0f;
 
         ImFont* Font = ImGui::GetIO().Fonts->AddFontFromFileTTF(
             Source.Path.c_str(),
@@ -84,8 +85,8 @@ FontGroup* FindGroup(std::string_view p_Name)
 
 void BuildStdGroup()
 {
-    AddGroup("Std", 11.85f);
-    AddMergedFont("Std", "Resources/Fonts/IBMPlexSans-Regular.ttf", 13.85f);
+    AddGroup("Std", 13.05f);
+    AddMergedFont("Std", "Resources/Fonts/IBMPlexSans-Regular.ttf", 15.05f);
     RebuildAtlas();
 }
 

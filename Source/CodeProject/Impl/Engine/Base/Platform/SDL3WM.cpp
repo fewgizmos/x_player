@@ -34,7 +34,9 @@ std::vector<std::unique_ptr<Window>> m_Windows;
 
 Window* CreateWindow(const WindowCreateInfo& p_CreateInfo)
 {
-    SDL_WindowFlags Flags = SDL_WINDOW_HIDDEN | p_CreateInfo.ExtraSDLFlags;
+    SDL_WindowFlags Flags = SDL_WINDOW_HIDDEN
+        | SDL_WINDOW_HIGH_PIXEL_DENSITY
+        | p_CreateInfo.ExtraSDLFlags;
 
     if (p_CreateInfo.IsFullscreen) { Flags |= SDL_WINDOW_FULLSCREEN; }
     if (p_CreateInfo.IsResizable)  { Flags |= SDL_WINDOW_RESIZABLE;  }
