@@ -1,5 +1,6 @@
 #include "X/Engine/Applied/Render/UI/Resources/Fonts.hpp"
 
+#include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
 #include "X/Engine/Util/Base/Assert.hpp"
 
 #include <algorithm>
@@ -14,6 +15,8 @@
 namespace Engine::Applied::Render::UI::Resources::Fonts
 {
 
+void Init();
+
 namespace
 {
 
@@ -23,6 +26,7 @@ struct FontSource
     float Size = 0.0f;
     ImFontConfig Config;
     ImWchar GlyphRanges[3] = { 0x0400, 0x052F, 0 };
+    ImWchar GlyphExcludeRanges[3] = { 0x0020, 0x024F, 0 };
 };
 
 struct FontGroup
@@ -36,10 +40,6 @@ struct FontGroup
 std::vector<FontGroup> m_Groups;
 std::string m_ActiveGroup;
 bool m_Initialized = false;
-
-constexpr std::string_view DEFAULT_GROUP_NAME = "Default";
-constexpr float DEFAULT_FONT_SIZE = 18.0f;
-constexpr std::string_view DEFAULT_CYRILLIC_FONT_PATH = "Resources/Fonts/NotoSans-Regular.ttf";
 
 ImFont* AddDefaultFont(FontGroup& p_Group)
 {
@@ -56,6 +56,9 @@ void AddMergedFonts(FontGroup& p_Group)
     for (FontSource& Source : p_Group.MergedFonts) {
         Source.Config.MergeMode = true;
         Source.Config.SizePixels = Source.Size;
+        Source.Config.DstFont = p_Group.Font;
+        Source.Config.GlyphRanges = Source.GlyphRanges;
+        Source.Config.GlyphExcludeRanges = Source.GlyphExcludeRanges;
 
         ImFont* Font = ImGui::GetIO().Fonts->AddFontFromFileTTF(
             Source.Path.c_str(),
@@ -79,6 +82,19 @@ FontGroup* FindGroup(std::string_view p_Name)
     return Found == m_Groups.end() ? nullptr : &*Found;
 }
 
+void BuildStdGroup()
+{
+    AddGroup("Std", 11.85f);
+    AddMergedFont("Std", "Resources/Fonts/IBMPlexSans-Regular.ttf", 13.85f);
+    RebuildAtlas();
+}
+
+const ::Engine::Base::BootstrapManager::DeferredBootstrapRegistration::InitRegistrar
+    RegisterFontsInit("imgui_fonts_init", Init, 60);
+
+const ::Engine::Base::BootstrapManager::DeferredBootstrapRegistration::InitRegistrar
+    RegisterStdGroup("imgui_fonts_std_group", BuildStdGroup, 45);
+
 }
 
 void Init()
@@ -86,11 +102,6 @@ void Init()
     X_ASSERT(m_Initialized, "Fonts are already initialized");
 
     m_Initialized = true;
-
-    AddGroup(std::string(DEFAULT_GROUP_NAME), DEFAULT_FONT_SIZE);
-    AddMergedFont(DEFAULT_GROUP_NAME, std::string(DEFAULT_CYRILLIC_FONT_PATH), DEFAULT_FONT_SIZE);
-
-    RebuildAtlas();
 }
 
 void Cleanup()
@@ -197,6 +208,10 @@ void RebuildAtlas()
     }
 
     Atlas->Build();
+
+    if (FontGroup* Group = FindGroup(m_ActiveGroup)) {
+        ImGui::GetIO().FontDefault = Group->Font;
+    }
 }
 
 }

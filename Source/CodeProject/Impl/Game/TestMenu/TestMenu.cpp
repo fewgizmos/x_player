@@ -25,6 +25,14 @@ void Draw()
     ImGui::Text("FPS: %.1f", Util::Timer::FPS);
     ImGui::Text("Frame time: %.2f ms", Util::Timer::DeltaMs);
 
+    ImGui::Spacing();
+    ImGui::Spacing();
+
+    ImGui::Text("Русский ТеКсТ 123 _*/:?^");
+
+    ImGui::Spacing();
+    ImGui::Spacing();
+
     if (ImGui::Button("Close application")) {
         Engine::Base::Platform::SDL3App::WantsExit = true;
     }

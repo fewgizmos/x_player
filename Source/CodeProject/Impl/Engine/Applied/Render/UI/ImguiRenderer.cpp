@@ -1,6 +1,7 @@
 #include "X/Engine/Applied/Render/UI/ImguiRenderer.hpp"
 
 #include "X/Engine/Applied/Render/UI/Resources/Fonts.hpp"
+#include "X/Engine/Applied/Render/UI/ImGuiScaler.hpp"
 
 #include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
 #include "X/Engine/Base/JobSystem/DeferredTaskRegistration.hpp"
@@ -23,6 +24,7 @@
 #include <vulkan/vulkan_core.h>
 
 #include <cstdint>
+#include <mutex>
 #include <vector>
 
 namespace Engine::Applied::Render::UI::ImguiRenderer
@@ -32,7 +34,7 @@ namespace
 {
 
 VkDescriptorPool m_DescriptorPool = VK_NULL_HANDLE;
-
+std::mutex m_FrameMutex;
 const ::Engine::Base::BootstrapManager::DeferredBootstrapRegistration::InitRegistrar
     RegisterInit("imgui_renderer_init", Init, 50);
 
@@ -98,7 +100,7 @@ void Init()
 
     X_ASSERT(!ImGui_ImplVulkan_Init(&Info), "Failed to initialize ImGui Vulkan backend");
 
-    ::Engine::Applied::Render::UI::Resources::Fonts::Init();
+    ::Engine::Applied::Render::UI::ImGuiScaler::Init();
 
     ::Engine::Base::Render::RenderingPool::Register("imgui", Render, 0);
 }
@@ -114,6 +116,9 @@ void Cleanup()
 
 void BeginFrame()
 {
+    m_FrameMutex.lock();
+    ::Engine::Applied::Render::UI::ImGuiScaler::Update();
+
     for (const SDL_Event& Event : ::Engine::Base::Platform::SDL3App::GetEvents()) {
         ImGui_ImplSDL3_ProcessEvent(&Event);
     }
@@ -126,10 +131,14 @@ void BeginFrame()
 void EndFrame()
 {
     ImGui::Render();
+
+    m_FrameMutex.unlock();
 }
 
 void Render()
 {
+    std::lock_guard<std::mutex> Lock(m_FrameMutex);
+
     ImDrawData* DrawData = ImGui::GetDrawData();
 
     if (DrawData == nullptr || DrawData->TotalVtxCount == 0) {
