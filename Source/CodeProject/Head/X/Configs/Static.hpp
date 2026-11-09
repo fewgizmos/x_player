@@ -48,6 +48,7 @@ namespace Tests
 {
 
 inline constexpr bool TRIANGLE_RENDERER_ENABLED = true;
+inline constexpr bool TEXTURE_RENDERER_ENABLED = true;
 
 }
 
