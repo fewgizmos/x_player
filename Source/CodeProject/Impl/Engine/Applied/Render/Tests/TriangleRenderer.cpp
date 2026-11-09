@@ -5,6 +5,8 @@
 #include "X/Engine/Applied/Render/Tests/TriangleRenderer.hpp"
 
 #include "X/Configs/Static.hpp"
+#include "X/Engine/Applied/Render/Resources/ResourceManager.hpp"
+#include "X/Engine/Applied/Render/Scene/Resources/Meshes.hpp"
 #include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
 #include "X/Engine/Base/Render/RenderingPool.hpp"
 #include "X/Engine/Base/Render/Vulkan/Commands.hpp"
@@ -30,20 +32,14 @@ namespace Engine::Applied::Render::Tests::TriangleRenderer
 namespace
 {
 
-struct Vertex
-{
-    glm::vec2 Position;
-    glm::vec3 Color;
-};
-
 struct PushConstants
 {
     glm::mat4 Projection;
 };
 
 Engine::Base::Render::Pipeline m_Pipeline;
-Engine::Base::Render::Buffer m_VertexBuffer;
-Engine::Base::Render::Buffer m_IndexBuffer;
+std::unique_ptr<::Engine::Applied::Render::Resources::Ref<
+    ::Engine::Applied::Render::Scene::Resources::Meshes::Mesh>> m_Mesh;
 
 const ::Engine::Base::BootstrapManager::DeferredBootstrapRegistration::InitRegistrar
     RegisterInit("triangle_test_renderer_init", Init, 40);
@@ -63,11 +59,11 @@ void CreatePipeline()
     Info.PushConstantSize = sizeof(PushConstants);
     Info.PushConstantStages = VK_SHADER_STAGE_VERTEX_BIT;
     Info.VertexBindings = {
-        { 0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX }
+        { 0, sizeof(::Engine::Applied::Render::Scene::Resources::Meshes::Vertex), VK_VERTEX_INPUT_RATE_VERTEX }
     };
     Info.VertexAttributes = {
-        { 0, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, Position) },
-        { 1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, Color) }
+        { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(::Engine::Applied::Render::Scene::Resources::Meshes::Vertex, Position) },
+        { 1, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(::Engine::Applied::Render::Scene::Resources::Meshes::Vertex, Color) }
     };
 
     m_Pipeline = ::Engine::Base::Render::Vk::Shader::CreateGraphicsPipeline(
@@ -77,36 +73,19 @@ void CreatePipeline()
     );
 }
 
-void CreateBuffers()
+void CreateMesh()
 {
-    constexpr std::array<Vertex, 3> Vertices = {{
-        { { -1.0f, -1.0f }, { 1.0f, 0.0f, 0.0f } },
-        { {  1.0f, -1.0f }, { 0.0f, 1.0f, 0.0f } },
-        { {  0.0f,  1.0f }, { 0.0f, 0.0f, 1.0f } }
-    }};
+    using Mesh = ::Engine::Applied::Render::Scene::Resources::Meshes::Mesh;
+    using Vertex = ::Engine::Applied::Render::Scene::Resources::Meshes::Vertex;
 
-    constexpr std::array<uint32_t, 3> Indices = { 0, 1, 2 };
-
-    m_VertexBuffer = ::Engine::Base::Render::Vk::GpuResources::CreateBuffer(
-        sizeof(Vertices),
-        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
-    );
-    m_IndexBuffer = ::Engine::Base::Render::Vk::GpuResources::CreateBuffer(
-        sizeof(Indices),
-        VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
-    );
-
-    ::Engine::Base::Render::Vk::GpuResources::UploadBuffer(
-        m_VertexBuffer,
-        Vertices.data(),
-        sizeof(Vertices)
-    );
-    ::Engine::Base::Render::Vk::GpuResources::UploadBuffer(
-        m_IndexBuffer,
-        Indices.data(),
-        sizeof(Indices)
+    std::vector<Vertex> Vertices = {
+        { { -1.0f, -1.0f, 0.0f }, 0.0f, {}, 0.0f, {}, { 1.0f, 0.0f, 0.0f, 1.0f } },
+        { {  1.0f, -1.0f, 0.0f }, 0.0f, {}, 0.0f, {}, { 0.0f, 1.0f, 0.0f, 1.0f } },
+        { {  0.0f,  1.0f, 0.0f }, 0.0f, {}, 0.0f, {}, { 0.0f, 0.0f, 1.0f, 1.0f } }
+    };
+    std::vector<uint32_t> Indices = { 0, 1, 2 };
+    m_Mesh = std::make_unique<::Engine::Applied::Render::Resources::Ref<Mesh>>(
+        std::move(Vertices), std::move(Indices)
     );
 }
 
@@ -119,7 +98,7 @@ void Init()
     }
 
     CreatePipeline();
-    CreateBuffers();
+    CreateMesh();
 
     ::Engine::Base::Render::RenderingPool::Register("triangle_test", Render, 10);
 }
@@ -131,13 +110,7 @@ void Cleanup()
         m_Pipeline = {};
     }
 
-    if (m_VertexBuffer.Handle != VK_NULL_HANDLE) {
-        ::Engine::Base::Render::Vk::GpuResources::DestroyBuffer(m_VertexBuffer);
-    }
-
-    if (m_IndexBuffer.Handle != VK_NULL_HANDLE) {
-        ::Engine::Base::Render::Vk::GpuResources::DestroyBuffer(m_IndexBuffer);
-    }
+    m_Mesh.reset();
 }
 
 void Render()
@@ -146,6 +119,12 @@ void Render()
     const auto& Image = ::Engine::Base::Render::Vk::Frame::GetCurrentImage();
     const auto& Swapchain = ::Engine::Base::Render::Vk::Frame::GetSwapchain();
     const auto& Disp = ::Engine::Base::Render::Vk::Device::GetDisp();
+
+    if (!m_Mesh || !m_Mesh->IsReady()) {
+        return;
+    }
+
+    const auto& Mesh = *m_Mesh->Get();
 
     VkRenderingAttachmentInfo Attachment{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
     Attachment.imageView = Image.ImageView;
@@ -179,8 +158,8 @@ void Render()
     Disp.cmdBindPipeline(Frame.CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_Pipeline.Handle);
 
     const VkDeviceSize Offset = 0;
-    Disp.cmdBindVertexBuffers(Frame.CommandBuffer, 0, 1, &m_VertexBuffer.Handle, &Offset);
-    Disp.cmdBindIndexBuffer(Frame.CommandBuffer, m_IndexBuffer.Handle, 0, VK_INDEX_TYPE_UINT32);
+    Disp.cmdBindVertexBuffers(Frame.CommandBuffer, 0, 1, &Mesh.GetVertexBuffer().Handle, &Offset);
+    Disp.cmdBindIndexBuffer(Frame.CommandBuffer, Mesh.GetIndexBuffer().Handle, 0, VK_INDEX_TYPE_UINT32);
 
     ::Engine::Base::Render::Vk::Commands::PushConstants(
         Frame.CommandBuffer,
@@ -190,7 +169,7 @@ void Render()
         &Constants
     );
 
-    Disp.cmdDrawIndexed(Frame.CommandBuffer, 3, 1, 0, 0, 0);
+    Disp.cmdDrawIndexed(Frame.CommandBuffer, Mesh.GetIndexCount(), 1, 0, 0, 0);
     Disp.cmdEndRendering(Frame.CommandBuffer);
 }
 
