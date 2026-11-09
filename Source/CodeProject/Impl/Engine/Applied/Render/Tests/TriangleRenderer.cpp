@@ -1,4 +1,8 @@
-#include "X/Engine/Applied/Render/TriangleTestRenderer.hpp"
+#include "X/Configs/PreCompiled/Dynamic.hpp"
+
+#ifdef XP_DEV_FEATURES_ENABLED
+
+#include "X/Engine/Applied/Render/Tests/TriangleRenderer.hpp"
 
 #include "X/Configs/Static.hpp"
 #include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
@@ -20,7 +24,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace Engine::Applied::Render::TriangleTestRenderer
+namespace Engine::Applied::Render::Tests::TriangleRenderer
 {
 
 namespace
@@ -191,3 +195,5 @@ void Render()
 }
 
 }
+
+#endif

@@ -7,7 +7,6 @@
 #include "X/Engine/Base/Render/Vulkan/Descriptors.hpp"
 #include "X/Engine/Base/Render/Vulkan/Samplers.hpp"
 #include "X/Engine/Base/Runtime/EngineCore.hpp"
-#include "X/Engine/Util/Base/Assert.hpp"
 
 #include <stb_image.h>
 #include <vulkan/vulkan_core.h>
