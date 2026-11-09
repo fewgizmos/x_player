@@ -3,6 +3,7 @@
 #include <mutex>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 namespace Engine::Applied::Render::Resources
 {
@@ -25,9 +26,7 @@ Resource::Resource(std::string p_Key)
 {
 }
 
-Resource::~Resource()
-{
-}
+Resource::~Resource() {}
 
 const std::string& Resource::GetKey() const
 {
@@ -38,6 +37,8 @@ ResourceState Resource::GetState() const
 {
     return m_State.load();
 }
+
+void Resource::Update() {}
 
 bool Resource::IsReady() const
 {
@@ -75,6 +76,28 @@ std::shared_ptr<Resource> Acquire(std::unique_ptr<Resource> p_Resource)
     Shared->BeginLoad();
 
     return Shared;
+}
+
+void UpdateAll()
+{
+    std::vector<std::shared_ptr<Resource>> Active;
+
+    {
+        std::lock_guard<std::mutex> Lock(m_ResourcesMutex);
+
+        for (auto It = m_Resources.begin(); It != m_Resources.end();) {
+            if (std::shared_ptr<Resource> Resource = It->second.lock()) {
+                Active.push_back(std::move(Resource));
+                ++It;
+            } else {
+                It = m_Resources.erase(It);
+            }
+        }
+    }
+
+    for (const std::shared_ptr<Resource>& Resource : Active) {
+        Resource->Update();
+    }
 }
 
 void CleanExpired()

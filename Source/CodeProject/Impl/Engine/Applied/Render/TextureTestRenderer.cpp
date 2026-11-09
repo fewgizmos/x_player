@@ -17,6 +17,7 @@
 
 #include <array>
 #include <cstddef>
+#include <memory>
 #include <vulkan/vulkan_core.h>
 #include <vk_mem_alloc.h>
 
@@ -40,6 +41,8 @@ struct PushConstants
 Engine::Base::Render::Pipeline m_Pipeline;
 Engine::Base::Render::Buffer m_VertexBuffer;
 Engine::Base::Render::Buffer m_IndexBuffer;
+std::unique_ptr<Engine::Applied::Render::Resources::Ref<
+    Engine::Applied::Render::Resources::Textures::Texture>> m_DefaultEngineLogo;
 
 const ::Engine::Base::BootstrapManager::DeferredBootstrapRegistration::InitRegistrar
     RegisterInit("texture_test_renderer_init", Init, 30);
@@ -112,12 +115,18 @@ void Init()
 
     CreatePipeline();
     CreateBuffers();
+    m_DefaultEngineLogo = std::make_unique<Engine::Applied::Render::Resources::Ref<
+        Engine::Applied::Render::Resources::Textures::Texture>>(
+        "Resources/Images/DefaultEngineLogo.png"
+    );
 
     ::Engine::Base::Render::RenderingPool::Register("texture_test", Render, 5);
 }
 
 void Cleanup()
 {
+    m_DefaultEngineLogo.reset();
+
     if (m_Pipeline.Handle != VK_NULL_HANDLE) {
         ::Engine::Base::Render::Vk::Shader::DestroyPipeline(m_Pipeline);
         m_Pipeline = {};
@@ -134,11 +143,11 @@ void Cleanup()
 
 void Render()
 {
-    const auto& Texture = ::Engine::Applied::Render::Resources::Textures::GetDefaultEngineLogo();
-
-    if (!Texture.Ready) {
+    if (!m_DefaultEngineLogo || !m_DefaultEngineLogo->IsReady()) {
         return;
     }
+
+    const auto& Texture = *m_DefaultEngineLogo->Get();
 
     const auto& Frame = ::Engine::Base::Render::Vk::Frame::GetCurrentFrame();
     const auto& Image = ::Engine::Base::Render::Vk::Frame::GetCurrentImage();
@@ -183,13 +192,14 @@ void Render()
     const VkDeviceSize Offset = 0;
     Disp.cmdBindVertexBuffers(Frame.CommandBuffer, 0, 1, &m_VertexBuffer.Handle, &Offset);
     Disp.cmdBindIndexBuffer(Frame.CommandBuffer, m_IndexBuffer.Handle, 0, VK_INDEX_TYPE_UINT32);
+    const VkDescriptorSet DescriptorSet = Texture.GetDescriptorSet();
     Disp.cmdBindDescriptorSets(
         Frame.CommandBuffer,
         VK_PIPELINE_BIND_POINT_GRAPHICS,
         m_Pipeline.Layout,
         0,
         1,
-        &Texture.DescriptorSet,
+        &DescriptorSet,
         0,
         nullptr
     );

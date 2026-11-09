@@ -32,6 +32,7 @@ public:
     bool IsReady() const;
 
     virtual void BeginLoad() = 0;
+    virtual void Update();
     virtual void Unload() = 0;
     void SetState(ResourceState p_State);
 
@@ -43,6 +44,7 @@ private:
 };
 
 std::shared_ptr<Resource> Acquire(std::unique_ptr<Resource> p_Resource);
+void UpdateAll();
 
 void CleanExpired();
 
