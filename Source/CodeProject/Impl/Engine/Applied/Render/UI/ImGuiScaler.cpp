@@ -3,6 +3,7 @@
 #include "X/Configs/Static.hpp"
 #include "X/Engine/Base/Viewport/Surface.hpp"
 
+#include <SDL3/SDL_video.h>
 #include <imgui.h>
 
 #include <algorithm>
@@ -37,7 +38,11 @@ void Update()
         / static_cast<float>(::Engine::Configs::Static::Viewport::WINDOW_WIDTH);
     const float HeightScale = static_cast<float>(Extent.y)
         / static_cast<float>(::Engine::Configs::Static::Viewport::WINDOW_HEIGHT);
-    const float Scale = std::max(1.0f, std::min(WidthScale, HeightScale));
+    const float DisplayScale = SDL_GetWindowDisplayScale(
+        ::Engine::Base::Viewport::Surface::GetNative()
+    );
+    const float DpiScale = DisplayScale > 0.0f ? DisplayScale : 1.0f;
+    const float Scale = std::max(1.0f, std::min(WidthScale, HeightScale) * DpiScale);
 
     if (Scale == m_LastScale) {
         return;
@@ -48,6 +53,7 @@ void Update()
     Style = m_BaseStyle;
     Style.ScaleAllSizes(Scale);
     Style.FontScaleMain = Scale;
+    Style.FontScaleDpi = 1.0f;
 
     if (m_BaseStyle.WindowBorderSize > 0.0f) {
         Style.WindowBorderSize = std::max(Style.WindowBorderSize, 1.0f);
