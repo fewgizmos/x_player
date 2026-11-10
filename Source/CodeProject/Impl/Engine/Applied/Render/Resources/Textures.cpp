@@ -9,6 +9,7 @@
 #include "X/Engine/Base/JobSystem/JobManager.hpp"
 
 #include "X/Engine/Base/Render/Vulkan/Descriptors.hpp"
+#include "X/Engine/Base/Render/Vulkan/Device.hpp"
 #include "X/Engine/Base/Render/Vulkan/Samplers.hpp"
 
 #include "X/Engine/Base/Runtime/EngineCore.hpp"
@@ -16,8 +17,11 @@
 #include <stb_image.h>
 #include <vulkan/vulkan_core.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
+#include <memory>
 #include <mutex>
 #include <utility>
 #include <vector>
@@ -31,6 +35,7 @@ struct Texture::LoadData
     std::vector<std::byte> Pixels;
     uint32_t Width = 0;
     uint32_t Height = 0;
+    std::string FailureReason;
     bool Finished = false;
 };
 
@@ -77,16 +82,17 @@ void LoadTexture(const std::shared_ptr<Texture::LoadData>& p_Data, const std::st
 
     if (Pixels == nullptr) {
         std::lock_guard<std::mutex> Lock(p_Data->Mutex);
+        p_Data->FailureReason = stbi_failure_reason() ? stbi_failure_reason() : "Image decoding failed";
         p_Data->Finished = true;
         return;
     }
 
+    std::unique_ptr<stbi_uc, decltype(&stbi_image_free)> Owner(Pixels, stbi_image_free);
     std::vector<std::byte> Data(
         reinterpret_cast<std::byte*>(Pixels),
         reinterpret_cast<std::byte*>(Pixels)
             + static_cast<std::size_t>(Width) * static_cast<std::size_t>(Height) * 4
     );
-    stbi_image_free(Pixels);
 
     std::lock_guard<std::mutex> Lock(p_Data->Mutex);
     p_Data->Pixels = std::move(Data);
@@ -119,8 +125,10 @@ void ReleaseIndex(uint32_t p_Index)
 
 }
 
-Texture::Texture(std::string p_Path)
-    : Resource(std::move(p_Path))
+Texture::Texture(std::string p_Path, VkFormat p_Format)
+    : Resource(std::to_string(static_cast<int>(p_Format)) + ":" + p_Path)
+    , Path(std::move(p_Path))
+    , Format(p_Format)
     , m_LoadData(std::make_shared<LoadData>())
 {
 }
@@ -134,13 +142,32 @@ std::string Texture::GetTypeName() const
 
 void Texture::BeginLoad()
 {
+    if (Format != VK_FORMAT_R8G8B8A8_SRGB && Format != VK_FORMAT_R8G8B8A8_UNORM) {
+        SetFailed("Unsupported decoded texture format; expected RGBA8 SRGB or UNORM");
+        return;
+    }
+
     const std::shared_ptr<LoadData> Data = m_LoadData;
-    const std::string Path = GetKey();
+    const std::string TexturePath = Path;
 
     ::Engine::Base::JobSystem::It::PushBackground(
         ::Engine::Base::Runtime::EngineCore::ResourceLoaderTh,
-        "texture_load_" + Path,
-        [Data, Path] { LoadTexture(Data, Path); }
+        "texture_load_" + TexturePath,
+        [Data, TexturePath] {
+            try {
+                LoadTexture(Data, TexturePath);
+            }
+            catch (const std::exception& Error) {
+                std::lock_guard<std::mutex> Lock(Data->Mutex);
+                Data->FailureReason = Error.what();
+                Data->Finished = true;
+            }
+            catch (...) {
+                std::lock_guard<std::mutex> Lock(Data->Mutex);
+                Data->FailureReason = "Unknown texture load failure";
+                Data->Finished = true;
+            }
+        }
     );
 }
 
@@ -162,7 +189,7 @@ void Texture::Update()
         }
 
         if (m_LoadData->Pixels.empty()) {
-            SetFailed("failed to load image: " + GetKey());
+            SetFailed("Failed to load image " + Path + ": " + m_LoadData->FailureReason);
             return;
         }
 
@@ -171,11 +198,25 @@ void Texture::Update()
         Height = m_LoadData->Height;
     }
 
+    uint32_t MipLevels = 1;
+    for (uint32_t Size = std::max(Width, Height); Size > 1; Size /= 2) {
+        ++MipLevels;
+    }
+
+    VkFormatProperties Properties = {};
+    vkGetPhysicalDeviceFormatProperties(::Engine::Base::Render::Vk::Device::GetPhysical().physical_device,
+        Format, &Properties);
+    const VkFormatFeatureFlags Required = VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT
+        | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT
+        | VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT;
+    X_ASSERT((Properties.optimalTilingFeatures & Required) != Required, "Texture format does not support filtered mipmaps");
+
     m_Image = ::Engine::Base::Render::Vk::GpuResources::CreateImage(
         { Width, Height, 1 },
-        VK_FORMAT_R8G8B8A8_SRGB,
-        VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-        VK_IMAGE_ASPECT_COLOR_BIT
+        Format,
+        VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        VK_IMAGE_ASPECT_COLOR_BIT,
+        MipLevels
     );
 
     ::Engine::Base::Render::Vk::GpuResources::QueueImageUpload(
@@ -218,6 +259,8 @@ uint32_t Texture::GetIndex() const
 {
     return m_Index;
 }
+
+VkFormat Texture::GetFormat() const { return Format; }
 
 void Init()
 {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "X/Engine/Applied/Render/Resources/ResourceManager.hpp"
+#include "X/Engine/Applied/Render/Resources/Shaders.hpp"
 #include "X/Engine/Applied/Render/Resources/Textures.hpp"
 
 #include "X/Engine/Base/Render/Vulkan/GpuResources.hpp"
@@ -41,6 +42,10 @@ struct MaterialTexture
 
 struct MaterialCreateInfo
 {
+    ::Engine::Applied::Render::Resources::Ref<
+        ::Engine::Applied::Render::Resources::Shaders::Shader> TargetShader;
+    VkDescriptorSet ExtraSet = VK_NULL_HANDLE;
+
     glm::vec4 BaseColor = glm::vec4(1.0f);
     glm::vec3 Emissive = glm::vec3(0.0f);
 
@@ -168,6 +173,9 @@ public:
     bool IsDoubleSided() const;
     bool CastsShadows() const;
     AlphaMode GetAlphaMode() const;
+    const ::Engine::Applied::Render::Resources::Ref<
+        ::Engine::Applied::Render::Resources::Shaders::Shader>& GetShader() const;
+    VkDescriptorSet GetExtraSet() const;
 
 private:
     struct LoadData;

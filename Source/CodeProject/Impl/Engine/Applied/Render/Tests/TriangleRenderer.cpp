@@ -5,6 +5,7 @@
 #include "X/Configs/Static.hpp"
 
 #include "X/Engine/Applied/Render/Resources/ResourceManager.hpp"
+#include "X/Engine/Applied/Render/Resources/Shaders.hpp"
 #include "X/Engine/Applied/Render/Scene/Resources/Meshes.hpp"
 
 #include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
@@ -26,6 +27,9 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
+#include <utility>
+#include <vector>
 
 namespace Engine::Applied::Render::Tests::TriangleRenderer
 {
@@ -38,7 +42,7 @@ struct PushConstants
     glm::mat4 Projection;
 };
 
-Engine::Base::Render::Pipeline m_Pipeline;
+Engine::Applied::Render::Resources::Ref<Engine::Applied::Render::Resources::Shaders::Shader> m_Shader;
 std::unique_ptr<::Engine::Applied::Render::Resources::Ref<
     ::Engine::Applied::Render::Scene::Resources::Meshes::Mesh>> m_Mesh;
 
@@ -67,11 +71,12 @@ void CreatePipeline()
         { 1, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(::Engine::Applied::Render::Scene::Resources::Meshes::Vertex, Color) }
     };
 
-    m_Pipeline = ::Engine::Base::Render::Vk::Shader::CreateGraphicsPipeline(
-        "Tests/TriangleTest.vert",
-        "Tests/TriangleTest.frag",
-        Info
-    );
+    ::Engine::Applied::Render::Resources::Shaders::ShaderCreateInfo ShaderInfo;
+    ShaderInfo.VertexFile = "Tests/TriangleTest.vert";
+    ShaderInfo.FragmentFile = "Tests/TriangleTest.frag";
+    ShaderInfo.Graphics = std::move(Info);
+    m_Shader = ::Engine::Applied::Render::Resources::Ref<
+        ::Engine::Applied::Render::Resources::Shaders::Shader>(std::move(ShaderInfo));
 }
 
 void CreateMesh()
@@ -106,10 +111,7 @@ void Init()
 
 void Cleanup()
 {
-    if (m_Pipeline.Handle != VK_NULL_HANDLE) {
-        ::Engine::Base::Render::Vk::Shader::DestroyPipeline(m_Pipeline);
-        m_Pipeline = {};
-    }
+    m_Shader = {};
 
     m_Mesh.reset();
 }
@@ -121,11 +123,12 @@ void Render()
     const auto& Swapchain = ::Engine::Base::Render::Vk::Frame::GetSwapchain();
     const auto& Disp = ::Engine::Base::Render::Vk::Device::GetDisp();
 
-    if (!m_Mesh || !m_Mesh->IsReady()) {
+    if (!m_Shader.IsReady() || !m_Mesh || !m_Mesh->IsReady()) {
         return;
     }
 
     const auto& Mesh = *m_Mesh->Get();
+    const auto& Pipeline = m_Shader->GetGraphicsPipeline();
 
     VkRenderingAttachmentInfo Attachment{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
     Attachment.imageView = Image.ImageView;
@@ -156,7 +159,7 @@ void Render()
 
     Disp.cmdSetViewport(Frame.CommandBuffer, 0, 1, &Viewport);
     Disp.cmdSetScissor(Frame.CommandBuffer, 0, 1, &Scissor);
-    Disp.cmdBindPipeline(Frame.CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_Pipeline.Handle);
+    Disp.cmdBindPipeline(Frame.CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, Pipeline.Handle);
 
     const VkDeviceSize Offset = 0;
     Disp.cmdBindVertexBuffers(Frame.CommandBuffer, 0, 1, &Mesh.GetVertexBuffer().Handle, &Offset);
@@ -164,7 +167,7 @@ void Render()
 
     ::Engine::Base::Render::Vk::Commands::PushConstants(
         Frame.CommandBuffer,
-        m_Pipeline.Layout,
+        Pipeline.Layout,
         VK_SHADER_STAGE_VERTEX_BIT,
         sizeof(PushConstants),
         &Constants

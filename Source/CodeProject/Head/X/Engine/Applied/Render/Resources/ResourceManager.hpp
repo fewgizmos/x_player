@@ -64,6 +64,7 @@ public:
     Ref() = default;
 
     template<class... Arguments>
+        requires std::is_constructible_v<T, Arguments...>
     explicit Ref(Arguments&&... p_Arguments)
         : m_Resource(std::dynamic_pointer_cast<T>(Acquire(
             std::make_unique<T>(std::forward<Arguments>(p_Arguments)...)

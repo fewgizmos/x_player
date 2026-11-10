@@ -130,7 +130,8 @@ private:
 
 }
 
-std::vector<uint32_t> CompileGlsl(const std::string& p_Source, ShaderStage p_Stage, const std::string& p_Name, const std::vector<std::string>& p_Defines)
+std::vector<uint32_t> CompileGlsl(const std::string& p_Source, ShaderStage p_Stage, const std::string& p_Name,
+    const std::vector<std::string>& p_Defines, bool p_Optimize)
 {
     shaderc::Compiler Compiler;
     shaderc::CompileOptions Options;
@@ -153,6 +154,8 @@ std::vector<uint32_t> CompileGlsl(const std::string& p_Source, ShaderStage p_Sta
     Options.SetTargetEnvironment(shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_3);
     Options.SetTargetSpirv(shaderc_spirv_version_1_6);
     Options.SetIncluder(std::make_unique<ShaderIncluder>());
+    Options.AddMacroDefinition("X_MAX_SAMPLERS", std::to_string(Configs::Static::Graphics::MAX_SAMPLERS));
+    Options.AddMacroDefinition("X_MAX_TEXTURES", std::to_string(Configs::Static::Graphics::MAX_TEXTURES));
 
 #ifdef NDEBUG
     Options.SetOptimizationLevel(shaderc_optimization_level_performance);
@@ -160,6 +163,11 @@ std::vector<uint32_t> CompileGlsl(const std::string& p_Source, ShaderStage p_Sta
     Options.SetOptimizationLevel(shaderc_optimization_level_zero);
     Options.SetGenerateDebugInfo();
 #endif
+
+    if (!p_Optimize) {
+        Options.SetOptimizationLevel(shaderc_optimization_level_zero);
+        Options.SetGenerateDebugInfo();
+    }
 
     const shaderc::SpvCompilationResult Result = Compiler.CompileGlslToSpv(
         p_Source,
@@ -211,10 +219,6 @@ Pipeline CreateGraphicsPipeline(
     const GraphicsPipelineCreateInfo& p_CreateInfo
 )
 {
-    const vkb::DispatchTable& Disp = Device::GetDisp();
-
-    const uint32_t ColorCount = static_cast<uint32_t>(p_CreateInfo.ColorFormats.size());
-
     const std::vector<uint32_t> VertSpirv = CompileGlsl(
         Util::File::ReadRaw(std::string(Configs::Static::Graphics::SHADERS_DIR) + p_VertFile),
         ShaderStage::Vertex,
@@ -229,8 +233,27 @@ Pipeline CreateGraphicsPipeline(
         p_CreateInfo.Defines
     );
 
-    VkShaderModule VertModule = CreateModule(VertSpirv);
-    VkShaderModule FragModule = p_FragFile.empty() ? VK_NULL_HANDLE : CreateModule(FragSpirv);
+    return CreateGraphicsPipeline(VertSpirv, FragSpirv, p_CreateInfo);
+}
+
+Pipeline CreateGraphicsPipeline(const std::vector<uint32_t>& p_Vertex, const std::vector<uint32_t>& p_Fragment,
+    const GraphicsPipelineCreateInfo& p_CreateInfo)
+{
+    const vkb::DispatchTable& Disp = Device::GetDisp();
+    const uint32_t ColorCount = static_cast<uint32_t>(p_CreateInfo.ColorFormats.size());
+
+    VkShaderModule VertModule = CreateModule(p_Vertex);
+    VkShaderModule FragModule = VK_NULL_HANDLE;
+
+    try {
+        if (!p_Fragment.empty()) {
+            FragModule = CreateModule(p_Fragment);
+        }
+    }
+    catch (...) {
+        DestroyModule(VertModule);
+        throw;
+    }
 
     VkPipelineShaderStageCreateInfo VertStageCreateInfo = {};
 
@@ -340,7 +363,11 @@ Pipeline CreateGraphicsPipeline(
 
     VkResult Result = Disp.createPipelineLayout(&PipelineLayoutCreateInfo, nullptr, &ResultPipeline.Layout);
 
-    X_ASSERT(Result != VK_SUCCESS, "failed to create Pipeline layout");
+    if (Result != VK_SUCCESS) {
+        DestroyModule(FragModule);
+        DestroyModule(VertModule);
+        X_ASSERT(true, "failed to create Pipeline layout");
+    }
 
     const VkDynamicState DynamicStates[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
 
@@ -385,18 +412,25 @@ Pipeline CreateGraphicsPipeline(
 
     DestroyModule(VertModule);
 
-    X_ASSERT(Result != VK_SUCCESS, "failed to create graphics Pipeline");
+    if (Result != VK_SUCCESS) {
+        DestroyPipeline(ResultPipeline);
+        X_ASSERT(true, "failed to create graphics Pipeline");
+    }
 
     return ResultPipeline;
 }
 
 Pipeline CreateComputePipeline(const std::string& p_CompFile, const ComputePipelineCreateInfo& p_CreateInfo)
 {
-    const vkb::DispatchTable& Disp = Device::GetDisp();
-
     const std::string CompSource = Util::File::ReadRaw(std::string(Configs::Static::Graphics::SHADERS_DIR) + p_CompFile);
 
-    VkShaderModule CompModule = CreateModule(CompileGlsl(CompSource, ShaderStage::Compute, p_CompFile, p_CreateInfo.Defines));
+    return CreateComputePipeline(CompileGlsl(CompSource, ShaderStage::Compute, p_CompFile, p_CreateInfo.Defines), p_CreateInfo);
+}
+
+Pipeline CreateComputePipeline(const std::vector<uint32_t>& p_Compute, const ComputePipelineCreateInfo& p_CreateInfo)
+{
+    const vkb::DispatchTable& Disp = Device::GetDisp();
+    VkShaderModule CompModule = CreateModule(p_Compute);
 
     VkPushConstantRange PushRange = {};
 
@@ -416,7 +450,10 @@ Pipeline CreateComputePipeline(const std::string& p_CompFile, const ComputePipel
 
     VkResult Result = Disp.createPipelineLayout(&LayoutCreateInfo, nullptr, &ResultPipeline.Layout);
 
-    X_ASSERT(Result != VK_SUCCESS, "failed to create compute Pipeline layout");
+    if (Result != VK_SUCCESS) {
+        DestroyModule(CompModule);
+        X_ASSERT(true, "failed to create compute Pipeline layout");
+    }
 
     VkPipelineShaderStageCreateInfo StageCreateInfo = {};
 
@@ -435,7 +472,10 @@ Pipeline CreateComputePipeline(const std::string& p_CompFile, const ComputePipel
 
     DestroyModule(CompModule);
 
-    X_ASSERT(Result != VK_SUCCESS, "failed to create compute Pipeline");
+    if (Result != VK_SUCCESS) {
+        DestroyPipeline(ResultPipeline);
+        X_ASSERT(true, "failed to create compute Pipeline");
+    }
 
     return ResultPipeline;
 }

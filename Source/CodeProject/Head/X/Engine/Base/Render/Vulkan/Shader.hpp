@@ -64,7 +64,8 @@ struct Pipeline
 namespace Engine::Base::Render::Vk::Shader
 {
 
-std::vector<uint32_t> CompileGlsl(const std::string& p_Source, ShaderStage p_Stage, const std::string& p_Name, const std::vector<std::string>& p_Defines = {});
+std::vector<uint32_t> CompileGlsl(const std::string& p_Source, ShaderStage p_Stage, const std::string& p_Name,
+    const std::vector<std::string>& p_Defines = {}, bool p_Optimize = true);
 
 VkShaderModule CreateModule(const std::vector<uint32_t>& p_Spirv);
 void DestroyModule(VkShaderModule p_Module);
@@ -78,6 +79,10 @@ Pipeline CreateGraphicsPipeline(
 );
 
 Pipeline CreateComputePipeline(const std::string& p_CompFile, const ComputePipelineCreateInfo& p_CreateInfo);
+
+Pipeline CreateGraphicsPipeline(const std::vector<uint32_t>& p_Vertex, const std::vector<uint32_t>& p_Fragment,
+    const GraphicsPipelineCreateInfo& p_CreateInfo);
+Pipeline CreateComputePipeline(const std::vector<uint32_t>& p_Compute, const ComputePipelineCreateInfo& p_CreateInfo);
 
 void DestroyPipeline(const Pipeline& p_Target);
 

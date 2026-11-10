@@ -5,6 +5,7 @@
 #include "X/Engine/Util/Base/Assert.hpp"
 
 #include "X/Engine/Applied/Render/Resources/Textures.hpp"
+#include "X/Engine/Applied/Render/Resources/Shaders.hpp"
 
 #include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
 #include "X/Engine/Base/JobSystem/JobManager.hpp"
@@ -12,11 +13,20 @@
 #include "X/Engine/Base/Render/Vulkan/Frame.hpp"
 #include "X/Engine/Base/Render/Vulkan/GpuResources.hpp"
 #include "X/Engine/Base/Render/Vulkan/Samplers.hpp"
+#include "X/Engine/Base/Render/Vulkan/Shader.hpp"
 #include "X/Engine/Base/Runtime/EngineCore.hpp"
 
+#include <glm/vec4.hpp>
+
+#include <bit>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <exception>
 #include <mutex>
+#include <sstream>
+#include <type_traits>
+#include <unordered_map>
 #include <utility>
 
 namespace Engine::Applied::Render::Scene::Resources::Materials
@@ -34,7 +44,130 @@ struct Material::LoadData
 namespace
 {
 
-constexpr uint32_t MAX_MATERIALS = 4096;
+static_assert(std::is_standard_layout_v<MaterialData>);
+static_assert(sizeof(MaterialData) == 704);
+static_assert(alignof(MaterialData) == alignof(glm::vec4));
+static_assert(offsetof(MaterialData, UvTransforms) == 176);
+static_assert(offsetof(MaterialData, SpecularColor) == 624);
+static_assert(offsetof(MaterialData, Padding1) == 700);
+
+std::once_flag m_Validated;
+
+void ValidateLayout()
+{
+    constexpr uint32_t OpTypeRuntimeArray = 29;
+    constexpr uint32_t OpDecorate = 71;
+    constexpr uint32_t OpMemberDecorate = 72;
+    constexpr uint32_t DecorationArrayStride = 6;
+    constexpr uint32_t DecorationOffset = 35;
+
+    const auto Spirv = ::Engine::Base::Render::Vk::Shader::CompileGlsl(
+        "#version 450\n"
+        "#extension GL_GOOGLE_include_directive : require\n"
+        "#include \"Util/Head/MaterialData.glsl\"\n"
+        "layout(local_size_x = 1) in;\n"
+        "layout(set = 0, binding = 0, std430) readonly buffer InputData { MaterialData Items[]; };\n"
+        "layout(set = 0, binding = 1, std430) buffer OutputData { float Value; };\n"
+        "void main() { Value = Items[gl_GlobalInvocationID.x].HeightWorld; }\n",
+        ::Engine::Base::Render::ShaderStage::Compute, "MaterialAbi", {}, false
+    );
+
+    const std::size_t Offsets[] = {
+        offsetof(MaterialData, BaseColor),
+        offsetof(MaterialData, Emissive),
+        offsetof(MaterialData, Metallic),
+        offsetof(MaterialData, Roughness),
+        offsetof(MaterialData, NormalScale),
+        offsetof(MaterialData, OcclusionStrength),
+        offsetof(MaterialData, AlphaCutoff),
+        offsetof(MaterialData, BaseColorTexture),
+        offsetof(MaterialData, BaseColorSampler),
+        offsetof(MaterialData, MetallicRoughnessTexture),
+        offsetof(MaterialData, MetallicRoughnessSampler),
+        offsetof(MaterialData, NormalTexture),
+        offsetof(MaterialData, NormalSampler),
+        offsetof(MaterialData, OcclusionTexture),
+        offsetof(MaterialData, OcclusionSampler),
+        offsetof(MaterialData, EmissiveTexture),
+        offsetof(MaterialData, EmissiveSampler),
+        offsetof(MaterialData, AlphaMode),
+        offsetof(MaterialData, SpecularTexture),
+        offsetof(MaterialData, SpecularSampler),
+        offsetof(MaterialData, SpecularColorTexture),
+        offsetof(MaterialData, SpecularColorSampler),
+        offsetof(MaterialData, DiffuseTransmissionTexture),
+        offsetof(MaterialData, DiffuseTransmissionSampler),
+        offsetof(MaterialData, DiffuseTransmissionColorTexture),
+        offsetof(MaterialData, DiffuseTransmissionColorSampler),
+        offsetof(MaterialData, ClearcoatTexture),
+        offsetof(MaterialData, ClearcoatSampler),
+        offsetof(MaterialData, ClearcoatRoughnessTexture),
+        offsetof(MaterialData, ClearcoatRoughnessSampler),
+        offsetof(MaterialData, ClearcoatNormalTexture),
+        offsetof(MaterialData, ClearcoatNormalSampler),
+        offsetof(MaterialData, SheenColorTexture),
+        offsetof(MaterialData, SheenColorSampler),
+        offsetof(MaterialData, SheenRoughnessTexture),
+        offsetof(MaterialData, SheenRoughnessSampler),
+        offsetof(MaterialData, HeightTexture),
+        offsetof(MaterialData, HeightSampler),
+        offsetof(MaterialData, Padding0),
+        offsetof(MaterialData, UvTransforms),
+        offsetof(MaterialData, SpecularColor),
+        offsetof(MaterialData, SpecularFactor),
+        offsetof(MaterialData, Ior),
+        offsetof(MaterialData, EmissiveStrength),
+        offsetof(MaterialData, ClearcoatFactor),
+        offsetof(MaterialData, ClearcoatRoughness),
+        offsetof(MaterialData, DiffuseTransmissionColor),
+        offsetof(MaterialData, DiffuseTransmissionFactor),
+        offsetof(MaterialData, SheenColor),
+        offsetof(MaterialData, SheenRoughness),
+        offsetof(MaterialData, ClearcoatNormalScale),
+        offsetof(MaterialData, HeightScale),
+        offsetof(MaterialData, HeightWorld),
+        offsetof(MaterialData, Padding1)
+    };
+
+    std::unordered_map<uint32_t, uint32_t> ArrayElements;
+    std::unordered_map<uint32_t, uint32_t> ArrayStrides;
+    std::unordered_map<uint32_t, std::unordered_map<uint32_t, uint32_t>> MemberOffsets;
+    for (std::size_t Position = 5; Position < Spirv.size();) {
+        const uint32_t Count = Spirv[Position] >> 16;
+        const uint32_t Opcode = Spirv[Position] & 0xFFFF;
+        X_ASSERT(Count == 0 || Count > Spirv.size() - Position, "Invalid material SPIR-V instruction");
+        if (Opcode == OpTypeRuntimeArray && Count == 3) {
+            ArrayElements[Spirv[Position + 1]] = Spirv[Position + 2];
+        }
+        if (Opcode == OpDecorate && Count == 4 && Spirv[Position + 2] == DecorationArrayStride) {
+            ArrayStrides[Spirv[Position + 1]] = Spirv[Position + 3];
+        }
+        if (Opcode == OpMemberDecorate && Count == 5 && Spirv[Position + 3] == DecorationOffset) {
+            MemberOffsets[Spirv[Position + 1]][Spirv[Position + 2]] = Spirv[Position + 4];
+        }
+        Position += Count;
+    }
+
+    bool Matched = false;
+    for (const auto& [Array, Element] : ArrayElements) {
+        const auto Members = MemberOffsets.find(Element);
+        if (Members == MemberOffsets.end() || Members->second.size() != sizeof(Offsets) / sizeof(Offsets[0])) {
+            continue;
+        }
+        X_ASSERT(ArrayStrides[Array] != sizeof(MaterialData), "MaterialData GPU array stride mismatch");
+        for (uint32_t I = 0; I < sizeof(Offsets) / sizeof(Offsets[0]); ++I) {
+            const auto Offset = Members->second.find(I);
+            X_ASSERT(Offset == Members->second.end() || Offset->second != Offsets[I], "MaterialData GPU member offset mismatch");
+        }
+        Matched = true;
+    }
+    X_ASSERT(!Matched, "MaterialData layout was not found in SPIR-V");
+}
+
+void ValidateAbi()
+{
+    std::call_once(m_Validated, ValidateLayout);
+}
 
 std::mutex m_RegistryMutex;
 std::vector<MaterialData> m_Data;
@@ -48,7 +181,8 @@ struct ErasedMaterial
 
 std::vector<ErasedMaterial> m_ErasedMaterials;
 ::Engine::Base::Render::Buffer m_Buffers[::Engine::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT];
-bool m_Dirty = false;
+uint64_t m_Version = 0;
+uint64_t m_BufferVersions[::Engine::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT] = {};
 
 const ::Engine::Base::BootstrapManager::DeferredBootstrapRegistration::InitRegistrar
     RegisterInit("materials_init", Init, 30);
@@ -65,8 +199,14 @@ std::string MakeKey(const MaterialCreateInfo& p_CreateInfo)
 {
     std::string Key;
 
+    const std::string ShaderKey = p_CreateInfo.TargetShader ? p_CreateInfo.TargetShader->GetKey() : std::string();
+    Key += std::to_string(ShaderKey.size()) + ":" + ShaderKey;
+    std::ostringstream ExtraSetKey;
+    ExtraSetKey << p_CreateInfo.ExtraSet;
+    Key += ":" + ExtraSetKey.str();
+
     const auto Add = [&Key](float p_Value) {
-        Key += ":" + std::to_string(p_Value);
+        Key += ":" + std::to_string(std::bit_cast<uint32_t>(p_Value));
     };
 
     const auto AddVector3 = [&Add](const glm::vec3& p_Value) {
@@ -125,7 +265,8 @@ std::string MakeKey(const MaterialCreateInfo& p_CreateInfo)
     };
 
     for (const MaterialTexture* Texture : Textures) {
-        Key += ":" + TextureKey(*Texture);
+        const std::string Path = TextureKey(*Texture);
+        Key += ":" + std::to_string(Path.size()) + ":" + Path;
         Key += ":" + std::to_string(static_cast<int>(Texture->Sampler.MagFilter));
         Key += ":" + std::to_string(static_cast<int>(Texture->Sampler.MinFilter));
         Key += ":" + std::to_string(static_cast<int>(Texture->Sampler.MipMode));
@@ -239,7 +380,7 @@ uint32_t TakeIndex()
         return Index;
     }
 
-    X_ASSERT(m_Data.size() >= MAX_MATERIALS, "materials limit exceeded");
+    X_ASSERT(m_Data.size() >= ::Engine::Configs::Static::Graphics::MAX_MATERIALS, "materials limit exceeded");
     m_Data.push_back({});
     return static_cast<uint32_t>(m_Data.size() - 1);
 }
@@ -261,7 +402,7 @@ bool TextureFailed(const MaterialTexture& p_Texture, std::string& p_Reason)
     }
 
     if (p_Texture.Target.GetState() == ::Engine::Applied::Render::Resources::ResourceState::Failed) {
-        p_Reason = p_Texture.Target->GetFailureReason();
+        p_Reason = p_Texture.Target->GetKey() + ": " + p_Texture.Target->GetFailureReason();
         return true;
     }
 
@@ -288,17 +429,18 @@ bool TexturesReady(const MaterialCreateInfo& p_CreateInfo, std::string& p_Reason
         &p_CreateInfo.HeightTexture
     };
 
+    bool Ready = true;
     for (const MaterialTexture* Texture : Textures) {
         if (TextureFailed(*Texture, p_Reason)) {
             return false;
         }
 
         if (Texture->Target && !Texture->Target.IsReady()) {
-            return false;
+            Ready = false;
         }
     }
 
-    return true;
+    return Ready;
 }
 
 void SetTexture(MaterialData& p_Data, uint32_t p_Slot, const MaterialTexture& p_Source, uint32_t& p_TextureIndex, uint32_t& p_SamplerIndex)
@@ -334,6 +476,11 @@ std::string Material::GetTypeName() const
 
 void Material::BeginLoad()
 {
+    if (!CreateInfo.TargetShader) {
+        SetFailed("Material requires Shader Ref");
+        return;
+    }
+
     const std::shared_ptr<LoadData> DataState = LoadState;
     const MaterialCreateInfo Info = CreateInfo;
 
@@ -342,6 +489,7 @@ void Material::BeginLoad()
         "material_load_" + GetKey(),
         [DataState, Info] {
             try {
+                ValidateAbi();
                 DataState->Data = BuildBaseData(Info);
             }
             catch (const std::exception& Error) {
@@ -362,6 +510,14 @@ void Material::BeginLoad()
 void Material::Update()
 {
     if (GetState() != ::Engine::Applied::Render::Resources::ResourceState::Loading) {
+        return;
+    }
+
+    if (CreateInfo.TargetShader.GetState() == ::Engine::Applied::Render::Resources::ResourceState::Failed) {
+        SetFailed("Shader dependency failed: " + CreateInfo.TargetShader->GetFailureReason());
+        return;
+    }
+    if (!CreateInfo.TargetShader.IsReady()) {
         return;
     }
 
@@ -415,7 +571,7 @@ void Material::Update()
     {
         std::lock_guard<std::mutex> Lock(m_RegistryMutex);
         m_Data[Index] = Data;
-        m_Dirty = true;
+        ++m_Version;
     }
 
     SetState(::Engine::Applied::Render::Resources::ResourceState::Ready);
@@ -432,6 +588,9 @@ const MaterialData& Material::GetData() const { return Data; }
 bool Material::IsDoubleSided() const { return CreateInfo.DoubleSided; }
 bool Material::CastsShadows() const { return CreateInfo.CastShadows; }
 AlphaMode Material::GetAlphaMode() const { return CreateInfo.Alpha; }
+const ::Engine::Applied::Render::Resources::Ref<
+    ::Engine::Applied::Render::Resources::Shaders::Shader>& Material::GetShader() const { return CreateInfo.TargetShader; }
+VkDescriptorSet Material::GetExtraSet() const { return CreateInfo.ExtraSet; }
 
 void Init()
 {
@@ -439,7 +598,7 @@ void Init()
 
     for (auto& Buffer : m_Buffers) {
         Buffer = ::Engine::Base::Render::Vk::GpuResources::CreateBuffer(
-            sizeof(MaterialData) * MAX_MATERIALS,
+            sizeof(MaterialData) * ::Engine::Configs::Static::Graphics::MAX_MATERIALS,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
             VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
         );
@@ -456,7 +615,8 @@ void Cleanup()
     m_Data.clear();
     m_FreeIndices.clear();
     m_ErasedMaterials.clear();
-    m_Dirty = false;
+    m_Version = 0;
+    for (auto& Version : m_BufferVersions) { Version = 0; }
 }
 
 void Flush()
@@ -473,21 +633,21 @@ void Flush()
         m_Data[It->Index] = {};
         m_FreeIndices.push_back(It->Index);
         It = m_ErasedMaterials.erase(It);
-        m_Dirty = true;
-    }
-
-    if (!m_Dirty || m_Data.empty()) {
-        return;
+        ++m_Version;
     }
 
     const uint32_t Frame = ::Engine::Base::Render::Vk::Frame::GetCurrentFrameIndex();
+    if (m_BufferVersions[Frame] == m_Version || m_Data.empty()) {
+        return;
+    }
+
     ::Engine::Base::Render::Vk::GpuResources::UploadBuffer(
         m_Buffers[Frame],
         m_Data.data(),
         sizeof(MaterialData) * m_Data.size()
     );
 
-    m_Dirty = false;
+    m_BufferVersions[Frame] = m_Version;
 }
 
 const std::vector<MaterialData>& GetData()

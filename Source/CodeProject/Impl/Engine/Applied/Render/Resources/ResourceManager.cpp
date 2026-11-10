@@ -1,10 +1,17 @@
 #include "X/Engine/Applied/Render/Resources/ResourceManager.hpp"
 
 #include "X/Configs/PreCompiled/Dynamic.hpp"
+#include "X/Configs/Static.hpp"
+
+#include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
 
 #include "X/Engine/Base/JobSystem/DeferredTaskRegistration.hpp"
+
+#include "X/Engine/Base/Render/RenderingPool.hpp"
+
 #include "X/Engine/Base/Runtime/EngineCore.hpp"
 
+#include <exception>
 #include <iostream>
 #include <mutex>
 #include <unordered_map>
@@ -19,6 +26,69 @@ namespace
 
 std::mutex m_ResourcesMutex;
 std::unordered_map<std::string, std::weak_ptr<Resource>> m_Resources;
+
+struct RetiredResource
+{
+    Resource* Target = nullptr;
+    int FramesLeft = ::Engine::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT;
+};
+
+std::mutex m_RetiredMutex;
+std::vector<RetiredResource> m_Retired;
+
+void Destroy(Resource* p_Resource)
+{
+    std::unique_ptr<Resource> Owner(p_Resource);
+    Owner->SetState(ResourceState::Unloading);
+    Owner->Unload();
+}
+
+void CollectRetired()
+{
+    std::vector<Resource*> Ready;
+    {
+        std::lock_guard<std::mutex> Lock(m_RetiredMutex);
+        for (auto It = m_Retired.begin(); It != m_Retired.end();) {
+            if (It->FramesLeft-- > 0) {
+                ++It;
+            } else {
+                Ready.push_back(It->Target);
+                It = m_Retired.erase(It);
+            }
+        }
+    }
+    for (Resource* Target : Ready) {
+        Destroy(Target);
+    }
+}
+
+void Cleanup()
+{
+    while (true) {
+        std::vector<RetiredResource> Retired;
+        {
+            std::lock_guard<std::mutex> Lock(m_RetiredMutex);
+            Retired.swap(m_Retired);
+        }
+        if (Retired.empty()) {
+            break;
+        }
+        for (const auto& Item : Retired) {
+            Destroy(Item.Target);
+        }
+    }
+}
+
+void Init()
+{
+    ::Engine::Base::Render::RenderingPool::Register("resources_collect_retired", CollectRetired, 110);
+}
+
+const ::Engine::Base::BootstrapManager::DeferredBootstrapRegistration::InitRegistrar
+    RegisterInit("resources_init", Init, -50);
+
+const ::Engine::Base::BootstrapManager::DeferredBootstrapRegistration::CleanRegistrar
+    RegisterClean("resources_cleanup", Cleanup, 76);
 
 const ::Engine::Base::JobSystem::DeferredTaskRegistration::Registrar
     RegisterUpdate(
@@ -98,9 +168,8 @@ std::shared_ptr<Resource> Acquire(std::unique_ptr<Resource> p_Resource)
     std::shared_ptr<Resource> Shared(
         p_Resource.release(),
         [](Resource* p_Resource) {
-            p_Resource->SetState(ResourceState::Unloading);
-            p_Resource->Unload();
-            delete p_Resource;
+            std::lock_guard<std::mutex> Lock(m_RetiredMutex);
+            m_Retired.push_back({ p_Resource });
         }
     );
     m_Resources.emplace(CacheKey, Shared);
@@ -127,7 +196,15 @@ void UpdateAll()
     }
 
     for (const std::shared_ptr<Resource>& Resource : Active) {
-        Resource->Update();
+        try {
+            Resource->Update();
+        }
+        catch (const std::exception& Error) {
+            Resource->SetFailed(Error.what());
+        }
+        catch (...) {
+            Resource->SetFailed("Unknown resource update failure");
+        }
 
 #ifdef XP_DEV_FEATURES_ENABLED
         if (Resource->GetState() == ResourceState::Failed && Resource->TryMarkFailureReported()) {

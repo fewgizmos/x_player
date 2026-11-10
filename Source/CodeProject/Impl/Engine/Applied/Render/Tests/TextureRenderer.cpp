@@ -5,6 +5,7 @@
 #include "X/Configs/Static.hpp"
 
 #include "X/Engine/Applied/Render/Resources/ResourceManager.hpp"
+#include "X/Engine/Applied/Render/Resources/Shaders.hpp"
 #include "X/Engine/Applied/Render/Resources/Textures.hpp"
 
 #include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
@@ -25,7 +26,9 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <utility>
 
 namespace Engine::Applied::Render::Tests::TextureRenderer
 {
@@ -46,7 +49,7 @@ struct PushConstants
     uint32_t SamplerIndex;
 };
 
-Engine::Base::Render::Pipeline m_Pipeline;
+Engine::Applied::Render::Resources::Ref<Engine::Applied::Render::Resources::Shaders::Shader> m_Shader;
 Engine::Base::Render::Buffer m_VertexBuffer;
 Engine::Base::Render::Buffer m_IndexBuffer;
 std::unique_ptr<Engine::Applied::Render::Resources::Ref<
@@ -80,11 +83,12 @@ void CreatePipeline()
         { 1, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, UV) }
     };
 
-    m_Pipeline = ::Engine::Base::Render::Vk::Shader::CreateGraphicsPipeline(
-        "Tests/TextureTest.vert",
-        "Tests/TextureTest.frag",
-        Info
-    );
+    ::Engine::Applied::Render::Resources::Shaders::ShaderCreateInfo ShaderInfo;
+    ShaderInfo.VertexFile = "Tests/TextureTest.vert";
+    ShaderInfo.FragmentFile = "Tests/TextureTest.frag";
+    ShaderInfo.Graphics = std::move(Info);
+    m_Shader = ::Engine::Applied::Render::Resources::Ref<
+        ::Engine::Applied::Render::Resources::Shaders::Shader>(std::move(ShaderInfo));
 }
 
 void CreateBuffers()
@@ -125,7 +129,8 @@ void Init()
     CreateBuffers();
     m_DefaultEngineLogo = std::make_unique<Engine::Applied::Render::Resources::Ref<
         Engine::Applied::Render::Resources::Textures::Texture>>(
-        "Resources/Images/DefaultEngineLogo.png"
+        "Resources/Images/DefaultEngineLogo.png",
+        VK_FORMAT_R8G8B8A8_SRGB
     );
 
     ::Engine::Base::Render::RenderingPool::Register("texture_test", Render, 5);
@@ -135,10 +140,7 @@ void Cleanup()
 {
     m_DefaultEngineLogo.reset();
 
-    if (m_Pipeline.Handle != VK_NULL_HANDLE) {
-        ::Engine::Base::Render::Vk::Shader::DestroyPipeline(m_Pipeline);
-        m_Pipeline = {};
-    }
+    m_Shader = {};
 
     if (m_VertexBuffer.Handle != VK_NULL_HANDLE) {
         ::Engine::Base::Render::Vk::GpuResources::DestroyBuffer(m_VertexBuffer);
@@ -151,11 +153,12 @@ void Cleanup()
 
 void Render()
 {
-    if (!m_DefaultEngineLogo || !m_DefaultEngineLogo->IsReady()) {
+    if (!m_Shader.IsReady() || !m_DefaultEngineLogo || !m_DefaultEngineLogo->IsReady()) {
         return;
     }
 
     const auto& Texture = *m_DefaultEngineLogo->Get();
+    const auto& Pipeline = m_Shader->GetGraphicsPipeline();
 
     const auto& Frame = ::Engine::Base::Render::Vk::Frame::GetCurrentFrame();
     const auto& Image = ::Engine::Base::Render::Vk::Frame::GetCurrentImage();
@@ -197,7 +200,7 @@ void Render()
 
     Disp.cmdSetViewport(Frame.CommandBuffer, 0, 1, &Viewport);
     Disp.cmdSetScissor(Frame.CommandBuffer, 0, 1, &Scissor);
-    Disp.cmdBindPipeline(Frame.CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_Pipeline.Handle);
+    Disp.cmdBindPipeline(Frame.CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, Pipeline.Handle);
 
     const VkDeviceSize Offset = 0;
     Disp.cmdBindVertexBuffers(Frame.CommandBuffer, 0, 1, &m_VertexBuffer.Handle, &Offset);
@@ -207,7 +210,7 @@ void Render()
     Disp.cmdBindDescriptorSets(
         Frame.CommandBuffer,
         VK_PIPELINE_BIND_POINT_GRAPHICS,
-        m_Pipeline.Layout,
+        Pipeline.Layout,
         0,
         1,
         &DescriptorSet,
@@ -217,7 +220,7 @@ void Render()
 
     ::Engine::Base::Render::Vk::Commands::PushConstants(
         Frame.CommandBuffer,
-        m_Pipeline.Layout,
+        Pipeline.Layout,
         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
         sizeof(PushConstants),
         &Constants

@@ -33,6 +33,7 @@ inline constexpr int MAX_FRAMES_IN_FLIGHT = 4;
 
 inline constexpr uint32_t MAX_SAMPLERS = 64;
 inline constexpr uint32_t MAX_TEXTURES = 4096;
+inline constexpr uint32_t MAX_MATERIALS = 4096;
 
 inline constexpr VkFormat DEPTH_FORMAT = VK_FORMAT_D32_SFLOAT;
 inline constexpr VkFormat HDR_FORMAT   = VK_FORMAT_R16G16B16A16_SFLOAT;

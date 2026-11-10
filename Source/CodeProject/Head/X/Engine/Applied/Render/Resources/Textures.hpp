@@ -18,7 +18,7 @@ class Texture final : public Resource
 public:
     struct LoadData;
 
-    explicit Texture(std::string p_Path);
+    Texture(std::string p_Path, VkFormat p_Format);
     ~Texture() override;
 
     std::string GetTypeName() const override;
@@ -28,8 +28,11 @@ public:
 
     const Engine::Base::Render::Image& GetImage() const;
     uint32_t GetIndex() const;
+    VkFormat GetFormat() const;
 
 private:
+    std::string Path;
+    VkFormat Format;
     Engine::Base::Render::Image m_Image;
     uint32_t m_Index = UINT32_MAX;
     std::shared_ptr<LoadData> m_LoadData;
