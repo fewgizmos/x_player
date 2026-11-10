@@ -1,13 +1,13 @@
 #include "X/Engine/Base/Viewport/Surface.hpp"
 
+#include "X/Configs/PreCompiled/Dynamic.hpp"
+#include "X/Configs/Static.hpp"
+
 #include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
 #include "X/Engine/Base/JobSystem/DeferredTaskRegistration.hpp"
 #include "X/Engine/Base/Runtime/EngineCore.hpp"
 
 #include "X/Engine/Base/Platform/SDL3WM.hpp"
-
-#include "X/Configs/PreCompiled/Dynamic.hpp"
-#include "X/Configs/Static.hpp"
 
 #include <SDL3/SDL_pixels.h>
 #include <SDL3/SDL_surface.h>

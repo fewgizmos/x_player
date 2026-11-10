@@ -1,6 +1,7 @@
 #include "X/Engine/Applied/Render/UI/ImGuiScaler.hpp"
 
 #include "X/Configs/Static.hpp"
+
 #include "X/Engine/Base/Viewport/Surface.hpp"
 
 #include <SDL3/SDL_video.h>

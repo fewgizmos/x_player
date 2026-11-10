@@ -2,6 +2,7 @@
 
 #include "X/Engine/Applied/Render/Resources/ResourceManager.hpp"
 #include "X/Engine/Applied/Render/Resources/Textures.hpp"
+
 #include "X/Engine/Base/Render/Vulkan/GpuResources.hpp"
 #include "X/Engine/Base/Render/Vulkan/Samplers.hpp"
 

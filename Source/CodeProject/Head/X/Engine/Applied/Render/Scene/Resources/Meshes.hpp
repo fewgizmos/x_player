@@ -1,6 +1,7 @@
 #pragma once
 
 #include "X/Engine/Applied/Render/Resources/ResourceManager.hpp"
+
 #include "X/Engine/Base/Render/Vulkan/GpuResources.hpp"
 
 #include <glm/vec3.hpp>

@@ -1,6 +1,7 @@
 #include "X/Engine/Applied/Render/UI/Resources/Fonts.hpp"
 
 #include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
+
 #include "X/Engine/Util/Base/Assert.hpp"
 
 #include <algorithm>

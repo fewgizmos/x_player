@@ -1,9 +1,8 @@
 #include "X/Engine/Base/Viewport/Inputs.hpp"
 
 #include "X/Engine/Base/JobSystem/DeferredTaskRegistration.hpp"
-#include "X/Engine/Base/Runtime/EngineCore.hpp"
-
 #include "X/Engine/Base/Platform/SDL3App.hpp"
+#include "X/Engine/Base/Runtime/EngineCore.hpp"
 
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_mouse.h>

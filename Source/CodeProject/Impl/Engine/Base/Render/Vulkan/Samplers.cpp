@@ -1,9 +1,10 @@
 #include "X/Engine/Base/Render/Vulkan/Samplers.hpp"
 
-#include "X/Engine/Base/Render/Vulkan/Device.hpp"
 #include "X/Configs/Static.hpp"
 
 #include "X/Engine/Util/Base/Assert.hpp"
+
+#include "X/Engine/Base/Render/Vulkan/Device.hpp"
 
 #include <algorithm>
 #include <vector>

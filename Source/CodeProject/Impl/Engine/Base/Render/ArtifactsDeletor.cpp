@@ -1,8 +1,8 @@
 #include "X/Engine/Base/Render/ArtifactsDeletor.hpp"
 
-#include <vector>
 #include <exception>
 #include <utility>
+#include <vector>
 
 namespace Engine::Base::Render::ArtifactsDeletor
 {

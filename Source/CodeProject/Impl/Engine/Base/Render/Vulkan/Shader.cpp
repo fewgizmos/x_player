@@ -1,7 +1,8 @@
 #include "X/Engine/Base/Render/Vulkan/Shader.hpp"
 
-#include "X/Engine/Base/Render/Vulkan/Device.hpp"
 #include "X/Configs/Static.hpp"
+
+#include "X/Engine/Base/Render/Vulkan/Device.hpp"
 
 #include "X/Engine/Util/Base/Assert.hpp"
 #include "X/Engine/Util/File.hpp"

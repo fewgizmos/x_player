@@ -1,12 +1,12 @@
-#include "X/Configs/PreCompiled/Dynamic.hpp"
+#include "X/Engine/Applied/Render/Tests/TextureRenderer.hpp"
 
 #ifdef XP_DEV_FEATURES_ENABLED
 
-#include "X/Engine/Applied/Render/Tests/TextureRenderer.hpp"
-
 #include "X/Configs/Static.hpp"
+
 #include "X/Engine/Applied/Render/Resources/ResourceManager.hpp"
 #include "X/Engine/Applied/Render/Resources/Textures.hpp"
+
 #include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
 #include "X/Engine/Base/Render/RenderingPool.hpp"
 #include "X/Engine/Base/Render/Vulkan/Commands.hpp"
@@ -20,11 +20,12 @@
 #include <glm/mat4x4.hpp>
 #include <glm/vec2.hpp>
 
+#include <vk_mem_alloc.h>
+#include <vulkan/vulkan_core.h>
+
 #include <array>
 #include <cstddef>
 #include <memory>
-#include <vulkan/vulkan_core.h>
-#include <vk_mem_alloc.h>
 
 namespace Engine::Applied::Render::Tests::TextureRenderer
 {

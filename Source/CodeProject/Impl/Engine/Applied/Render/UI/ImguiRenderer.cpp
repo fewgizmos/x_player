@@ -3,23 +3,25 @@
 #include "X/Engine/Applied/Render/UI/Resources/Fonts.hpp"
 #include "X/Engine/Applied/Render/UI/ImGuiScaler.hpp"
 
+#include "X/Configs/Static.hpp"
+
+#include "X/Engine/Util/Base/Assert.hpp"
+#include "X/Engine/Util/File.hpp"
+
 #include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
 #include "X/Engine/Base/JobSystem/DeferredTaskRegistration.hpp"
+#include "X/Engine/Base/Platform/SDL3App.hpp"
 #include "X/Engine/Base/Render/RenderManager.hpp"
 #include "X/Engine/Base/Render/RenderingPool.hpp"
 #include "X/Engine/Base/Render/Vulkan/Device.hpp"
 #include "X/Engine/Base/Render/Vulkan/Frame.hpp"
 #include "X/Engine/Base/Render/Vulkan/Shader.hpp"
 #include "X/Engine/Base/Runtime/EngineCore.hpp"
-#include "X/Engine/Base/Platform/SDL3App.hpp"
 #include "X/Engine/Base/Viewport/Surface.hpp"
-#include "X/Configs/Static.hpp"
-#include "X/Engine/Util/Base/Assert.hpp"
-#include "X/Engine/Util/File.hpp"
 
-#include <imgui.h>
 #include <backends/imgui_impl_sdl3.h>
 #include <backends/imgui_impl_vulkan.h>
+#include <imgui.h>
 
 #include <vulkan/vulkan_core.h>
 

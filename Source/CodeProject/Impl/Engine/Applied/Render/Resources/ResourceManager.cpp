@@ -1,6 +1,7 @@
 #include "X/Engine/Applied/Render/Resources/ResourceManager.hpp"
 
 #include "X/Configs/PreCompiled/Dynamic.hpp"
+
 #include "X/Engine/Base/JobSystem/DeferredTaskRegistration.hpp"
 #include "X/Engine/Base/Runtime/EngineCore.hpp"
 

@@ -1,9 +1,9 @@
 #include "X/Engine/Base/Render/Vulkan/Descriptors.hpp"
 
+#include "X/Engine/Util/Base/Assert.hpp"
+
 #include "X/Engine/Base/Render/Vulkan/Device.hpp"
 #include "X/Engine/Base/Render/Vulkan/GpuResources.hpp"
-
-#include "X/Engine/Util/Base/Assert.hpp"
 
 namespace Engine::Base::Render::Vk::Descriptors
 {

@@ -1,7 +1,11 @@
 #include "X/Engine/Applied/Render/Scene/Resources/Materials.hpp"
 
 #include "X/Configs/Static.hpp"
+
+#include "X/Engine/Util/Base/Assert.hpp"
+
 #include "X/Engine/Applied/Render/Resources/Textures.hpp"
+
 #include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
 #include "X/Engine/Base/JobSystem/JobManager.hpp"
 #include "X/Engine/Base/Render/RenderingPool.hpp"
@@ -9,12 +13,9 @@
 #include "X/Engine/Base/Render/Vulkan/GpuResources.hpp"
 #include "X/Engine/Base/Render/Vulkan/Samplers.hpp"
 #include "X/Engine/Base/Runtime/EngineCore.hpp"
-#include "X/Engine/Util/Base/Assert.hpp"
 
-#include <algorithm>
 #include <cmath>
 #include <exception>
-#include <limits>
 #include <mutex>
 #include <utility>
 

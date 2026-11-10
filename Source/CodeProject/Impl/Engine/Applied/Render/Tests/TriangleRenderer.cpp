@@ -1,12 +1,12 @@
-#include "X/Configs/PreCompiled/Dynamic.hpp"
+#include "X/Engine/Applied/Render/Tests/TriangleRenderer.hpp"
 
 #ifdef XP_DEV_FEATURES_ENABLED
 
-#include "X/Engine/Applied/Render/Tests/TriangleRenderer.hpp"
-
 #include "X/Configs/Static.hpp"
+
 #include "X/Engine/Applied/Render/Resources/ResourceManager.hpp"
 #include "X/Engine/Applied/Render/Scene/Resources/Meshes.hpp"
+
 #include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
 #include "X/Engine/Base/Render/RenderingPool.hpp"
 #include "X/Engine/Base/Render/Vulkan/Commands.hpp"
@@ -14,13 +14,14 @@
 #include "X/Engine/Base/Render/Vulkan/Frame.hpp"
 #include "X/Engine/Base/Render/Vulkan/GpuResources.hpp"
 #include "X/Engine/Base/Render/Vulkan/Shader.hpp"
+
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/mat4x4.hpp>
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 
-#include <vulkan/vulkan_core.h>
 #include <vk_mem_alloc.h>
+#include <vulkan/vulkan_core.h>
 
 #include <array>
 #include <cstddef>

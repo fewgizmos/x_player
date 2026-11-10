@@ -1,5 +1,14 @@
 #include "X/Engine/Base/Render/RenderManager.hpp"
 
+#include "X/Configs/Static.hpp"
+#include "X/Configs/PreCompiled/Dynamic.hpp"
+
+#include "X/Engine/Util/Base/Assert.hpp"
+
+#include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
+#include "X/Engine/Base/JobSystem/DeferredTaskRegistration.hpp"
+#include "X/Engine/Base/Runtime/EngineCore.hpp"
+
 #include "X/Engine/Base/Render/ArtifactsDeletor.hpp"
 #include "X/Engine/Base/Render/RenderingPool.hpp"
 
@@ -9,16 +18,7 @@
 #include "X/Engine/Base/Render/Vulkan/GpuResources.hpp"
 #include "X/Engine/Base/Render/Vulkan/Samplers.hpp"
 
-#include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
-#include "X/Engine/Base/JobSystem/DeferredTaskRegistration.hpp"
-#include "X/Engine/Base/Runtime/EngineCore.hpp"
-
 #include "X/Engine/Base/Viewport/Surface.hpp"
-
-#include "X/Configs/Static.hpp"
-#include "X/Configs/PreCompiled/Dynamic.hpp"
-
-#include "X/Engine/Util/Base/Assert.hpp"
 
 #include <SDL3/SDL_error.h>
 #include <SDL3/SDL_stdinc.h>

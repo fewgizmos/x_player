@@ -1,13 +1,14 @@
 #pragma once
 
 #include "X/Engine/Applied/Render/Resources/ResourceManager.hpp"
+
 #include "X/Engine/Base/Render/Vulkan/GpuResources.hpp"
 
 #include <vulkan/vulkan_core.h>
 
+#include <cstdint>
 #include <memory>
 #include <string>
-#include <cstdint>
 
 namespace Engine::Applied::Render::Resources::Textures
 {
