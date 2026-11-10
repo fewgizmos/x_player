@@ -7,6 +7,7 @@
 
 #include <memory>
 #include <string>
+#include <cstdint>
 
 namespace Engine::Applied::Render::Resources::Textures
 {
@@ -25,18 +26,19 @@ public:
     void Unload() override;
 
     const Engine::Base::Render::Image& GetImage() const;
-    VkDescriptorSet GetDescriptorSet() const;
+    uint32_t GetIndex() const;
 
 private:
     Engine::Base::Render::Image m_Image;
-    VkDescriptorSet m_DescriptorSet = VK_NULL_HANDLE;
+    uint32_t m_Index = UINT32_MAX;
     std::shared_ptr<LoadData> m_LoadData;
 };
 
 void Init();
 void Cleanup();
-void Update();
 
-VkDescriptorSetLayout GetSetLayout();
+VkDescriptorSetLayout GetBindlessSetLayout();
+VkDescriptorSet GetBindlessSet();
+void SyncSamplers();
 
 }

@@ -1,17 +1,40 @@
 #include "X/Engine/Applied/Render/Scene/Resources/Meshes.hpp"
 
+#include "X/Engine/Base/JobSystem/JobManager.hpp"
 #include "X/Engine/Base/Render/Vulkan/GpuResources.hpp"
+#include "X/Engine/Base/Runtime/EngineCore.hpp"
 
 #include <glm/common.hpp>
 
 #include <algorithm>
+#include <exception>
 #include <limits>
+#include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
 
 namespace Engine::Applied::Render::Scene::Resources::Meshes
 {
+
+struct Mesh::LoadData
+{
+    std::mutex Mutex;
+
+    std::vector<Vertex> Vertices;
+    std::vector<uint32_t> Indices;
+
+    std::vector<uint32_t> SortedIndices;
+    std::vector<Cluster> Clusters;
+    std::vector<Cluster> ClusterGroups;
+
+    glm::vec3 BoundsMin = glm::vec3(0.0f);
+    glm::vec3 BoundsMax = glm::vec3(0.0f);
+
+    std::string FailureReason;
+    bool Finished = false;
+    bool Failed = false;
+};
 
 namespace
 {
@@ -64,6 +87,7 @@ Mesh::Mesh(std::vector<Vertex> p_Vertices, std::vector<uint32_t> p_Indices)
     , m_Indices(std::move(p_Indices))
     , m_VertexCount(static_cast<uint32_t>(m_Vertices.size()))
     , m_IndexCount(static_cast<uint32_t>(m_Indices.size()))
+    , LoadDataState(std::make_shared<LoadData>())
 {
 }
 
@@ -76,92 +100,198 @@ std::string Mesh::GetTypeName() const
 
 void Mesh::BeginLoad()
 {
-    m_BoundsMin = glm::vec3(std::numeric_limits<float>::max());
-    m_BoundsMax = glm::vec3(std::numeric_limits<float>::lowest());
+    const std::shared_ptr<LoadData> Data = LoadDataState;
 
-    for (const Vertex& VertexValue : m_Vertices) {
-        m_BoundsMin = glm::min(m_BoundsMin, VertexValue.Position);
-        m_BoundsMax = glm::max(m_BoundsMax, VertexValue.Position);
-    }
+    Data->Vertices = std::move(m_Vertices);
+    Data->Indices = std::move(m_Indices);
 
-    std::vector<std::pair<uint32_t, uint32_t>> Keys(m_Indices.size() / TRIANGLE_INDICES);
+    ::Engine::Base::JobSystem::It::PushBackground(
+        ::Engine::Base::Runtime::EngineCore::ResourceLoaderTh,
+        "mesh_load_" + GetKey(),
+        [Data] {
+            try {
+                if (Data->Vertices.empty() || Data->Indices.empty() || Data->Indices.size() % TRIANGLE_INDICES != 0) {
+                    Data->FailureReason = "mesh data is empty or has incomplete triangles";
+                    Data->Failed = true;
+                } else {
+                    Data->BoundsMin = glm::vec3(std::numeric_limits<float>::max());
+                    Data->BoundsMax = glm::vec3(std::numeric_limits<float>::lowest());
 
-    for (uint32_t I = 0; I < Keys.size(); ++I) {
-        const glm::vec3 Centroid = (
-            m_Vertices[m_Indices[I * TRIANGLE_INDICES]].Position
-            + m_Vertices[m_Indices[I * TRIANGLE_INDICES + 1]].Position
-            + m_Vertices[m_Indices[I * TRIANGLE_INDICES + 2]].Position
-        ) / 3.0f;
+                    for (const Vertex& VertexValue : Data->Vertices) {
+                        Data->BoundsMin = glm::min(Data->BoundsMin, VertexValue.Position);
+                        Data->BoundsMax = glm::max(Data->BoundsMax, VertexValue.Position);
+                    }
 
-        Keys[I] = { MortonCode(Centroid, m_BoundsMin, m_BoundsMax - m_BoundsMin), I };
-    }
+                    for (const uint32_t Index : Data->Indices) {
+                        if (Index >= Data->Vertices.size()) {
+                            Data->FailureReason = "mesh index is out of range";
+                            Data->Failed = true;
+                            break;
+                        }
+                    }
 
-    std::sort(Keys.begin(), Keys.end());
+                    if (!Data->Failed) {
+                        std::vector<std::pair<uint32_t, uint32_t>> Keys(Data->Indices.size() / TRIANGLE_INDICES);
 
-    std::vector<uint32_t> SortedIndices;
-    SortedIndices.reserve(m_Indices.size());
+                        for (uint32_t I = 0; I < Keys.size(); ++I) {
+                            const glm::vec3 Centroid = (
+                                Data->Vertices[Data->Indices[I * TRIANGLE_INDICES]].Position
+                                + Data->Vertices[Data->Indices[I * TRIANGLE_INDICES + 1]].Position
+                                + Data->Vertices[Data->Indices[I * TRIANGLE_INDICES + 2]].Position
+                            ) / 3.0f;
 
-    for (const auto& Key : Keys) {
-        for (uint32_t Corner = 0; Corner < TRIANGLE_INDICES; ++Corner) {
-            SortedIndices.push_back(m_Indices[Key.second * TRIANGLE_INDICES + Corner]);
+                            Keys[I] = { MortonCode(Centroid, Data->BoundsMin, Data->BoundsMax - Data->BoundsMin), I };
+                        }
+
+                        std::sort(Keys.begin(), Keys.end());
+
+                        Data->SortedIndices.reserve(Data->Indices.size());
+
+                        for (const auto& Key : Keys) {
+                            for (uint32_t Corner = 0; Corner < TRIANGLE_INDICES; ++Corner) {
+                                Data->SortedIndices.push_back(Data->Indices[Key.second * TRIANGLE_INDICES + Corner]);
+                            }
+                        }
+
+                        const uint32_t ClusterIndexCount = CLUSTER_TRIANGLES * TRIANGLE_INDICES;
+
+                        for (uint32_t First = 0; First < Data->SortedIndices.size(); First += ClusterIndexCount) {
+                            Cluster Value;
+                            Value.FirstIndex = First;
+                            Value.IndexCount = std::min(ClusterIndexCount, static_cast<uint32_t>(Data->SortedIndices.size()) - First);
+                            Value.BoundsMin = glm::vec3(std::numeric_limits<float>::max());
+                            Value.BoundsMax = glm::vec3(std::numeric_limits<float>::lowest());
+
+                            for (uint32_t I = First; I < First + Value.IndexCount; ++I) {
+                                Value.BoundsMin = glm::min(Value.BoundsMin, Data->Vertices[Data->SortedIndices[I]].Position);
+                                Value.BoundsMax = glm::max(Value.BoundsMax, Data->Vertices[Data->SortedIndices[I]].Position);
+                            }
+
+                            Data->Clusters.push_back(Value);
+                        }
+
+                        for (std::size_t First = 0; First < Data->Clusters.size(); First += GROUP_CLUSTERS) {
+                            const std::size_t Last = std::min(First + GROUP_CLUSTERS, Data->Clusters.size());
+                            Cluster Group = Data->Clusters[First];
+                            Group.IndexCount = Data->Clusters[Last - 1].FirstIndex
+                                + Data->Clusters[Last - 1].IndexCount - Group.FirstIndex;
+
+                            for (std::size_t I = First + 1; I < Last; ++I) {
+                                Group.BoundsMin = glm::min(Group.BoundsMin, Data->Clusters[I].BoundsMin);
+                                Group.BoundsMax = glm::max(Group.BoundsMax, Data->Clusters[I].BoundsMax);
+                            }
+
+                            Data->ClusterGroups.push_back(Group);
+                        }
+                    }
+                }
+            }
+            catch (const std::exception& Error) {
+                Data->FailureReason = Error.what();
+                Data->Failed = true;
+            }
+            catch (...) {
+                Data->FailureReason = "unknown mesh preparation failure";
+                Data->Failed = true;
+            }
+
+            std::lock_guard<std::mutex> Lock(Data->Mutex);
+            Data->Finished = true;
         }
-    }
-
-    m_Indices = std::move(SortedIndices);
-
-    const uint32_t ClusterIndexCount = CLUSTER_TRIANGLES * TRIANGLE_INDICES;
-
-    for (uint32_t First = 0; First < m_Indices.size(); First += ClusterIndexCount) {
-        Cluster Value;
-        Value.FirstIndex = First;
-        Value.IndexCount = std::min(ClusterIndexCount, static_cast<uint32_t>(m_Indices.size()) - First);
-        Value.BoundsMin = glm::vec3(std::numeric_limits<float>::max());
-        Value.BoundsMax = glm::vec3(std::numeric_limits<float>::lowest());
-
-        for (uint32_t I = First; I < First + Value.IndexCount; ++I) {
-            Value.BoundsMin = glm::min(Value.BoundsMin, m_Vertices[m_Indices[I]].Position);
-            Value.BoundsMax = glm::max(Value.BoundsMax, m_Vertices[m_Indices[I]].Position);
-        }
-
-        m_Clusters.push_back(Value);
-    }
-
-    for (std::size_t First = 0; First < m_Clusters.size(); First += GROUP_CLUSTERS) {
-        const std::size_t Last = std::min(First + GROUP_CLUSTERS, m_Clusters.size());
-        Cluster Group = m_Clusters[First];
-        Group.IndexCount = m_Clusters[Last - 1].FirstIndex
-            + m_Clusters[Last - 1].IndexCount - Group.FirstIndex;
-
-        for (std::size_t I = First + 1; I < Last; ++I) {
-            Group.BoundsMin = glm::min(Group.BoundsMin, m_Clusters[I].BoundsMin);
-            Group.BoundsMax = glm::max(Group.BoundsMax, m_Clusters[I].BoundsMax);
-        }
-
-        m_ClusterGroups.push_back(Group);
-    }
-
-    m_VertexBuffer = ::Engine::Base::Render::Vk::GpuResources::CreateBuffer(
-        sizeof(Vertex) * m_Vertices.size(),
-        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
     );
-    m_IndexBuffer = ::Engine::Base::Render::Vk::GpuResources::CreateBuffer(
-        sizeof(uint32_t) * m_Indices.size(),
-        VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
-    );
+}
 
-    ::Engine::Base::Render::Vk::GpuResources::UploadBuffer(m_VertexBuffer, m_Vertices.data(), m_VertexBuffer.Size);
-    ::Engine::Base::Render::Vk::GpuResources::UploadBuffer(m_IndexBuffer, m_Indices.data(), m_IndexBuffer.Size);
-
-    if (!KEEP_CPU_DATA) {
-        m_Vertices.clear();
-        m_Vertices.shrink_to_fit();
-        m_Indices.clear();
-        m_Indices.shrink_to_fit();
+void Mesh::Update()
+{
+    if (GetState() != ::Engine::Applied::Render::Resources::ResourceState::Loading) {
+        return;
     }
 
-    SetState(::Engine::Applied::Render::Resources::ResourceState::Ready);
+    std::vector<Vertex> Vertices;
+    std::vector<uint32_t> Indices;
+    std::vector<Cluster> Clusters;
+    std::vector<Cluster> ClusterGroups;
+    glm::vec3 BoundsMin;
+    glm::vec3 BoundsMax;
+    std::string FailureReason;
+
+    {
+        std::lock_guard<std::mutex> Lock(LoadDataState->Mutex);
+
+        if (!LoadDataState->Finished) {
+            return;
+        }
+
+        if (LoadDataState->Failed) {
+            FailureReason = std::move(LoadDataState->FailureReason);
+        } else {
+            Vertices = std::move(LoadDataState->Vertices);
+            Indices = std::move(LoadDataState->SortedIndices);
+            Clusters = std::move(LoadDataState->Clusters);
+            ClusterGroups = std::move(LoadDataState->ClusterGroups);
+            BoundsMin = LoadDataState->BoundsMin;
+            BoundsMax = LoadDataState->BoundsMax;
+        }
+    }
+
+    if (!FailureReason.empty()) {
+        SetFailed(std::move(FailureReason));
+        return;
+    }
+
+    try {
+        m_Vertices = std::move(Vertices);
+        m_Indices = std::move(Indices);
+        m_Clusters = std::move(Clusters);
+        m_ClusterGroups = std::move(ClusterGroups);
+        m_BoundsMin = BoundsMin;
+        m_BoundsMax = BoundsMax;
+
+        m_VertexBuffer = ::Engine::Base::Render::Vk::GpuResources::CreateBuffer(
+            sizeof(Vertex) * m_Vertices.size(),
+            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
+        );
+        m_IndexBuffer = ::Engine::Base::Render::Vk::GpuResources::CreateBuffer(
+            sizeof(uint32_t) * m_Indices.size(),
+            VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
+        );
+
+        ::Engine::Base::Render::Vk::GpuResources::UploadBuffer(m_VertexBuffer, m_Vertices.data(), m_VertexBuffer.Size);
+        ::Engine::Base::Render::Vk::GpuResources::UploadBuffer(m_IndexBuffer, m_Indices.data(), m_IndexBuffer.Size);
+
+        if (!KEEP_CPU_DATA) {
+            m_Vertices.clear();
+            m_Vertices.shrink_to_fit();
+            m_Indices.clear();
+            m_Indices.shrink_to_fit();
+        }
+
+        SetState(::Engine::Applied::Render::Resources::ResourceState::Ready);
+    }
+    catch (const std::exception& Error) {
+        if (m_VertexBuffer.Handle != VK_NULL_HANDLE) {
+            ::Engine::Base::Render::Vk::GpuResources::DestroyBuffer(m_VertexBuffer);
+        }
+
+        if (m_IndexBuffer.Handle != VK_NULL_HANDLE) {
+            ::Engine::Base::Render::Vk::GpuResources::DestroyBuffer(m_IndexBuffer);
+        }
+
+        SetFailed(Error.what());
+    }
+    catch (...) {
+        if (m_VertexBuffer.Handle != VK_NULL_HANDLE) {
+            ::Engine::Base::Render::Vk::GpuResources::DestroyBuffer(m_VertexBuffer);
+        }
+
+        if (m_IndexBuffer.Handle != VK_NULL_HANDLE) {
+            ::Engine::Base::Render::Vk::GpuResources::DestroyBuffer(m_IndexBuffer);
+        }
+
+        SetFailed("unknown mesh GPU upload failure");
+    }
 }
 
 void Mesh::Unload()

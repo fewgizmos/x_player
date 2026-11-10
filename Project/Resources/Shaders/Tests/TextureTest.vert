@@ -6,6 +6,8 @@ layout(location = 1) in vec2 aUV;
 layout(push_constant) uniform PushConstants
 {
     mat4 Projection;
+    uint TextureIndex;
+    uint SamplerIndex;
 } Push;
 
 layout(location = 0) out vec2 UV;

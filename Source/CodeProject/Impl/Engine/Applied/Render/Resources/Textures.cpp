@@ -7,6 +7,7 @@
 #include "X/Engine/Base/Render/Vulkan/Descriptors.hpp"
 #include "X/Engine/Base/Render/Vulkan/Samplers.hpp"
 #include "X/Engine/Base/Runtime/EngineCore.hpp"
+#include "X/Engine/Util/Base/Assert.hpp"
 
 #include <stb_image.h>
 #include <vulkan/vulkan_core.h>
@@ -34,7 +35,19 @@ namespace
 
 VkDescriptorPool m_DescriptorPool = VK_NULL_HANDLE;
 VkDescriptorSetLayout m_SetLayout = VK_NULL_HANDLE;
-VkSampler m_Sampler = VK_NULL_HANDLE;
+VkDescriptorSet m_Set = VK_NULL_HANDLE;
+std::mutex m_IndexMutex;
+uint32_t m_BoundSamplers = 0;
+uint32_t m_NextIndex = 0;
+std::vector<uint32_t> m_FreeIndices;
+
+struct ErasedIndex
+{
+    uint32_t Index = UINT32_MAX;
+    int FramesLeft = 0;
+};
+
+std::vector<ErasedIndex> m_ErasedIndices;
 
 const ::Engine::Base::BootstrapManager::DeferredBootstrapRegistration::InitRegistrar
     RegisterInit("textures_init", Init, 35);
@@ -43,7 +56,12 @@ const ::Engine::Base::BootstrapManager::DeferredBootstrapRegistration::CleanRegi
     RegisterClean("textures_cleanup", Cleanup, 65);
 
 const ::Engine::Base::JobSystem::DeferredTaskRegistration::Registrar
-    RegisterUpdate(::Engine::Base::Runtime::EngineCore::RenderTh, "textures_update", Update, 60);
+    RegisterSync(
+        ::Engine::Base::Runtime::EngineCore::RenderTh,
+        "textures_sync_samplers",
+        SyncSamplers,
+        65
+    );
 
 void LoadTexture(const std::shared_ptr<Texture::LoadData>& p_Data, const std::string& p_Path)
 {
@@ -71,6 +89,28 @@ void LoadTexture(const std::shared_ptr<Texture::LoadData>& p_Data, const std::st
     p_Data->Width = static_cast<uint32_t>(Width);
     p_Data->Height = static_cast<uint32_t>(Height);
     p_Data->Finished = true;
+}
+
+uint32_t TakeIndex()
+{
+    std::lock_guard<std::mutex> Lock(m_IndexMutex);
+
+    if (!m_FreeIndices.empty()) {
+        const uint32_t Index = m_FreeIndices.back();
+        m_FreeIndices.pop_back();
+        return Index;
+    }
+
+    X_ASSERT(m_NextIndex >= ::Engine::Configs::Static::Graphics::MAX_TEXTURES, "textures limit exceeded");
+    return m_NextIndex++;
+}
+
+void ReleaseIndex(uint32_t p_Index)
+{
+    if (p_Index != UINT32_MAX) {
+        std::lock_guard<std::mutex> Lock(m_IndexMutex);
+        m_ErasedIndices.push_back({ p_Index, ::Engine::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT });
+    }
 }
 
 }
@@ -118,7 +158,7 @@ void Texture::Update()
         }
 
         if (m_LoadData->Pixels.empty()) {
-            SetState(ResourceState::Failed);
+            SetFailed("failed to load image: " + GetKey());
             return;
         }
 
@@ -140,18 +180,16 @@ void Texture::Update()
         Pixels.size()
     );
 
-    m_DescriptorSet = ::Engine::Base::Render::Vk::Descriptors::AllocateSet(
-        m_DescriptorPool,
-        m_SetLayout
-    );
+    m_Index = TakeIndex();
 
     ::Engine::Base::Render::Vk::Descriptors::WriteImage(
-        m_DescriptorSet,
-        0,
-        VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        m_Set,
+        1,
+        VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
         m_Image.View,
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        m_Sampler
+        VK_NULL_HANDLE,
+        m_Index
     );
 
     SetState(ResourceState::Ready);
@@ -163,7 +201,8 @@ void Texture::Unload()
         ::Engine::Base::Render::Vk::GpuResources::DestroyImage(m_Image);
     }
 
-    m_DescriptorSet = VK_NULL_HANDLE;
+    ReleaseIndex(m_Index);
+    m_Index = UINT32_MAX;
 }
 
 const Engine::Base::Render::Image& Texture::GetImage() const
@@ -171,38 +210,41 @@ const Engine::Base::Render::Image& Texture::GetImage() const
     return m_Image;
 }
 
-VkDescriptorSet Texture::GetDescriptorSet() const
+uint32_t Texture::GetIndex() const
 {
-    return m_DescriptorSet;
+    return m_Index;
 }
 
 void Init()
 {
     const std::vector<VkDescriptorPoolSize> PoolSizes = {
-        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, ::Engine::Configs::Static::Graphics::MAX_TEXTURES }
+        { VK_DESCRIPTOR_TYPE_SAMPLER, ::Engine::Configs::Static::Graphics::MAX_SAMPLERS },
+        { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, ::Engine::Configs::Static::Graphics::MAX_TEXTURES }
     };
 
     m_DescriptorPool = ::Engine::Base::Render::Vk::Descriptors::CreatePool(
-        ::Engine::Configs::Static::Graphics::MAX_TEXTURES,
-        PoolSizes
+        1,
+        PoolSizes,
+        VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT
     );
 
-    const VkDescriptorSetLayoutBinding Binding = {
-        0,
-        VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        1,
-        VK_SHADER_STAGE_FRAGMENT_BIT,
-        nullptr
+    const std::vector<VkDescriptorSetLayoutBinding> Bindings = {
+        { 0, VK_DESCRIPTOR_TYPE_SAMPLER, ::Engine::Configs::Static::Graphics::MAX_SAMPLERS, VK_SHADER_STAGE_ALL, nullptr },
+        { 1, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, ::Engine::Configs::Static::Graphics::MAX_TEXTURES, VK_SHADER_STAGE_ALL, nullptr }
     };
 
-    m_SetLayout = ::Engine::Base::Render::Vk::Descriptors::CreateSetLayout({ Binding });
+    const VkDescriptorBindingFlags Flags =
+        VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
+
+    m_SetLayout = ::Engine::Base::Render::Vk::Descriptors::CreateSetLayout(Bindings, { Flags, Flags });
+    m_Set = ::Engine::Base::Render::Vk::Descriptors::AllocateSet(m_DescriptorPool, m_SetLayout);
 
     ::Engine::Base::Render::SamplerCreateInfo SamplerInfo;
     SamplerInfo.WrapU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     SamplerInfo.WrapV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     SamplerInfo.WrapW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    const uint32_t SamplerIndex = ::Engine::Base::Render::Vk::Samplers::Make(SamplerInfo);
-    m_Sampler = ::Engine::Base::Render::Vk::Samplers::Get(SamplerIndex);
+    ::Engine::Base::Render::Vk::Samplers::Make(SamplerInfo);
+    SyncSamplers();
 }
 
 void Cleanup()
@@ -217,19 +259,49 @@ void Cleanup()
         m_DescriptorPool = VK_NULL_HANDLE;
     }
 
-    m_Sampler = VK_NULL_HANDLE;
+    m_Set = VK_NULL_HANDLE;
+    m_BoundSamplers = 0;
+    m_NextIndex = 0;
+    m_FreeIndices.clear();
+    m_ErasedIndices.clear();
 }
 
-void Update()
-{
-    if constexpr (::Engine::Configs::Static::Tests::TEXTURE_RENDERER_ENABLED) {
-        ::Engine::Applied::Render::Resources::UpdateAll();
-    }
-}
-
-VkDescriptorSetLayout GetSetLayout()
+VkDescriptorSetLayout GetBindlessSetLayout()
 {
     return m_SetLayout;
+}
+
+VkDescriptorSet GetBindlessSet()
+{
+    return m_Set;
+}
+
+void SyncSamplers()
+{
+    std::lock_guard<std::mutex> Lock(m_IndexMutex);
+
+    for (; m_BoundSamplers < ::Engine::Base::Render::Vk::Samplers::GetCount(); m_BoundSamplers++) {
+        ::Engine::Base::Render::Vk::Descriptors::WriteImage(
+            m_Set,
+            0,
+            VK_DESCRIPTOR_TYPE_SAMPLER,
+            VK_NULL_HANDLE,
+            VK_IMAGE_LAYOUT_UNDEFINED,
+            ::Engine::Base::Render::Vk::Samplers::Get(m_BoundSamplers),
+            m_BoundSamplers
+        );
+    }
+
+    for (auto It = m_ErasedIndices.begin(); It != m_ErasedIndices.end();) {
+        if (It->FramesLeft > 0) {
+            It->FramesLeft--;
+            ++It;
+            continue;
+        }
+
+        m_FreeIndices.push_back(It->Index);
+        It = m_ErasedIndices.erase(It);
+    }
 }
 
 }

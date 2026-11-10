@@ -41,6 +41,8 @@ struct Vertex
 struct PushConstants
 {
     glm::mat4 Projection;
+    uint32_t TextureIndex;
+    uint32_t SamplerIndex;
 };
 
 Engine::Base::Render::Pipeline m_Pipeline;
@@ -65,10 +67,10 @@ void CreatePipeline()
     Info.CullMode = VK_CULL_MODE_NONE;
     Info.DepthWrite = false;
     Info.SetLayouts = {
-        ::Engine::Applied::Render::Resources::Textures::GetSetLayout()
+        ::Engine::Applied::Render::Resources::Textures::GetBindlessSetLayout()
     };
     Info.PushConstantSize = sizeof(PushConstants);
-    Info.PushConstantStages = VK_SHADER_STAGE_VERTEX_BIT;
+    Info.PushConstantStages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     Info.VertexBindings = {
         { 0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX }
     };
@@ -179,7 +181,9 @@ void Render()
         glm::translate(
             glm::ortho(0.0f, Width, Height, 0.0f, -1.0f, 1.0f),
             { Width * 0.5f, Height * 0.5f, 0.0f }
-        )
+        ),
+        Texture.GetIndex(),
+        0
     };
 
     VkViewport Viewport{};
@@ -197,7 +201,8 @@ void Render()
     const VkDeviceSize Offset = 0;
     Disp.cmdBindVertexBuffers(Frame.CommandBuffer, 0, 1, &m_VertexBuffer.Handle, &Offset);
     Disp.cmdBindIndexBuffer(Frame.CommandBuffer, m_IndexBuffer.Handle, 0, VK_INDEX_TYPE_UINT32);
-    const VkDescriptorSet DescriptorSet = Texture.GetDescriptorSet();
+    const VkDescriptorSet DescriptorSet =
+        ::Engine::Applied::Render::Resources::Textures::GetBindlessSet();
     Disp.cmdBindDescriptorSets(
         Frame.CommandBuffer,
         VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -212,7 +217,7 @@ void Render()
     ::Engine::Base::Render::Vk::Commands::PushConstants(
         Frame.CommandBuffer,
         m_Pipeline.Layout,
-        VK_SHADER_STAGE_VERTEX_BIT,
+        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
         sizeof(PushConstants),
         &Constants
     );

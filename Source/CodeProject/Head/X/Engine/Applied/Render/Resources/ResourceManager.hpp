@@ -30,17 +30,24 @@ public:
     virtual std::string GetTypeName() const = 0;
     ResourceState GetState() const;
     bool IsReady() const;
+    const std::string& GetFailureReason() const;
 
     virtual void BeginLoad() = 0;
     virtual void Update();
     virtual void Unload() = 0;
     void SetState(ResourceState p_State);
+    void SetFailed(std::string p_Reason);
 
 private:
     friend std::shared_ptr<Resource> Acquire(std::unique_ptr<Resource> p_Resource);
+    friend void UpdateAll();
+
+    bool TryMarkFailureReported();
 
     std::string m_Key;
     std::atomic<ResourceState> m_State = ResourceState::Loading;
+    std::string FailureReason;
+    std::atomic<bool> FailureReported = false;
 };
 
 std::shared_ptr<Resource> Acquire(std::unique_ptr<Resource> p_Resource);
@@ -54,6 +61,8 @@ class Ref
     static_assert(std::is_base_of_v<Resource, T>, "Ref<T> requires a Resource type");
 
 public:
+    Ref() = default;
+
     template<class... Arguments>
     explicit Ref(Arguments&&... p_Arguments)
         : m_Resource(std::dynamic_pointer_cast<T>(Acquire(
@@ -73,8 +82,10 @@ public:
     T* operator->() { return Get(); }
     const T* operator->() const { return Get(); }
 
-    ResourceState GetState() const { return m_Resource->GetState(); }
-    bool IsReady() const { return m_Resource->IsReady(); }
+    explicit operator bool() const { return m_Resource != nullptr; }
+
+    ResourceState GetState() const { return m_Resource != nullptr ? m_Resource->GetState() : ResourceState::Failed; }
+    bool IsReady() const { return m_Resource != nullptr && m_Resource->IsReady(); }
 
 private:
     std::shared_ptr<T> m_Resource;

@@ -1,5 +1,10 @@
 #include "X/Engine/Applied/Render/Resources/ResourceManager.hpp"
 
+#include "X/Configs/PreCompiled/Dynamic.hpp"
+#include "X/Engine/Base/JobSystem/DeferredTaskRegistration.hpp"
+#include "X/Engine/Base/Runtime/EngineCore.hpp"
+
+#include <iostream>
 #include <mutex>
 #include <unordered_map>
 #include <utility>
@@ -13,6 +18,14 @@ namespace
 
 std::mutex m_ResourcesMutex;
 std::unordered_map<std::string, std::weak_ptr<Resource>> m_Resources;
+
+const ::Engine::Base::JobSystem::DeferredTaskRegistration::Registrar
+    RegisterUpdate(
+        ::Engine::Base::Runtime::EngineCore::RenderTh,
+        "resources_update",
+        UpdateAll,
+        60
+    );
 
 std::string MakeCacheKey(const Resource& p_Resource)
 {
@@ -45,9 +58,26 @@ bool Resource::IsReady() const
     return GetState() == ResourceState::Ready;
 }
 
+const std::string& Resource::GetFailureReason() const
+{
+    return FailureReason;
+}
+
 void Resource::SetState(ResourceState p_State)
 {
     m_State = p_State;
+}
+
+void Resource::SetFailed(std::string p_Reason)
+{
+    FailureReason = std::move(p_Reason);
+    m_State = ResourceState::Failed;
+}
+
+bool Resource::TryMarkFailureReported()
+{
+    bool Expected = false;
+    return FailureReported.compare_exchange_strong(Expected, true);
 }
 
 std::shared_ptr<Resource> Acquire(std::unique_ptr<Resource> p_Resource)
@@ -97,6 +127,19 @@ void UpdateAll()
 
     for (const std::shared_ptr<Resource>& Resource : Active) {
         Resource->Update();
+
+#ifdef XP_DEV_FEATURES_ENABLED
+        if (Resource->GetState() == ResourceState::Failed && Resource->TryMarkFailureReported()) {
+            std::cerr << "Resource failed: "
+                      << Resource->GetTypeName() << ":" << Resource->GetKey();
+
+            if (!Resource->GetFailureReason().empty()) {
+                std::cerr << ": " << Resource->GetFailureReason();
+            }
+
+            std::cerr << "\n";
+        }
+#endif
     }
 }
 

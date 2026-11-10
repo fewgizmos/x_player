@@ -7,6 +7,7 @@
 #include <glm/vec4.hpp>
 
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 namespace Engine::Applied::Render::Scene::Resources::Meshes
@@ -40,6 +41,7 @@ public:
 
     std::string GetTypeName() const override;
     void BeginLoad() override;
+    void Update() override;
     void Unload() override;
 
     const ::Engine::Base::Render::Buffer& GetVertexBuffer() const;
@@ -61,6 +63,9 @@ private:
     uint32_t m_IndexCount = 0;
     glm::vec3 m_BoundsMin = glm::vec3(0.0f);
     glm::vec3 m_BoundsMax = glm::vec3(0.0f);
+
+    struct LoadData;
+    std::shared_ptr<LoadData> LoadDataState;
 };
 
 }
