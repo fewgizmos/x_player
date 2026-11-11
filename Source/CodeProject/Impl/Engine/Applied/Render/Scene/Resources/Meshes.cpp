@@ -224,12 +224,16 @@ void Mesh::Update()
         }
         m_VertexBuffer = LoadDataState->VertexBuffer;
         m_IndexBuffer = LoadDataState->IndexBuffer;
+
+        if (!KEEP_CPU_DATA) {
+            std::lock_guard<std::mutex> Lock(LoadDataState->Mutex);
+            LoadDataState->Vertices.clear();
+            LoadDataState->SortedIndices.clear();
+        }
+
         SetState(::Engine::Applied::Render::Resources::ResourceState::Ready);
         return;
     }
-
-    std::vector<Vertex> Vertices;
-    std::vector<uint32_t> Indices;
 
     std::vector<Cluster> Clusters;
     std::vector<Cluster> ClusterGroups;
@@ -250,8 +254,6 @@ void Mesh::Update()
         if (LoadDataState->Failed) {
             FailureReason = std::move(LoadDataState->FailureReason);
         } else {
-            Vertices = std::move(LoadDataState->Vertices);
-            Indices = std::move(LoadDataState->SortedIndices);
             Clusters = std::move(LoadDataState->Clusters);
             ClusterGroups = std::move(LoadDataState->ClusterGroups);
             BoundsMin = LoadDataState->BoundsMin;
@@ -266,49 +268,44 @@ void Mesh::Update()
     }
 
     try {
-        m_Vertices = std::move(Vertices);
-        m_Indices = std::move(Indices);
         m_Clusters = std::move(Clusters);
         m_ClusterGroups = std::move(ClusterGroups);
         m_BoundsMin = BoundsMin;
         m_BoundsMax = BoundsMax;
 
         const std::shared_ptr<LoadData> Data = LoadDataState;
-        const std::vector<Vertex> Vertices = m_Vertices;
-        const std::vector<uint32_t> Indices = m_Indices;
+
+        if (KEEP_CPU_DATA) {
+            std::lock_guard<std::mutex> Lock(Data->Mutex);
+            m_Vertices = Data->Vertices;
+            m_Indices = Data->SortedIndices;
+        }
 
         m_GpuTicket = ::Engine::Base::Render::ResourceLoader::PushFrameJobVk(
-            [Data, Vertices, Indices](VkCommandBuffer) {
+            [Data](VkCommandBuffer) {
                 Data->VertexBuffer = ::Engine::Base::Render::ResourceLoader::CreateBuffer(
-                    sizeof(Vertex) * Vertices.size(),
+                    sizeof(Vertex) * Data->Vertices.size(),
                     VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
                 );
 
                 Data->IndexBuffer = ::Engine::Base::Render::ResourceLoader::CreateBuffer(
-                    sizeof(uint32_t) * Indices.size(),
+                    sizeof(uint32_t) * Data->SortedIndices.size(),
                     VK_BUFFER_USAGE_INDEX_BUFFER_BIT
                 );
 
                 ::Engine::Base::Render::ResourceLoader::QueueBufferUpload(
                     Data->VertexBuffer,
-                    Vertices.data(),
+                    Data->Vertices.data(),
                     Data->VertexBuffer.Size
                 );
 
                 ::Engine::Base::Render::ResourceLoader::QueueBufferUpload(
                     Data->IndexBuffer,
-                    Indices.data(),
+                    Data->SortedIndices.data(),
                     Data->IndexBuffer.Size
                 );
             }
         );
-
-        if (!KEEP_CPU_DATA) {
-            m_Vertices.clear();
-            m_Vertices.shrink_to_fit();
-            m_Indices.clear();
-            m_Indices.shrink_to_fit();
-        }
     }
     catch (const std::exception& Error) {
         if (m_VertexBuffer.Handle != VK_NULL_HANDLE) {

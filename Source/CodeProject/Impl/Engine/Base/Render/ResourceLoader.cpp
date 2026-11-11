@@ -12,6 +12,7 @@
 #include "X/Engine/Base/Render/Vulkan/Device.hpp"
 #include "X/Engine/Base/Render/Vulkan/Frame.hpp"
 
+#include <atomic>
 #include <condition_variable>
 #include <cstddef>
 #include <exception>
@@ -51,8 +52,8 @@ struct Batch
     VkSemaphore Finished = VK_NULL_HANDLE;
     VkSemaphore TransferFinished = VK_NULL_HANDLE;
 
-    bool Submitted = false;
-    bool GraphicsSubmitted = false;
+    std::atomic<bool> Submitted = false;
+    std::atomic<bool> GraphicsSubmitted = false;
     bool GraphicsHasCommands = false;
 
     std::mutex CompletionMutex;
@@ -119,6 +120,12 @@ void DestroyImageNow(Image p_Target)
 
 void FinishBatch(Batch& p_Batch)
 {
+    std::unique_lock<std::mutex> CompletionLock(p_Batch.CompletionMutex);
+    p_Batch.CompletionCv.wait(
+        CompletionLock,
+        [&p_Batch] { return p_Batch.RecordingFinished; }
+    );
+
     if (!p_Batch.Submitted) {
 
         return;
@@ -153,7 +160,7 @@ void FinishBatch(Batch& p_Batch)
     p_Batch.Submitted = false;
     p_Batch.GraphicsSubmitted = false;
     p_Batch.GraphicsHasCommands = false;
-    p_Batch.RecordingFinished = false;
+    p_Batch.RecordingFinished = true;
     p_Batch.FailureReason.clear();
 }
 
@@ -436,6 +443,8 @@ void Init()
 
         BatchValue.Finished = MakeSemaphore();
         BatchValue.TransferFinished = MakeSemaphore();
+
+        BatchValue.RecordingFinished = true;
     }
 
     m_Initialized = true;
@@ -556,13 +565,6 @@ void BeginFrame()
         100
     );
 
-    std::unique_lock<std::mutex> Lock(BatchValue.CompletionMutex);
-    BatchValue.CompletionCv.wait(Lock, [&BatchValue] { return BatchValue.RecordingFinished; });
-
-    X_ASSERT(
-        !BatchValue.FailureReason.empty(),
-        BatchValue.FailureReason
-    );
 }
 
 void RecordPendingAcquires(VkCommandBuffer p_CommandBuffer)

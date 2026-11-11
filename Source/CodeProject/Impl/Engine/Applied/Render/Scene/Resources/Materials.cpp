@@ -657,10 +657,16 @@ void Flush()
     }
 
     const ::Engine::Base::Render::Buffer Buffer = m_Buffers[Frame];
-    const std::vector<MaterialData> Data = m_Data;
 
     m_BufferTickets[Frame] = ::Engine::Base::Render::ResourceLoader::PushFrameJobVk(
-        [Buffer, Data](VkCommandBuffer) {
+        [Buffer](VkCommandBuffer) {
+            std::vector<MaterialData> Data;
+
+            {
+                std::lock_guard<std::mutex> Lock(m_RegistryMutex);
+                Data = m_Data;
+            }
+
             ::Engine::Base::Render::ResourceLoader::QueueBufferUpload(
                 Buffer,
                 Data.data(),
