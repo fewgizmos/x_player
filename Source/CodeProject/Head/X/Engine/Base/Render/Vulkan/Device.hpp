@@ -5,6 +5,7 @@
 #include <vkb/VkBootstrap.h>
 
 #include <cstdint>
+#include <mutex>
 
 namespace Engine::Base::Render
 {
@@ -39,6 +40,7 @@ const vkb::DispatchTable& GetDisp();
 VkSurfaceKHR GetSurface();
 
 const QueueSet& GetQueues();
+std::mutex& GetGraphicsQueueMutex();
 
 bool HasMemoryBudget();
 

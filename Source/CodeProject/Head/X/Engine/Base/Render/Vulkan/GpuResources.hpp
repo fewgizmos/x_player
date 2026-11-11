@@ -41,7 +41,12 @@ void CreateAllocator(const vkb::Instance& p_Instance);
 
 VmaAllocator GetAllocator();
 
-void RecordImageUpload(VkCommandBuffer p_Cmd, const Image& p_Target, const Buffer& p_Staging);
+void RecordImageUpload(
+    VkCommandBuffer p_Cmd,
+    const Image& p_Target,
+    const Buffer& p_Staging,
+    VkDeviceSize p_StagingOffset = 0
+);
 void RecordMipGeneration(VkCommandBuffer p_Cmd, const Image& p_Target);
 
 }

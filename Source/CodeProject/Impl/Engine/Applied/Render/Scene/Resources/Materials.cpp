@@ -482,6 +482,8 @@ std::string Material::GetTypeName() const
 
 void Material::BeginLoad()
 {
+    AdvanceVersionChecksum();
+
     if (!CreateInfo.TargetShader) {
         SetFailed("Material requires Shader Ref");
         return;
@@ -585,6 +587,8 @@ void Material::Update()
 
 void Material::Unload()
 {
+    AdvanceVersionChecksum();
+
     ReleaseIndex(Index);
     Index = UINT32_MAX;
 }

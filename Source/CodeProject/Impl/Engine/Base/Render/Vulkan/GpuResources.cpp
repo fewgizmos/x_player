@@ -19,6 +19,7 @@ namespace
 struct PendingImageUpload
 {
     Buffer Staging;
+    VkDeviceSize StagingOffset = 0;
 
     VkImage Target = VK_NULL_HANDLE;
 
@@ -92,6 +93,8 @@ void FlushImageUpload(VkCommandBuffer p_Cmd, const PendingImageUpload& p_Upload)
     );
 
     VkBufferImageCopy Region = {};
+
+    Region.bufferOffset = p_Upload.StagingOffset;
 
     Region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     Region.imageSubresource.mipLevel = 0;
@@ -231,11 +234,17 @@ void CreateAllocator(const vkb::Instance& p_Instance)
 
 VmaAllocator GetAllocator() { return m_Allocator; }
 
-void RecordImageUpload(VkCommandBuffer p_Cmd, const Image& p_Target, const Buffer& p_Staging)
+void RecordImageUpload(
+    VkCommandBuffer p_Cmd,
+    const Image& p_Target,
+    const Buffer& p_Staging,
+    VkDeviceSize p_StagingOffset
+)
 {
     PendingImageUpload Upload;
 
     Upload.Staging      = p_Staging;
+    Upload.StagingOffset = p_StagingOffset;
     Upload.Target       = p_Target.Handle;
     Upload.Extent       = p_Target.Extent;
     Upload.MipLevels   = p_Target.MipLevels;

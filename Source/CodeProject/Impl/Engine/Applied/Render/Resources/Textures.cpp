@@ -149,6 +149,8 @@ std::string Texture::GetTypeName() const
 
 void Texture::BeginLoad()
 {
+    AdvanceVersionChecksum();
+
     if (Format != VK_FORMAT_R8G8B8A8_SRGB && Format != VK_FORMAT_R8G8B8A8_UNORM) {
         SetFailed("Unsupported decoded texture format; expected RGBA8 SRGB or UNORM");
         return;
@@ -190,7 +192,8 @@ void Texture::Update()
 
             return;
         }
-        if (m_GpuTicket->Failed.load(std::memory_order_acquire)) {
+        if (m_GpuTicket->Failed.load(std::memory_order_acquire)
+            || m_GpuTicket->Rejected.load(std::memory_order_acquire)) {
             SetFailed(m_GpuTicket->FailureReason);
 
             return;
@@ -268,6 +271,8 @@ void Texture::Update()
 
 void Texture::Unload()
 {
+    AdvanceVersionChecksum();
+
     if (m_Image.Handle != VK_NULL_HANDLE) {
         ::Engine::Base::Render::ResourceLoader::DestroyImage(m_Image);
     }

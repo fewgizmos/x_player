@@ -117,6 +117,16 @@ const std::string& Resource::GetKey() const
     return m_Key;
 }
 
+uint64_t Resource::GetVersionChecksum() const
+{
+    return m_VersionChecksum.load(std::memory_order_acquire);
+}
+
+uint64_t Resource::AdvanceVersionChecksum()
+{
+    return m_VersionChecksum.fetch_add(1, std::memory_order_acq_rel) + 1;
+}
+
 ResourceState Resource::GetState() const
 {
     return m_State.load();

@@ -230,7 +230,8 @@ void RenderFrame()
     VkSemaphoreSubmitInfo TransferWait{ VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO };
     const VkSemaphoreSubmitInfo* TransferWaitPtr = nullptr;
     if (ResourceLoader::HasTransferSubmission()) {
-        TransferWait.semaphore = ResourceLoader::GetTransferSemaphore();
+        TransferWait.semaphore = ResourceLoader::GetCompletionSemaphore();
+        TransferWait.value = ResourceLoader::GetCompletionValue();
         TransferWait.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
         TransferWaitPtr = &TransferWait;
     }

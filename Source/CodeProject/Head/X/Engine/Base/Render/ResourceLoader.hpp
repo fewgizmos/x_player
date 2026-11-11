@@ -16,6 +16,7 @@ struct ResourceJobTicket
 {
     std::atomic<bool> Done = false;
     std::atomic<bool> Failed = false;
+    std::atomic<bool> Rejected = false;
     std::string FailureReason;
 };
 
@@ -24,13 +25,15 @@ using Image = ::Engine::Base::Render::Image;
 
 void Init();
 void Cleanup();
+void StopAcceptingJobs();
 
 std::shared_ptr<ResourceJobTicket> PushFrameJobCallback(std::function<void()> p_Callback);
 std::shared_ptr<ResourceJobTicket> PushFrameJobVk(std::function<void(VkCommandBuffer)> p_Callback);
 
 void BeginFrame();
 void RecordPendingAcquires(VkCommandBuffer p_CommandBuffer);
-VkSemaphore GetTransferSemaphore();
+VkSemaphore GetCompletionSemaphore();
+uint64_t GetCompletionValue();
 bool HasTransferSubmission();
 
 void QueueBufferUpload(const Buffer& p_Target, const void* p_Data, VkDeviceSize p_Size);

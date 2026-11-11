@@ -64,6 +64,8 @@ namespace ResourceLoader
 {
 
 inline constexpr int BATCH_COUNT = Graphics::MAX_FRAMES_IN_FLIGHT;
+inline constexpr VkDeviceSize BUFFER_STAGING_BLOCK_SIZE = 64 * 1024 * 1024;
+inline constexpr VkDeviceSize IMAGE_STAGING_BLOCK_SIZE = 128 * 1024 * 1024;
 
 }
 

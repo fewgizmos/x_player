@@ -5,6 +5,7 @@
 #include "X/Engine/Util/Base/Assert.hpp"
 
 #include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
+#include "X/Engine/Base/JobSystem/DeferredTaskRegistration.hpp"
 #include "X/Engine/Base/JobSystem/JobManager.hpp"
 #include "X/Engine/Base/Runtime/EngineThreadIDs.hpp"
 
@@ -38,6 +39,20 @@ struct AcquireBuffer
     VkDeviceSize Size = 0;
 };
 
+struct StagingBlock
+{
+    Buffer Resource;
+    VkDeviceSize Offset = 0;
+    uint64_t RetireValue = 0;
+};
+
+struct StagingUse
+{
+    StagingBlock* Block = nullptr;
+    VkDeviceSize Offset = 0;
+    bool Image = false;
+};
+
 struct Batch
 {
     VkCommandPool Pool = VK_NULL_HANDLE;
@@ -49,8 +64,8 @@ struct Batch
     VkFence Fence = VK_NULL_HANDLE;
     VkFence GraphicsFence = VK_NULL_HANDLE;
 
-    VkSemaphore Finished = VK_NULL_HANDLE;
-    VkSemaphore TransferFinished = VK_NULL_HANDLE;
+    uint64_t TransferSubmitValue = 0;
+    uint64_t GraphicsSubmitValue = 0;
 
     std::atomic<bool> Submitted = false;
     std::atomic<bool> GraphicsSubmitted = false;
@@ -62,7 +77,8 @@ struct Batch
     std::string FailureReason;
 
     std::vector<std::shared_ptr<ResourceJobTicket>> Tickets;
-    std::vector<Buffer> Staging;
+
+    std::vector<StagingUse> Staging;
     std::vector<AcquireBuffer> Buffers;
 };
 
@@ -70,11 +86,25 @@ std::mutex m_Mutex;
 
 std::vector<std::function<void(VkCommandBuffer)>> m_PendingJobs;
 std::vector<std::shared_ptr<ResourceJobTicket>> m_PendingTickets;
+
 std::vector<std::unique_ptr<Batch>> m_Batches;
+
+std::vector<std::unique_ptr<StagingBlock>> m_BufferStaging;
+std::vector<std::unique_ptr<StagingBlock>> m_ImageStaging;
 
 thread_local Batch* m_ActiveBatch = nullptr;
 std::size_t m_NextJob = 0;
 bool m_Initialized = false;
+std::atomic<bool> m_AcceptingJobs = true;
+
+VkSemaphore m_TransferTimeline = VK_NULL_HANDLE;
+VkSemaphore m_GraphicsTimeline = VK_NULL_HANDLE;
+
+uint64_t m_NextTransferValue = 0;
+uint64_t m_NextGraphicsValue = 0;
+
+std::atomic<uint64_t> m_CompletedTransferValue = 0;
+std::atomic<uint64_t> m_CompletedGraphicsValue = 0;
 
 const ::Engine::Base::BootstrapManager::DeferredBootstrapRegistration::InitRegistrar
     RegisterInit("resource_loader_init", Init, 65);
@@ -82,13 +112,54 @@ const ::Engine::Base::BootstrapManager::DeferredBootstrapRegistration::InitRegis
 const ::Engine::Base::BootstrapManager::DeferredBootstrapRegistration::CleanRegistrar
     RegisterClean("resource_loader_cleanup", Cleanup, 70);
 
-VkSemaphore MakeSemaphore()
+void PollCompletedTimelines();
+
+const ::Engine::Base::JobSystem::DeferredTaskRegistration::Registrar
+    RegisterTimelinePoll(
+        ::Engine::Base::Runtime::EngineThreadID::ResourceLoaderTh,
+        "resource_loader_poll_timelines",
+        PollCompletedTimelines,
+        10
+    );
+
+VkSemaphore MakeTimelineSemaphore()
 {
+    VkSemaphoreTypeCreateInfo TypeInfo{ VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO };
+    TypeInfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+    TypeInfo.initialValue = 0;
+
     VkSemaphoreCreateInfo Info{ VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
+    Info.pNext = &TypeInfo;
     VkSemaphore Result = VK_NULL_HANDLE;
+
     X_ASSERT(::Engine::Base::Render::Vk::Device::GetDisp().createSemaphore(&Info, nullptr, &Result) != VK_SUCCESS,
         "failed to create resource loader semaphore");
+
     return Result;
+}
+
+void PollCompletedTimelines()
+{
+    if (!m_Initialized) {
+        return;
+    }
+
+    const vkb::DispatchTable& Disp = ::Engine::Base::Render::Vk::Device::GetDisp();
+    uint64_t TransferValue = 0;
+    uint64_t GraphicsValue = 0;
+
+    X_ASSERT(
+        Disp.getSemaphoreCounterValue(m_TransferTimeline, &TransferValue) != VK_SUCCESS,
+        "failed to poll transfer timeline"
+    );
+
+    X_ASSERT(
+        Disp.getSemaphoreCounterValue(m_GraphicsTimeline, &GraphicsValue) != VK_SUCCESS,
+        "failed to poll graphics timeline"
+    );
+
+    m_CompletedTransferValue.store(TransferValue, std::memory_order_release);
+    m_CompletedGraphicsValue.store(GraphicsValue, std::memory_order_release);
 }
 
 bool IsLoaderThread()
@@ -116,6 +187,75 @@ void DestroyImageNow(Image p_Target)
         p_Target.Handle,
         p_Target.Allocation
     );
+}
+
+VkDeviceSize AlignStagingOffset(VkDeviceSize p_Offset)
+{
+    return (p_Offset + 3) & ~VkDeviceSize(3);
+}
+
+StagingUse AllocateStaging(bool p_Image, VkDeviceSize p_Size)
+{
+    std::vector<std::unique_ptr<StagingBlock>>& Blocks =
+        p_Image ? m_ImageStaging : m_BufferStaging;
+
+    const VkDeviceSize ConfiguredBlockSize = p_Image
+        ? ::Engine::Configs::Static::ResourceLoader::IMAGE_STAGING_BLOCK_SIZE
+        : ::Engine::Configs::Static::ResourceLoader::BUFFER_STAGING_BLOCK_SIZE;
+
+    const VkDeviceSize BlockSize = p_Size > ConfiguredBlockSize ? p_Size : ConfiguredBlockSize;
+    const VkSemaphore Timeline = p_Image ? m_GraphicsTimeline : m_TransferTimeline;
+    const vkb::DispatchTable& Disp = ::Engine::Base::Render::Vk::Device::GetDisp();
+
+    while (true) {
+        uint64_t CompletedValue = 0;
+        X_ASSERT(
+            Disp.getSemaphoreCounterValue(Timeline, &CompletedValue) != VK_SUCCESS,
+            "failed to query resource loader timeline"
+        );
+
+        for (const std::unique_ptr<StagingBlock>& Block : Blocks) {
+            if (Block->RetireValue != 0 && CompletedValue >= Block->RetireValue) {
+                Block->Offset = 0;
+                Block->RetireValue = 0;
+            }
+
+            const VkDeviceSize Offset = AlignStagingOffset(Block->Offset);
+            if (Block->RetireValue == 0 && Offset + p_Size <= BlockSize) {
+                Block->Offset = Offset + p_Size;
+                return { Block.get(), Offset, p_Image };
+            }
+        }
+
+        uint64_t WaitValue = UINT64_MAX;
+        for (const std::unique_ptr<StagingBlock>& Block : Blocks) {
+            if (Block->RetireValue != 0 && Block->RetireValue < WaitValue) {
+                WaitValue = Block->RetireValue;
+            }
+        }
+
+        if (WaitValue != UINT64_MAX) {
+            VkSemaphoreWaitInfo WaitInfo{ VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO };
+            WaitInfo.semaphoreCount = 1;
+            WaitInfo.pSemaphores = &Timeline;
+            WaitInfo.pValues = &WaitValue;
+
+            X_ASSERT(
+                Disp.waitSemaphores(&WaitInfo, UINT64_MAX) != VK_SUCCESS,
+                "failed to wait for staging block"
+            );
+
+            continue;
+        }
+
+        Blocks.push_back(std::make_unique<StagingBlock>());
+        StagingBlock& Block = *Blocks.back();
+        Block.Resource = CreateBuffer(
+            BlockSize,
+            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
+        );
+    }
 }
 
 void FinishBatch(Batch& p_Batch)
@@ -150,16 +290,17 @@ void FinishBatch(Batch& p_Batch)
         }
     }
 
-    for (Buffer& Staging : p_Batch.Staging) {
-        DestroyBuffer(Staging);
-    }
-
     p_Batch.Tickets.clear();
     p_Batch.Staging.clear();
     p_Batch.Buffers.clear();
+
     p_Batch.Submitted = false;
     p_Batch.GraphicsSubmitted = false;
     p_Batch.GraphicsHasCommands = false;
+
+    p_Batch.TransferSubmitValue = 0;
+    p_Batch.GraphicsSubmitValue = 0;
+
     p_Batch.RecordingFinished = true;
     p_Batch.FailureReason.clear();
 }
@@ -218,9 +359,9 @@ void SubmitTransfer(Batch& p_Batch, const vkb::DispatchTable& p_Disp)
     Command.commandBuffer = p_Batch.CommandBuffer;
 
     VkSemaphoreSubmitInfo Signal{ VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO };
-    Signal.semaphore = p_Batch.GraphicsHasCommands
-        ? p_Batch.TransferFinished
-        : p_Batch.Finished;
+    p_Batch.TransferSubmitValue = ++m_NextTransferValue;
+    Signal.semaphore = m_TransferTimeline;
+    Signal.value = p_Batch.TransferSubmitValue;
     Signal.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
 
     VkSubmitInfo2 Submit{ VK_STRUCTURE_TYPE_SUBMIT_INFO_2 };
@@ -235,16 +376,31 @@ void SubmitTransfer(Batch& p_Batch, const vkb::DispatchTable& p_Disp)
     );
 
     X_ASSERT(
-        p_Disp.queueSubmit2(
-            ::Engine::Base::Render::Vk::Device::GetQueues().Transfer,
-            1,
-            &Submit,
-            p_Batch.Fence
-        ) != VK_SUCCESS,
+        [&] {
+            std::unique_lock<std::mutex> Lock;
+            if (!::Engine::Base::Render::Vk::Device::GetQueues().DedicatedTransfer) {
+                Lock = std::unique_lock<std::mutex>(
+                    ::Engine::Base::Render::Vk::Device::GetGraphicsQueueMutex()
+                );
+            }
+
+            return p_Disp.queueSubmit2(
+                ::Engine::Base::Render::Vk::Device::GetQueues().Transfer,
+                1,
+                &Submit,
+                p_Batch.Fence
+            );
+        }() != VK_SUCCESS,
         "failed to submit resource loader batch"
     );
 
     p_Batch.Submitted = true;
+
+    for (const StagingUse& Use : p_Batch.Staging) {
+        if (!Use.Image) {
+            Use.Block->RetireValue = p_Batch.TransferSubmitValue;
+        }
+    }
 }
 
 void SubmitGraphics(Batch& p_Batch, const vkb::DispatchTable& p_Disp)
@@ -258,11 +414,14 @@ void SubmitGraphics(Batch& p_Batch, const vkb::DispatchTable& p_Disp)
     Command.commandBuffer = p_Batch.GraphicsCommandBuffer;
 
     VkSemaphoreSubmitInfo Wait{ VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO };
-    Wait.semaphore = p_Batch.TransferFinished;
+    Wait.semaphore = m_TransferTimeline;
+    Wait.value = p_Batch.TransferSubmitValue;
     Wait.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
 
     VkSemaphoreSubmitInfo Signal{ VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO };
-    Signal.semaphore = p_Batch.Finished;
+    p_Batch.GraphicsSubmitValue = ++m_NextGraphicsValue;
+    Signal.semaphore = m_GraphicsTimeline;
+    Signal.value = p_Batch.GraphicsSubmitValue;
     Signal.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
 
     VkSubmitInfo2 Submit{ VK_STRUCTURE_TYPE_SUBMIT_INFO_2 };
@@ -279,16 +438,28 @@ void SubmitGraphics(Batch& p_Batch, const vkb::DispatchTable& p_Disp)
     );
 
     X_ASSERT(
-        p_Disp.queueSubmit2(
-            ::Engine::Base::Render::Vk::Device::GetQueues().Graphics,
-            1,
-            &Submit,
-            p_Batch.GraphicsFence
-        ) != VK_SUCCESS,
+        [&] {
+            std::lock_guard<std::mutex> Lock(
+                ::Engine::Base::Render::Vk::Device::GetGraphicsQueueMutex()
+            );
+
+            return p_Disp.queueSubmit2(
+                ::Engine::Base::Render::Vk::Device::GetQueues().Graphics,
+                1,
+                &Submit,
+                p_Batch.GraphicsFence
+            );
+        }() != VK_SUCCESS,
         "failed to submit resource loader graphics batch"
     );
 
     p_Batch.GraphicsSubmitted = true;
+
+    for (const StagingUse& Use : p_Batch.Staging) {
+        if (Use.Image) {
+            Use.Block->RetireValue = p_Batch.GraphicsSubmitValue;
+        }
+    }
 }
 
 void ExecuteBatch(
@@ -394,6 +565,11 @@ void Init()
 {
     const vkb::DispatchTable& Disp = ::Engine::Base::Render::Vk::Device::GetDisp();
 
+    m_AcceptingJobs.store(true, std::memory_order_release);
+
+    m_TransferTimeline = MakeTimelineSemaphore();
+    m_GraphicsTimeline = MakeTimelineSemaphore();
+
     m_Batches.reserve(::Engine::Configs::Static::ResourceLoader::BATCH_COUNT);
 
     for (uint32_t I = 0; I < ::Engine::Configs::Static::ResourceLoader::BATCH_COUNT; ++I) {
@@ -404,6 +580,7 @@ void Init()
         VkCommandPoolCreateInfo PoolInfo{ VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
         PoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
         PoolInfo.queueFamilyIndex = ::Engine::Base::Render::Vk::Device::GetQueues().TransferFamily;
+
         X_ASSERT(
             Disp.createCommandPool(&PoolInfo, nullptr, &BatchValue.Pool) != VK_SUCCESS,
             "failed to create resource loader command pool"
@@ -413,24 +590,28 @@ void Init()
         AllocateInfo.commandPool = BatchValue.Pool;
         AllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         AllocateInfo.commandBufferCount = 1;
+
         X_ASSERT(
             Disp.allocateCommandBuffers(&AllocateInfo, &BatchValue.CommandBuffer) != VK_SUCCESS,
             "failed to allocate resource loader command buffer"
         );
 
         PoolInfo.queueFamilyIndex = ::Engine::Base::Render::Vk::Device::GetQueues().GraphicsFamily;
+
         X_ASSERT(
             Disp.createCommandPool(&PoolInfo, nullptr, &BatchValue.GraphicsPool) != VK_SUCCESS,
             "failed to create resource loader graphics command pool"
         );
 
         AllocateInfo.commandPool = BatchValue.GraphicsPool;
+
         X_ASSERT(
             Disp.allocateCommandBuffers(&AllocateInfo, &BatchValue.GraphicsCommandBuffer) != VK_SUCCESS,
             "failed to allocate resource loader graphics command buffer"
         );
 
         VkFenceCreateInfo FenceInfo{ VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
+
         X_ASSERT(
             Disp.createFence(&FenceInfo, nullptr, &BatchValue.Fence) != VK_SUCCESS,
             "failed to create resource loader fence"
@@ -441,9 +622,6 @@ void Init()
             "failed to create resource loader graphics fence"
         );
 
-        BatchValue.Finished = MakeSemaphore();
-        BatchValue.TransferFinished = MakeSemaphore();
-
         BatchValue.RecordingFinished = true;
     }
 
@@ -452,6 +630,8 @@ void Init()
 
 void Cleanup()
 {
+    m_AcceptingJobs.store(false, std::memory_order_release);
+
     if (!m_Initialized) {
 
         return;
@@ -463,8 +643,7 @@ void Cleanup()
         FinishBatch(BatchValue);
 
         const vkb::DispatchTable& Disp = ::Engine::Base::Render::Vk::Device::GetDisp();
-        Disp.destroySemaphore(BatchValue.Finished, nullptr);
-        Disp.destroySemaphore(BatchValue.TransferFinished, nullptr);
+
         Disp.destroyFence(BatchValue.Fence, nullptr);
         Disp.destroyFence(BatchValue.GraphicsFence, nullptr);
         Disp.freeCommandBuffers(
@@ -472,25 +651,60 @@ void Cleanup()
             1,
             &BatchValue.CommandBuffer
         );
+
         Disp.destroyCommandPool(BatchValue.Pool, nullptr);
         Disp.freeCommandBuffers(
             BatchValue.GraphicsPool,
             1,
             &BatchValue.GraphicsCommandBuffer
         );
+
         Disp.destroyCommandPool(BatchValue.GraphicsPool, nullptr);
     }
 
+    for (const std::unique_ptr<StagingBlock>& Block : m_BufferStaging) {
+        DestroyBuffer(Block->Resource);
+    }
+
+    for (const std::unique_ptr<StagingBlock>& Block : m_ImageStaging) {
+        DestroyBuffer(Block->Resource);
+    }
+
+    m_BufferStaging.clear();
+    m_ImageStaging.clear();
     m_Batches.clear();
+
+    const vkb::DispatchTable& Disp = ::Engine::Base::Render::Vk::Device::GetDisp();
+
+    Disp.destroySemaphore(m_TransferTimeline, nullptr);
+    Disp.destroySemaphore(m_GraphicsTimeline, nullptr);
+
+    m_TransferTimeline = VK_NULL_HANDLE;
+    m_GraphicsTimeline = VK_NULL_HANDLE;
+
     m_PendingJobs.clear();
     m_PendingTickets.clear();
 
     m_Initialized = false;
 }
 
+void StopAcceptingJobs()
+{
+    m_AcceptingJobs.store(false, std::memory_order_release);
+}
+
 std::shared_ptr<ResourceJobTicket> PushFrameJobCallback(std::function<void()> p_Callback)
 {
     const std::shared_ptr<ResourceJobTicket> Ticket = std::make_shared<ResourceJobTicket>();
+
+    if (!m_AcceptingJobs.load(std::memory_order_acquire)) {
+        Ticket->Rejected.store(true, std::memory_order_release);
+        Ticket->Done.store(true, std::memory_order_release);
+        Ticket->FailureReason = "resource loader is not accepting jobs";
+
+        return Ticket;
+    }
+
     const std::string Name = "resource_callback_" + std::to_string(m_NextJob++);
 
     ::Engine::Base::JobSystem::It::PushBackground(
@@ -517,6 +731,15 @@ std::shared_ptr<ResourceJobTicket> PushFrameJobVk(std::function<void(VkCommandBu
     const std::shared_ptr<ResourceJobTicket> Ticket = std::make_shared<ResourceJobTicket>();
 
     std::lock_guard<std::mutex> Lock(m_Mutex);
+
+    if (!m_AcceptingJobs.load(std::memory_order_acquire)) {
+        Ticket->Rejected.store(true, std::memory_order_release);
+        Ticket->Done.store(true, std::memory_order_release);
+        Ticket->FailureReason = "resource loader is not accepting jobs";
+
+        return Ticket;
+    }
+
     m_PendingJobs.push_back(
         [Callback = std::move(p_Callback), Ticket](VkCommandBuffer p_CommandBuffer) {
             Callback(p_CommandBuffer);
@@ -575,12 +798,22 @@ void RecordPendingAcquires(VkCommandBuffer p_CommandBuffer)
     );
 }
 
-VkSemaphore GetTransferSemaphore()
+VkSemaphore GetCompletionSemaphore()
 {
     const Batch& BatchValue =
         *m_Batches.at(::Engine::Base::Render::Vk::Frame::GetCurrentFrameIndex());
 
-    return BatchValue.Finished;
+    return BatchValue.GraphicsSubmitted ? m_GraphicsTimeline : m_TransferTimeline;
+}
+
+uint64_t GetCompletionValue()
+{
+    const Batch& BatchValue =
+        *m_Batches.at(::Engine::Base::Render::Vk::Frame::GetCurrentFrameIndex());
+
+    return BatchValue.GraphicsSubmitted
+        ? BatchValue.GraphicsSubmitValue
+        : BatchValue.TransferSubmitValue;
 }
 
 bool HasTransferSubmission()
@@ -595,11 +828,8 @@ void QueueBufferUpload(const Buffer& p_Target, const void* p_Data, VkDeviceSize 
 {
     X_ASSERT(m_ActiveBatch == nullptr, "buffer upload must be recorded by a frame job");
 
-    Buffer Staging = CreateBuffer(
-        p_Size,
-        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
-    );
+    const StagingUse Use = AllocateStaging(false, p_Size);
+    const Buffer& Staging = Use.Block->Resource;
 
     const VmaAllocator Allocator = ::Engine::Base::Render::Vk::GpuResources::GetAllocator();
 
@@ -608,13 +838,13 @@ void QueueBufferUpload(const Buffer& p_Target, const void* p_Data, VkDeviceSize 
             Allocator,
             p_Data,
             Staging.Allocation,
-            0,
+            Use.Offset,
             p_Size
         ) != VK_SUCCESS,
         "failed to upload staging buffer"
     );
 
-    VkBufferCopy Copy{ 0, 0, p_Size };
+    VkBufferCopy Copy{ Use.Offset, 0, p_Size };
 
     ::Engine::Base::Render::Vk::Device::GetDisp().cmdCopyBuffer(
         m_ActiveBatch->CommandBuffer,
@@ -624,8 +854,9 @@ void QueueBufferUpload(const Buffer& p_Target, const void* p_Data, VkDeviceSize 
         &Copy
     );
 
-    m_ActiveBatch->Staging.push_back(Staging);
+    m_ActiveBatch->Staging.push_back(Use);
     m_ActiveBatch->Buffers.push_back({ p_Target.Handle, p_Target.Size });
+
     RecordReleaseBuffer(m_ActiveBatch->CommandBuffer, m_ActiveBatch->Buffers.back());
 }
 
@@ -633,11 +864,8 @@ void QueueImageUpload(const Image& p_Target, const void* p_Data, VkDeviceSize p_
 {
     X_ASSERT(m_ActiveBatch == nullptr, "image upload must be recorded by a frame job");
 
-    Buffer Staging = CreateBuffer(
-        p_Size,
-        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
-    );
+    const StagingUse Use = AllocateStaging(true, p_Size);
+    const Buffer& Staging = Use.Block->Resource;
 
     const VmaAllocator Allocator = ::Engine::Base::Render::Vk::GpuResources::GetAllocator();
 
@@ -646,7 +874,7 @@ void QueueImageUpload(const Image& p_Target, const void* p_Data, VkDeviceSize p_
             Allocator,
             p_Data,
             Staging.Allocation,
-            0,
+            Use.Offset,
             p_Size
         ) != VK_SUCCESS,
         "failed to upload staging buffer"
@@ -655,10 +883,11 @@ void QueueImageUpload(const Image& p_Target, const void* p_Data, VkDeviceSize p_
     ::Engine::Base::Render::Vk::GpuResources::RecordImageUpload(
         m_ActiveBatch->GraphicsCommandBuffer,
         p_Target,
-        Staging
+        Staging,
+        Use.Offset
     );
 
-    m_ActiveBatch->Staging.push_back(Staging);
+    m_ActiveBatch->Staging.push_back(Use);
     m_ActiveBatch->GraphicsHasCommands = true;
 }
 
@@ -735,6 +964,7 @@ void DestroyBuffer(Buffer& p_Target)
         },
         110
     );
+
     Future.get();
 }
 
@@ -763,6 +993,7 @@ Image CreateImage(
     VmaAllocationCreateInfo AllocationInfo{};
     AllocationInfo.usage = VMA_MEMORY_USAGE_AUTO;
     AllocationInfo.requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+
     Image Result;
     Result.Extent = p_Extent;
     Result.Format = p_Format;
@@ -790,6 +1021,7 @@ Image CreateImage(
     ViewInfo.subresourceRange.aspectMask = p_Aspect;
     ViewInfo.subresourceRange.levelCount = p_MipLevels;
     ViewInfo.subresourceRange.layerCount = p_ArrayLayers;
+
     if (::Engine::Base::Render::Vk::Device::GetDisp().createImageView(
             &ViewInfo,
             nullptr,
@@ -802,6 +1034,7 @@ Image CreateImage(
         );
         X_ASSERT(true, "failed to create resource image view");
     }
+
     return Result;
 }
 
@@ -839,6 +1072,7 @@ void DestroyImage(Image& p_Target)
         },
         110
     );
+
     Future.get();
 }
 
@@ -859,8 +1093,10 @@ VkImageView CreateImageView(
     ViewInfo.subresourceRange.layerCount = p_Target.ArrayLayers;
 
     VkImageView Result = VK_NULL_HANDLE;
+
     X_ASSERT(::Engine::Base::Render::Vk::Device::GetDisp().createImageView(&ViewInfo, nullptr, &Result) != VK_SUCCESS,
         "failed to create resource image view");
+
     return Result;
 }
 

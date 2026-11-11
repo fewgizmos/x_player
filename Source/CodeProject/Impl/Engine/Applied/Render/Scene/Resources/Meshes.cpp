@@ -104,6 +104,8 @@ std::string Mesh::GetTypeName() const
 
 void Mesh::BeginLoad()
 {
+    AdvanceVersionChecksum();
+
     const std::shared_ptr<LoadData> Data = LoadDataState;
 
     Data->Vertices = std::move(m_Vertices);
@@ -217,7 +219,8 @@ void Mesh::Update()
 
             return;
         }
-        if (m_GpuTicket->Failed.load(std::memory_order_acquire)) {
+        if (m_GpuTicket->Failed.load(std::memory_order_acquire)
+            || m_GpuTicket->Rejected.load(std::memory_order_acquire)) {
             SetFailed(m_GpuTicket->FailureReason);
 
             return;
@@ -333,6 +336,8 @@ void Mesh::Update()
 
 void Mesh::Unload()
 {
+    AdvanceVersionChecksum();
+
     if (m_VertexBuffer.Handle != VK_NULL_HANDLE) {
         ::Engine::Base::Render::ResourceLoader::DestroyBuffer(m_VertexBuffer);
     }

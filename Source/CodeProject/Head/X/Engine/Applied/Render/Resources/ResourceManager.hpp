@@ -5,6 +5,7 @@
 #include <string>
 #include <type_traits>
 #include <utility>
+#include <cstdint>
 
 namespace Engine::Applied::Render::Resources
 {
@@ -27,6 +28,8 @@ public:
     Resource& operator=(const Resource&) = delete;
 
     const std::string& GetKey() const;
+    uint64_t GetVersionChecksum() const;
+    uint64_t AdvanceVersionChecksum();
     virtual std::string GetTypeName() const = 0;
     ResourceState GetState() const;
     bool IsReady() const;
@@ -45,6 +48,7 @@ private:
     bool TryMarkFailureReported();
 
     std::string m_Key;
+    std::atomic<uint64_t> m_VersionChecksum = 0;
     std::atomic<ResourceState> m_State = ResourceState::Loading;
     std::string FailureReason;
     std::atomic<bool> FailureReported = false;

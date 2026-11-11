@@ -23,6 +23,7 @@ vkb::Device m_Device;
 vkb::DispatchTable m_Disp;
 
 QueueSet m_Queues;
+std::mutex m_GraphicsQueueMutex;
 
 bool m_HasMemoryBudget = false;
 
@@ -55,6 +56,7 @@ void CreateDevice(const vkb::Instance& p_Instance)
 
     Features12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
     Features12.bufferDeviceAddress = VK_TRUE;
+    Features12.timelineSemaphore = VK_TRUE;
     Features12.descriptorIndexing = VK_TRUE;
     Features12.runtimeDescriptorArray = VK_TRUE;
     Features12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
@@ -160,6 +162,8 @@ const vkb::DispatchTable& GetDisp()      { return m_Disp; }
 VkSurfaceKHR GetSurface() { return m_Surface; }
 
 const QueueSet& GetQueues() { return m_Queues; }
+
+std::mutex& GetGraphicsQueueMutex() { return m_GraphicsQueueMutex; }
 
 bool HasMemoryBudget() { return m_HasMemoryBudget; }
 
