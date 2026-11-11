@@ -1,6 +1,7 @@
 #include "X/Engine/Applied/Render/Scene/Resources/Meshes.hpp"
 
 #include "X/Engine/Base/JobSystem/JobManager.hpp"
+#include "X/Engine/Base/Render/ResourceLoader.hpp"
 #include "X/Engine/Base/Render/Vulkan/GpuResources.hpp"
 #include "X/Engine/Base/Runtime/EngineThreadIDs.hpp"
 
@@ -34,6 +35,9 @@ struct Mesh::LoadData
     std::string FailureReason;
     bool Finished = false;
     bool Failed = false;
+
+    ::Engine::Base::Render::Buffer VertexBuffer;
+    ::Engine::Base::Render::Buffer IndexBuffer;
 };
 
 namespace
@@ -204,21 +208,42 @@ void Mesh::BeginLoad()
 void Mesh::Update()
 {
     if (GetState() != ::Engine::Applied::Render::Resources::ResourceState::Loading) {
+
+        return;
+    }
+
+    if (m_GpuTicket) {
+        if (!m_GpuTicket->Done.load(std::memory_order_acquire)) {
+
+            return;
+        }
+        if (m_GpuTicket->Failed.load(std::memory_order_acquire)) {
+            SetFailed(m_GpuTicket->FailureReason);
+
+            return;
+        }
+        m_VertexBuffer = LoadDataState->VertexBuffer;
+        m_IndexBuffer = LoadDataState->IndexBuffer;
+        SetState(::Engine::Applied::Render::Resources::ResourceState::Ready);
         return;
     }
 
     std::vector<Vertex> Vertices;
     std::vector<uint32_t> Indices;
+
     std::vector<Cluster> Clusters;
     std::vector<Cluster> ClusterGroups;
+
     glm::vec3 BoundsMin;
     glm::vec3 BoundsMax;
+
     std::string FailureReason;
 
     {
         std::lock_guard<std::mutex> Lock(LoadDataState->Mutex);
 
         if (!LoadDataState->Finished) {
+
             return;
         }
 
@@ -236,6 +261,7 @@ void Mesh::Update()
 
     if (!FailureReason.empty()) {
         SetFailed(std::move(FailureReason));
+
         return;
     }
 
@@ -247,19 +273,35 @@ void Mesh::Update()
         m_BoundsMin = BoundsMin;
         m_BoundsMax = BoundsMax;
 
-        m_VertexBuffer = ::Engine::Base::Render::Vk::GpuResources::CreateBuffer(
-            sizeof(Vertex) * m_Vertices.size(),
-            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
-        );
-        m_IndexBuffer = ::Engine::Base::Render::Vk::GpuResources::CreateBuffer(
-            sizeof(uint32_t) * m_Indices.size(),
-            VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
-        );
+        const std::shared_ptr<LoadData> Data = LoadDataState;
+        const std::vector<Vertex> Vertices = m_Vertices;
+        const std::vector<uint32_t> Indices = m_Indices;
 
-        ::Engine::Base::Render::Vk::GpuResources::UploadBuffer(m_VertexBuffer, m_Vertices.data(), m_VertexBuffer.Size);
-        ::Engine::Base::Render::Vk::GpuResources::UploadBuffer(m_IndexBuffer, m_Indices.data(), m_IndexBuffer.Size);
+        m_GpuTicket = ::Engine::Base::Render::ResourceLoader::PushFrameJobVk(
+            [Data, Vertices, Indices](VkCommandBuffer) {
+                Data->VertexBuffer = ::Engine::Base::Render::ResourceLoader::CreateBuffer(
+                    sizeof(Vertex) * Vertices.size(),
+                    VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
+                );
+
+                Data->IndexBuffer = ::Engine::Base::Render::ResourceLoader::CreateBuffer(
+                    sizeof(uint32_t) * Indices.size(),
+                    VK_BUFFER_USAGE_INDEX_BUFFER_BIT
+                );
+
+                ::Engine::Base::Render::ResourceLoader::QueueBufferUpload(
+                    Data->VertexBuffer,
+                    Vertices.data(),
+                    Data->VertexBuffer.Size
+                );
+
+                ::Engine::Base::Render::ResourceLoader::QueueBufferUpload(
+                    Data->IndexBuffer,
+                    Indices.data(),
+                    Data->IndexBuffer.Size
+                );
+            }
+        );
 
         if (!KEEP_CPU_DATA) {
             m_Vertices.clear();
@@ -267,27 +309,25 @@ void Mesh::Update()
             m_Indices.clear();
             m_Indices.shrink_to_fit();
         }
-
-        SetState(::Engine::Applied::Render::Resources::ResourceState::Ready);
     }
     catch (const std::exception& Error) {
         if (m_VertexBuffer.Handle != VK_NULL_HANDLE) {
-            ::Engine::Base::Render::Vk::GpuResources::DestroyBuffer(m_VertexBuffer);
+            ::Engine::Base::Render::ResourceLoader::DestroyBuffer(m_VertexBuffer);
         }
 
         if (m_IndexBuffer.Handle != VK_NULL_HANDLE) {
-            ::Engine::Base::Render::Vk::GpuResources::DestroyBuffer(m_IndexBuffer);
+            ::Engine::Base::Render::ResourceLoader::DestroyBuffer(m_IndexBuffer);
         }
 
         SetFailed(Error.what());
     }
     catch (...) {
         if (m_VertexBuffer.Handle != VK_NULL_HANDLE) {
-            ::Engine::Base::Render::Vk::GpuResources::DestroyBuffer(m_VertexBuffer);
+            ::Engine::Base::Render::ResourceLoader::DestroyBuffer(m_VertexBuffer);
         }
 
         if (m_IndexBuffer.Handle != VK_NULL_HANDLE) {
-            ::Engine::Base::Render::Vk::GpuResources::DestroyBuffer(m_IndexBuffer);
+            ::Engine::Base::Render::ResourceLoader::DestroyBuffer(m_IndexBuffer);
         }
 
         SetFailed("unknown mesh GPU upload failure");
@@ -297,11 +337,11 @@ void Mesh::Update()
 void Mesh::Unload()
 {
     if (m_VertexBuffer.Handle != VK_NULL_HANDLE) {
-        ::Engine::Base::Render::Vk::GpuResources::DestroyBuffer(m_VertexBuffer);
+        ::Engine::Base::Render::ResourceLoader::DestroyBuffer(m_VertexBuffer);
     }
 
     if (m_IndexBuffer.Handle != VK_NULL_HANDLE) {
-        ::Engine::Base::Render::Vk::GpuResources::DestroyBuffer(m_IndexBuffer);
+        ::Engine::Base::Render::ResourceLoader::DestroyBuffer(m_IndexBuffer);
     }
 }
 

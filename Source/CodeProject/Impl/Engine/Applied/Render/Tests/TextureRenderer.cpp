@@ -7,28 +7,26 @@
 #include "X/Engine/Applied/Render/Resources/ResourceManager.hpp"
 #include "X/Engine/Applied/Render/Resources/Shaders.hpp"
 #include "X/Engine/Applied/Render/Resources/Textures.hpp"
+#include "X/Engine/Applied/Render/Scene/Resources/Meshes.hpp"
 
 #include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
 #include "X/Engine/Base/Render/RenderingPool.hpp"
 #include "X/Engine/Base/Render/Vulkan/Commands.hpp"
 #include "X/Engine/Base/Render/Vulkan/Device.hpp"
 #include "X/Engine/Base/Render/Vulkan/Frame.hpp"
-#include "X/Engine/Base/Render/Vulkan/GpuResources.hpp"
 #include "X/Engine/Base/Render/Vulkan/Shader.hpp"
 
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/mat4x4.hpp>
-#include <glm/vec2.hpp>
 
-#include <vk_mem_alloc.h>
 #include <vulkan/vulkan_core.h>
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <utility>
+#include <vector>
 
 namespace Engine::Applied::Render::Tests::TextureRenderer
 {
@@ -36,11 +34,11 @@ namespace Engine::Applied::Render::Tests::TextureRenderer
 namespace
 {
 
-struct Vertex
-{
-    glm::vec2 Position;
-    glm::vec2 UV;
-};
+using Mesh = ::Engine::Applied::Render::Scene::Resources::Meshes::Mesh;
+using Vertex = ::Engine::Applied::Render::Scene::Resources::Meshes::Vertex;
+using Texture = ::Engine::Applied::Render::Resources::Textures::Texture;
+using MeshReference = ::Engine::Applied::Render::Resources::Ref<Mesh>;
+using TextureReference = ::Engine::Applied::Render::Resources::Ref<Texture>;
 
 struct PushConstants
 {
@@ -49,11 +47,12 @@ struct PushConstants
     uint32_t SamplerIndex;
 };
 
-Engine::Applied::Render::Resources::Ref<Engine::Applied::Render::Resources::Shaders::Shader> m_Shader;
-Engine::Base::Render::Buffer m_VertexBuffer;
-Engine::Base::Render::Buffer m_IndexBuffer;
-std::unique_ptr<Engine::Applied::Render::Resources::Ref<
-    Engine::Applied::Render::Resources::Textures::Texture>> m_DefaultEngineLogo;
+Engine::Applied::Render::Resources::Ref<
+    Engine::Applied::Render::Resources::Shaders::Shader> m_Shader;
+
+std::unique_ptr<MeshReference> m_Mesh;
+
+std::unique_ptr<TextureReference> m_DefaultEngineLogo;
 
 const ::Engine::Base::BootstrapManager::DeferredBootstrapRegistration::InitRegistrar
     RegisterInit("texture_test_renderer_init", Init, 30);
@@ -76,11 +75,16 @@ void CreatePipeline()
     Info.PushConstantSize = sizeof(PushConstants);
     Info.PushConstantStages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     Info.VertexBindings = {
-        { 0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX }
+        {
+            0,
+            sizeof(Vertex),
+            VK_VERTEX_INPUT_RATE_VERTEX
+        }
     };
     Info.VertexAttributes = {
-        { 0, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, Position) },
-        { 1, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, UV) }
+        { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, Position) },
+        { 1, 0, VK_FORMAT_R32_SFLOAT, offsetof(Vertex, UvX) },
+        { 2, 0, VK_FORMAT_R32_SFLOAT, offsetof(Vertex, UvY) }
     };
 
     ::Engine::Applied::Render::Resources::Shaders::ShaderCreateInfo ShaderInfo;
@@ -91,30 +95,20 @@ void CreatePipeline()
         ::Engine::Applied::Render::Resources::Shaders::Shader>(std::move(ShaderInfo));
 }
 
-void CreateBuffers()
+void CreateMesh()
 {
-    constexpr std::array<Vertex, 4> Vertices = {{
-        { { -256.0f, -256.0f }, { 0.0f, 1.0f } },
-        { {  256.0f, -256.0f }, { 1.0f, 1.0f } },
-        { {  256.0f,  256.0f }, { 1.0f, 0.0f } },
-        { { -256.0f,  256.0f }, { 0.0f, 0.0f } }
-    }};
+    std::vector<Vertex> Vertices = {
+        { { -256.0f, -256.0f, 0.0f }, 0.0f, {}, 1.0f, {}, {} },
+        { {  256.0f, -256.0f, 0.0f }, 1.0f, {}, 1.0f, {}, {} },
+        { {  256.0f,  256.0f, 0.0f }, 1.0f, {}, 0.0f, {}, {} },
+        { { -256.0f,  256.0f, 0.0f }, 0.0f, {}, 0.0f, {}, {} }
+    };
 
-    constexpr std::array<uint32_t, 6> Indices = { 0, 1, 2, 2, 3, 0 };
+    std::vector<uint32_t> Indices = { 0, 1, 2, 2, 3, 0 };
 
-    m_VertexBuffer = ::Engine::Base::Render::Vk::GpuResources::CreateBuffer(
-        sizeof(Vertices),
-        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
+    m_Mesh = std::make_unique<MeshReference>(
+        std::move(Vertices), std::move(Indices)
     );
-    m_IndexBuffer = ::Engine::Base::Render::Vk::GpuResources::CreateBuffer(
-        sizeof(Indices),
-        VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
-    );
-
-    ::Engine::Base::Render::Vk::GpuResources::UploadBuffer(m_VertexBuffer, Vertices.data(), sizeof(Vertices));
-    ::Engine::Base::Render::Vk::GpuResources::UploadBuffer(m_IndexBuffer, Indices.data(), sizeof(Indices));
 }
 
 }
@@ -122,11 +116,12 @@ void CreateBuffers()
 void Init()
 {
     if constexpr (!::Engine::Configs::Static::Tests::TEXTURE_RENDERER_ENABLED) {
+
         return;
     }
 
     CreatePipeline();
-    CreateBuffers();
+    CreateMesh();
     m_DefaultEngineLogo = std::make_unique<Engine::Applied::Render::Resources::Ref<
         Engine::Applied::Render::Resources::Textures::Texture>>(
         "Resources/Images/DefaultEngineLogo.png",
@@ -141,37 +136,38 @@ void Cleanup()
     m_DefaultEngineLogo.reset();
 
     m_Shader = {};
-
-    if (m_VertexBuffer.Handle != VK_NULL_HANDLE) {
-        ::Engine::Base::Render::Vk::GpuResources::DestroyBuffer(m_VertexBuffer);
-    }
-
-    if (m_IndexBuffer.Handle != VK_NULL_HANDLE) {
-        ::Engine::Base::Render::Vk::GpuResources::DestroyBuffer(m_IndexBuffer);
-    }
+    m_Mesh.reset();
 }
 
 void Render()
 {
-    if (!m_Shader.IsReady() || !m_DefaultEngineLogo || !m_DefaultEngineLogo->IsReady()) {
+    if (!m_Shader.IsReady()
+        || !m_Mesh
+        || !m_Mesh->IsReady()
+        || !m_DefaultEngineLogo
+        || !m_DefaultEngineLogo->IsReady()) {
+
         return;
     }
 
-    const auto& Texture = *m_DefaultEngineLogo->Get();
-    const auto& Pipeline = m_Shader->GetGraphicsPipeline();
+    const Mesh& MeshValue = *m_Mesh->Get();
+    const Texture& TextureValue = *m_DefaultEngineLogo->Get();
+    const Engine::Base::Render::Pipeline& Pipeline = m_Shader->GetGraphicsPipeline();
 
-    const auto& Frame = ::Engine::Base::Render::Vk::Frame::GetCurrentFrame();
-    const auto& Image = ::Engine::Base::Render::Vk::Frame::GetCurrentImage();
-    const auto& Swapchain = ::Engine::Base::Render::Vk::Frame::GetSwapchain();
-    const auto& Disp = ::Engine::Base::Render::Vk::Device::GetDisp();
+    const ::Engine::Base::Render::FrameData& Frame =
+        ::Engine::Base::Render::Vk::Frame::GetCurrentFrame();
+    const ::Engine::Base::Render::SwapchainImageData& Image =
+        ::Engine::Base::Render::Vk::Frame::GetCurrentImage();
+    const vkb::Swapchain& Swapchain = ::Engine::Base::Render::Vk::Frame::GetSwapchain();
+    const vkb::DispatchTable& Disp = ::Engine::Base::Render::Vk::Device::GetDisp();
 
-    VkRenderingAttachmentInfo Attachment{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
+    VkRenderingAttachmentInfo Attachment{ VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
     Attachment.imageView = Image.ImageView;
     Attachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     Attachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
     Attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 
-    VkRenderingInfo RenderingInfo{VK_STRUCTURE_TYPE_RENDERING_INFO};
+    VkRenderingInfo RenderingInfo{ VK_STRUCTURE_TYPE_RENDERING_INFO };
     RenderingInfo.renderArea.extent = Swapchain.extent;
     RenderingInfo.layerCount = 1;
     RenderingInfo.colorAttachmentCount = 1;
@@ -181,12 +177,13 @@ void Render()
 
     const float Width = static_cast<float>(Swapchain.extent.width);
     const float Height = static_cast<float>(Swapchain.extent.height);
+
     const PushConstants Constants{
         glm::translate(
             glm::ortho(0.0f, Width, Height, 0.0f, -1.0f, 1.0f),
             { Width * 0.5f, Height * 0.5f, 0.0f }
         ),
-        Texture.GetIndex(),
+        TextureValue.GetIndex(),
         0
     };
 
@@ -203,8 +200,19 @@ void Render()
     Disp.cmdBindPipeline(Frame.CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, Pipeline.Handle);
 
     const VkDeviceSize Offset = 0;
-    Disp.cmdBindVertexBuffers(Frame.CommandBuffer, 0, 1, &m_VertexBuffer.Handle, &Offset);
-    Disp.cmdBindIndexBuffer(Frame.CommandBuffer, m_IndexBuffer.Handle, 0, VK_INDEX_TYPE_UINT32);
+    Disp.cmdBindVertexBuffers(
+        Frame.CommandBuffer,
+        0,
+        1,
+        &MeshValue.GetVertexBuffer().Handle,
+        &Offset
+    );
+    Disp.cmdBindIndexBuffer(
+        Frame.CommandBuffer,
+        MeshValue.GetIndexBuffer().Handle,
+        0,
+        VK_INDEX_TYPE_UINT32
+    );
     const VkDescriptorSet DescriptorSet =
         ::Engine::Applied::Render::Resources::Textures::GetBindlessSet();
     Disp.cmdBindDescriptorSets(
@@ -226,7 +234,14 @@ void Render()
         &Constants
     );
 
-    Disp.cmdDrawIndexed(Frame.CommandBuffer, 6, 1, 0, 0, 0);
+    Disp.cmdDrawIndexed(
+        Frame.CommandBuffer,
+        MeshValue.GetIndexCount(),
+        1,
+        0,
+        0,
+        0
+    );
     Disp.cmdEndRendering(Frame.CommandBuffer);
 }
 

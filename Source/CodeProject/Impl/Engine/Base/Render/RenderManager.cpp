@@ -10,6 +10,7 @@
 #include "X/Engine/Base/Runtime/EngineThreadIDs.hpp"
 
 #include "X/Engine/Base/Render/ArtifactsDeletor.hpp"
+#include "X/Engine/Base/Render/ResourceLoader.hpp"
 #include "X/Engine/Base/Render/RenderingPool.hpp"
 
 #include "X/Engine/Base/Render/Vulkan/Commands.hpp"
@@ -141,7 +142,6 @@ void Init()
 
     Vk::Frame::CreateFrameData();
 
-    Vk::GpuResources::OpenRequests();
 }
 
 void WaitIdle()
@@ -175,9 +175,6 @@ void RenderFrame()
     X_ASSERT(Disp.waitForFences(1, &Frame.FenceInflight, VK_TRUE, UINT64_MAX) != VK_SUCCESS,
         "Failed to wait for frame fence");
 
-    Vk::GpuResources::DestroyUsedStaging();
-    Vk::GpuResources::ProcessRequests();
-
     const auto Extent = Viewport::Surface::GetExtent();
 
     if (Extent.x == 0 || Extent.y == 0) {
@@ -204,7 +201,8 @@ void RenderFrame()
     vmaSetCurrentFrameIndex(Vk::GpuResources::GetAllocator(), m_FrameCounter++);
     Vk::Commands::Reset(Frame.CommandBuffer);
     Vk::Commands::Begin(Frame.CommandBuffer);
-    Vk::GpuResources::FlushUploads();
+    ResourceLoader::BeginFrame();
+    ResourceLoader::RecordPendingAcquires(Frame.CommandBuffer);
 
     ClearBackground(Frame.CommandBuffer);
 
@@ -229,7 +227,21 @@ void RenderFrame()
     Signal.semaphore = Image.SemaphoreFinished;
     Signal.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
 
-    Vk::Commands::Submit(Frame.CommandBuffer, &Wait, &Signal, Frame.FenceInflight);
+    VkSemaphoreSubmitInfo TransferWait{ VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO };
+    const VkSemaphoreSubmitInfo* TransferWaitPtr = nullptr;
+    if (ResourceLoader::HasTransferSubmission()) {
+        TransferWait.semaphore = ResourceLoader::GetTransferSemaphore();
+        TransferWait.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+        TransferWaitPtr = &TransferWait;
+    }
+
+    Vk::Commands::Submit(
+        Frame.CommandBuffer,
+        &Wait,
+        &Signal,
+        Frame.FenceInflight,
+        TransferWaitPtr
+    );
 
     VkSwapchainKHR Swapchain = Vk::Frame::GetSwapchain();
     VkPresentInfoKHR Present{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};

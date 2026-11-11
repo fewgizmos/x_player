@@ -32,7 +32,7 @@ void Init()
 const BootstrapManager::DeferredBootstrapRegistration::InitRegistrar
     RegisterInit("jobsystem_init", Init, 60);
 const BootstrapManager::DeferredBootstrapRegistration::CleanRegistrar
-    RegisterClean("jobsystem_clean", Shutdown, 100);
+    RegisterClean("jobsystem_clean", Shutdown, 50);
 
 FrameSync m_Sync;
 

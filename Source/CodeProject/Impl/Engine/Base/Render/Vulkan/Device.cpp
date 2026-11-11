@@ -141,6 +141,16 @@ void MakeQueues()
 
     m_Queues.GraphicsFamily = m_Device.get_queue_index(vkb::QueueType::graphics).value();
     m_Queues.PresentFamily  = m_Device.get_queue_index(vkb::QueueType::present).value();
+
+    const vkb::Result<VkQueue> Tq = m_Device.get_queue(vkb::QueueType::transfer);
+    if (Tq.has_value()) {
+        m_Queues.Transfer = Tq.value();
+        m_Queues.TransferFamily = m_Device.get_queue_index(vkb::QueueType::transfer).value();
+        m_Queues.DedicatedTransfer = m_Queues.TransferFamily != m_Queues.GraphicsFamily;
+    } else {
+        m_Queues.Transfer = m_Queues.Graphics;
+        m_Queues.TransferFamily = m_Queues.GraphicsFamily;
+    }
 }
 
 const vkb::PhysicalDevice& GetPhysical() { return m_Physical; }

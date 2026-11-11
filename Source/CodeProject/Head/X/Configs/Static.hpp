@@ -53,4 +53,18 @@ inline constexpr bool TEXTURE_RENDERER_ENABLED = true;
 
 }
 
+namespace Scene
+{
+
+inline constexpr float MetersPerUnit = 1.0f;
+
+}
+
+namespace ResourceLoader
+{
+
+inline constexpr int BATCH_COUNT = Graphics::MAX_FRAMES_IN_FLIGHT;
+
+}
+
 }

@@ -86,7 +86,8 @@ void Submit(
     VkCommandBuffer p_Cmd,
     const VkSemaphoreSubmitInfo* p_Wait,
     const VkSemaphoreSubmitInfo* p_Signal,
-    VkFence p_Fence
+    VkFence p_Fence,
+    const VkSemaphoreSubmitInfo* p_ExtraWait
 )
 {
     VkCommandBufferSubmitInfo CmdInfo = {};
@@ -94,11 +95,21 @@ void Submit(
     CmdInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
     CmdInfo.commandBuffer = p_Cmd;
 
+    VkSemaphoreSubmitInfo Waits[2] = {};
+    uint32_t WaitCount = 0;
+
+    if (p_Wait != nullptr) {
+        Waits[WaitCount++] = *p_Wait;
+    }
+    if (p_ExtraWait != nullptr) {
+        Waits[WaitCount++] = *p_ExtraWait;
+    }
+
     VkSubmitInfo2 SubmitInfo = {};
 
     SubmitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
-    SubmitInfo.waitSemaphoreInfoCount = p_Wait != nullptr ? 1 : 0;
-    SubmitInfo.pWaitSemaphoreInfos = p_Wait;
+    SubmitInfo.waitSemaphoreInfoCount = WaitCount;
+    SubmitInfo.pWaitSemaphoreInfos = WaitCount > 0 ? Waits : nullptr;
     SubmitInfo.commandBufferInfoCount = 1;
     SubmitInfo.pCommandBufferInfos = &CmdInfo;
     SubmitInfo.signalSemaphoreInfoCount = p_Signal != nullptr ? 1 : 0;

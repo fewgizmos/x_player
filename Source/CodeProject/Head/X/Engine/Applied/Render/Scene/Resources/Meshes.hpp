@@ -1,6 +1,7 @@
 #pragma once
 
 #include "X/Engine/Applied/Render/Resources/ResourceManager.hpp"
+#include "X/Engine/Base/Render/ResourceLoader.hpp"
 
 #include "X/Engine/Base/Render/Vulkan/GpuResources.hpp"
 
@@ -67,6 +68,7 @@ private:
 
     struct LoadData;
     std::shared_ptr<LoadData> LoadDataState;
+    std::shared_ptr<::Engine::Base::Render::ResourceLoader::ResourceJobTicket> m_GpuTicket;
 };
 
 }

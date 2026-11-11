@@ -10,6 +10,7 @@
 #include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
 #include "X/Engine/Base/JobSystem/JobManager.hpp"
 #include "X/Engine/Base/Render/RenderingPool.hpp"
+#include "X/Engine/Base/Render/ResourceLoader.hpp"
 #include "X/Engine/Base/Render/Vulkan/Frame.hpp"
 #include "X/Engine/Base/Render/Vulkan/GpuResources.hpp"
 #include "X/Engine/Base/Render/Vulkan/Samplers.hpp"
@@ -180,7 +181,12 @@ struct ErasedMaterial
 };
 
 std::vector<ErasedMaterial> m_ErasedMaterials;
+
 ::Engine::Base::Render::Buffer m_Buffers[::Engine::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT];
+std::shared_ptr<::Engine::Base::Render::ResourceLoader::ResourceJobTicket>
+    m_BufferTickets[::Engine::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT];
+std::shared_ptr<::Engine::Base::Render::ResourceLoader::ResourceJobTicket>
+    m_BufferCreateTickets[::Engine::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT];
 uint64_t m_Version = 0;
 uint64_t m_BufferVersions[::Engine::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT] = {};
 
@@ -596,11 +602,15 @@ void Init()
 {
     ::Engine::Base::Render::RenderingPool::Register("scene_materials_flush", Flush, 100);
 
-    for (auto& Buffer : m_Buffers) {
-        Buffer = ::Engine::Base::Render::Vk::GpuResources::CreateBuffer(
-            sizeof(MaterialData) * ::Engine::Configs::Static::Graphics::MAX_MATERIALS,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
+    for (uint32_t I = 0; I < ::Engine::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT; ++I) {
+        m_BufferCreateTickets[I] = ::Engine::Base::Render::ResourceLoader::PushFrameJobVk(
+            [I](VkCommandBuffer) {
+                m_Buffers[I] = ::Engine::Base::Render::ResourceLoader::CreateBuffer(
+                    sizeof(MaterialData) * ::Engine::Configs::Static::Graphics::MAX_MATERIALS,
+                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                    VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
+                );
+            }
         );
     }
 }
@@ -608,7 +618,7 @@ void Init()
 void Cleanup()
 {
     for (auto& Buffer : m_Buffers) {
-        ::Engine::Base::Render::Vk::GpuResources::DestroyBuffer(Buffer);
+        ::Engine::Base::Render::ResourceLoader::DestroyBuffer(Buffer);
     }
 
     std::lock_guard<std::mutex> Lock(m_RegistryMutex);
@@ -637,14 +647,26 @@ void Flush()
     }
 
     const uint32_t Frame = ::Engine::Base::Render::Vk::Frame::GetCurrentFrameIndex();
+    if (!m_BufferCreateTickets[Frame]
+        || !m_BufferCreateTickets[Frame]->Done.load(std::memory_order_acquire)) {
+
+        return;
+    }
     if (m_BufferVersions[Frame] == m_Version || m_Data.empty()) {
         return;
     }
 
-    ::Engine::Base::Render::Vk::GpuResources::UploadBuffer(
-        m_Buffers[Frame],
-        m_Data.data(),
-        sizeof(MaterialData) * m_Data.size()
+    const ::Engine::Base::Render::Buffer Buffer = m_Buffers[Frame];
+    const std::vector<MaterialData> Data = m_Data;
+
+    m_BufferTickets[Frame] = ::Engine::Base::Render::ResourceLoader::PushFrameJobVk(
+        [Buffer, Data](VkCommandBuffer) {
+            ::Engine::Base::Render::ResourceLoader::QueueBufferUpload(
+                Buffer,
+                Data.data(),
+                sizeof(MaterialData) * Data.size()
+            );
+        }
     );
 
     m_BufferVersions[Frame] = m_Version;

@@ -22,8 +22,10 @@ struct ShaderCreateInfo
     std::string VertexFile;
     std::string FragmentFile;
     std::string ComputeFile;
+
     ::Engine::Base::Render::GraphicsPipelineCreateInfo Graphics;
     ::Engine::Base::Render::ComputePipelineCreateInfo Compute;
+
     RenderQueue Queue = RenderQueue::Opaque;
 };
 
@@ -44,10 +46,11 @@ public:
 
 private:
     struct LoadData;
+    std::shared_ptr<LoadData> LoadState;
     ShaderCreateInfo CreateInfo;
+
     ::Engine::Base::Render::Pipeline Graphics;
     ::Engine::Base::Render::Pipeline Compute;
-    std::shared_ptr<LoadData> LoadState;
 };
 
 }

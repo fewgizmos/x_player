@@ -1,6 +1,7 @@
 #pragma once
 
 #include "X/Engine/Applied/Render/Resources/ResourceManager.hpp"
+#include "X/Engine/Base/Render/ResourceLoader.hpp"
 
 #include "X/Engine/Base/Render/Vulkan/GpuResources.hpp"
 
@@ -36,6 +37,7 @@ private:
     Engine::Base::Render::Image m_Image;
     uint32_t m_Index = UINT32_MAX;
     std::shared_ptr<LoadData> m_LoadData;
+    std::shared_ptr<::Engine::Base::Render::ResourceLoader::ResourceJobTicket> m_GpuTicket;
 };
 
 void Init();

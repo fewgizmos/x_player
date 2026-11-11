@@ -25,7 +25,8 @@ void Submit(
     VkCommandBuffer p_Cmd,
     const VkSemaphoreSubmitInfo* p_Wait,
     const VkSemaphoreSubmitInfo* p_Signal,
-    VkFence p_Fence
+    VkFence p_Fence,
+    const VkSemaphoreSubmitInfo* p_ExtraWait = nullptr
 );
 
 void ImmediateSubmit(const std::function<void(VkCommandBuffer)>& p_Record);

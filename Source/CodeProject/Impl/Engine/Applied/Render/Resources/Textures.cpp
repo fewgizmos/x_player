@@ -7,6 +7,7 @@
 #include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
 #include "X/Engine/Base/JobSystem/DeferredTaskRegistration.hpp"
 #include "X/Engine/Base/JobSystem/JobManager.hpp"
+#include "X/Engine/Base/Render/ResourceLoader.hpp"
 
 #include "X/Engine/Base/Render/Vulkan/Descriptors.hpp"
 #include "X/Engine/Base/Render/Vulkan/Device.hpp"
@@ -32,9 +33,13 @@ namespace Engine::Applied::Render::Resources::Textures
 struct Texture::LoadData
 {
     std::mutex Mutex;
+
     std::vector<std::byte> Pixels;
     uint32_t Width = 0;
     uint32_t Height = 0;
+
+    Engine::Base::Render::Image Image;
+
     std::string FailureReason;
     bool Finished = false;
 };
@@ -45,9 +50,11 @@ namespace
 VkDescriptorPool m_DescriptorPool = VK_NULL_HANDLE;
 VkDescriptorSetLayout m_SetLayout = VK_NULL_HANDLE;
 VkDescriptorSet m_Set = VK_NULL_HANDLE;
+
 std::mutex m_IndexMutex;
 uint32_t m_BoundSamplers = 0;
 uint32_t m_NextIndex = 0;
+
 std::vector<uint32_t> m_FreeIndices;
 
 struct ErasedIndex
@@ -174,10 +181,33 @@ void Texture::BeginLoad()
 void Texture::Update()
 {
     if (GetState() != ResourceState::Loading) {
+
         return;
     }
 
-    std::vector<std::byte> Pixels;
+    if (m_GpuTicket) {
+        if (!m_GpuTicket->Done.load(std::memory_order_acquire)) {
+
+            return;
+        }
+        if (m_GpuTicket->Failed.load(std::memory_order_acquire)) {
+            SetFailed(m_GpuTicket->FailureReason);
+
+            return;
+        }
+
+        m_Image = m_LoadData->Image;
+        m_LoadData->Pixels.clear();
+
+        m_Index = TakeIndex();
+
+        ::Engine::Base::Render::Vk::Descriptors::WriteImage(
+            m_Set, 1, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, m_Image.View,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_NULL_HANDLE, m_Index);
+        SetState(ResourceState::Ready);
+        return;
+    }
+
     uint32_t Width = 0;
     uint32_t Height = 0;
 
@@ -185,15 +215,16 @@ void Texture::Update()
         std::lock_guard<std::mutex> Lock(m_LoadData->Mutex);
 
         if (!m_LoadData->Finished) {
+
             return;
         }
 
         if (m_LoadData->Pixels.empty()) {
             SetFailed("Failed to load image " + Path + ": " + m_LoadData->FailureReason);
+
             return;
         }
 
-        Pixels = std::move(m_LoadData->Pixels);
         Width = m_LoadData->Width;
         Height = m_LoadData->Height;
     }
@@ -204,6 +235,7 @@ void Texture::Update()
     }
 
     VkFormatProperties Properties = {};
+
     vkGetPhysicalDeviceFormatProperties(::Engine::Base::Render::Vk::Device::GetPhysical().physical_device,
         Format, &Properties);
     const VkFormatFeatureFlags Required = VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT
@@ -211,39 +243,33 @@ void Texture::Update()
         | VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT;
     X_ASSERT((Properties.optimalTilingFeatures & Required) != Required, "Texture format does not support filtered mipmaps");
 
-    m_Image = ::Engine::Base::Render::Vk::GpuResources::CreateImage(
-        { Width, Height, 1 },
-        Format,
-        VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-        VK_IMAGE_ASPECT_COLOR_BIT,
-        MipLevels
+    const std::shared_ptr<LoadData> Data = m_LoadData;
+    const VkFormat TextureFormat = Format;
+
+    m_GpuTicket = ::Engine::Base::Render::ResourceLoader::PushFrameJobVk(
+        [Data, TextureFormat, Width, Height, MipLevels](VkCommandBuffer) {
+            Data->Image = ::Engine::Base::Render::ResourceLoader::CreateImage(
+                { Width, Height, 1 },
+                TextureFormat,
+                VK_IMAGE_USAGE_TRANSFER_SRC_BIT
+                    | VK_IMAGE_USAGE_TRANSFER_DST_BIT
+                    | VK_IMAGE_USAGE_SAMPLED_BIT,
+                VK_IMAGE_ASPECT_COLOR_BIT,
+                MipLevels
+            );
+            ::Engine::Base::Render::ResourceLoader::QueueImageUpload(
+                Data->Image,
+                Data->Pixels.data(),
+                Data->Pixels.size()
+            );
+        }
     );
-
-    ::Engine::Base::Render::Vk::GpuResources::QueueImageUpload(
-        m_Image,
-        Pixels.data(),
-        Pixels.size()
-    );
-
-    m_Index = TakeIndex();
-
-    ::Engine::Base::Render::Vk::Descriptors::WriteImage(
-        m_Set,
-        1,
-        VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
-        m_Image.View,
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        VK_NULL_HANDLE,
-        m_Index
-    );
-
-    SetState(ResourceState::Ready);
 }
 
 void Texture::Unload()
 {
     if (m_Image.Handle != VK_NULL_HANDLE) {
-        ::Engine::Base::Render::Vk::GpuResources::DestroyImage(m_Image);
+        ::Engine::Base::Render::ResourceLoader::DestroyImage(m_Image);
     }
 
     ReleaseIndex(m_Index);

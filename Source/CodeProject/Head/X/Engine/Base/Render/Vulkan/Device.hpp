@@ -13,9 +13,13 @@ struct QueueSet
 {
     VkQueue Graphics = VK_NULL_HANDLE;
     VkQueue Present  = VK_NULL_HANDLE;
+    VkQueue Transfer  = VK_NULL_HANDLE;
 
     uint32_t GraphicsFamily = 0;
     uint32_t PresentFamily  = 0;
+    uint32_t TransferFamily = 0;
+
+    bool DedicatedTransfer = false;
 };
 
 }

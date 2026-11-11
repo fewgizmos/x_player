@@ -23,9 +23,11 @@ namespace Engine::Applied::Render::Resources::Shaders
 struct Shader::LoadData
 {
     std::mutex Mutex;
+
     std::vector<uint32_t> Vertex;
     std::vector<uint32_t> Fragment;
     std::vector<uint32_t> Compute;
+
     std::string FailureReason;
     bool Finished = false;
 };
@@ -195,6 +197,7 @@ void Shader::Unload()
 {
     ::Engine::Base::Render::Vk::Shader::DestroyPipeline(Graphics);
     ::Engine::Base::Render::Vk::Shader::DestroyPipeline(Compute);
+
     Graphics = {};
     Compute = {};
 }
