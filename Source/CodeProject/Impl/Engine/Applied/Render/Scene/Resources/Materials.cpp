@@ -14,7 +14,7 @@
 #include "X/Engine/Base/Render/Vulkan/GpuResources.hpp"
 #include "X/Engine/Base/Render/Vulkan/Samplers.hpp"
 #include "X/Engine/Base/Render/Vulkan/Shader.hpp"
-#include "X/Engine/Base/Runtime/EngineCore.hpp"
+#include "X/Engine/Base/Runtime/EngineThreadIDs.hpp"
 
 #include <glm/vec4.hpp>
 
@@ -485,7 +485,7 @@ void Material::BeginLoad()
     const MaterialCreateInfo Info = CreateInfo;
 
     ::Engine::Base::JobSystem::It::PushBackground(
-        ::Engine::Base::Runtime::EngineCore::ResourceLoaderTh,
+        ::Engine::Base::Runtime::EngineThreadID::ResourceLoaderTh,
         "material_load_" + GetKey(),
         [DataState, Info] {
             try {

@@ -7,7 +7,7 @@
 
 #include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
 #include "X/Engine/Base/JobSystem/DeferredTaskRegistration.hpp"
-#include "X/Engine/Base/Runtime/EngineCore.hpp"
+#include "X/Engine/Base/Runtime/EngineThreadIDs.hpp"
 
 #include "X/Engine/Base/Render/ArtifactsDeletor.hpp"
 #include "X/Engine/Base/Render/RenderingPool.hpp"
@@ -51,7 +51,7 @@ const BootstrapManager::DeferredBootstrapRegistration::CleanRegistrar
     RegisterClean("render_clean", Cleanup, 60);
 
 const JobSystem::DeferredTaskRegistration::Registrar
-    RegisterFrame(Runtime::EngineCore::RenderTh, "render_frame", RenderFrame, 50);
+    RegisterFrame(::Engine::Base::Runtime::EngineThreadID::RenderTh, "render_frame", RenderFrame, 50);
 
 void ClearBackground(VkCommandBuffer p_Cmd)
 {

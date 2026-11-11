@@ -3,7 +3,7 @@
 #include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
 #include "X/Engine/Base/JobSystem/DeferredTaskRegistration.hpp"
 #include "X/Engine/Base/Platform/SDL3App.hpp"
-#include "X/Engine/Base/Runtime/EngineCore.hpp"
+#include "X/Engine/Base/Runtime/EngineThreadIDs.hpp"
 
 #include "X/Engine/Util/Base/Assert.hpp"
 
@@ -23,7 +23,7 @@ const BootstrapManager::DeferredBootstrapRegistration::CleanRegistrar
     RegisterClean("sdl3wm_clean", Cleanup, 20);
 
 const JobSystem::DeferredTaskRegistration::Registrar RegisterTask(
-    Runtime::EngineCore::GameTh, "sdl3wm_events_pump", PumpEventsToWindows, 80
+    ::Engine::Base::Runtime::EngineThreadID::GameTh, "sdl3wm_events_pump", PumpEventsToWindows, 80
 );
 
 }

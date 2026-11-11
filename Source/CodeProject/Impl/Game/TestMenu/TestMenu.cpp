@@ -1,8 +1,8 @@
 #include "X/Engine/Util/Timer.hpp"
 
 #include "X/Engine/Base/JobSystem/DeferredTaskRegistration.hpp"
+#include "X/Engine/Base/Runtime/EngineThreadIDs.hpp"
 #include "X/Engine/Base/Platform/SDL3App.hpp"
-#include "X/Engine/Base/Runtime/EngineCore.hpp"
 
 #include <imgui.h>
 
@@ -12,15 +12,15 @@ namespace Engine::Game::TestMenu
 namespace
 {
 
-bool m_ShowMenu = true;
+bool m_IsMenuOpen = true;
 
 void Draw()
 {
-    if (!m_ShowMenu) {
-        return;
+    if (!m_IsMenuOpen) {
+        Engine::Base::Platform::SDL3App::WantsExit = true;
     }
 
-    ImGui::Begin("Test Menu", &m_ShowMenu);
+    ImGui::Begin("Test Menu", &m_IsMenuOpen);
 
     ImGui::Text("ImGui renderer is working.");
     ImGui::Text("FPS: %.1f", Util::Timer::FPS);
@@ -34,16 +34,12 @@ void Draw()
     ImGui::Spacing();
     ImGui::Spacing();
 
-    if (ImGui::Button("Close application")) {
-        Engine::Base::Platform::SDL3App::WantsExit = true;
-    }
-
     ImGui::End();
 }
 
 const Base::JobSystem::DeferredTaskRegistration::Registrar RegisterTask(
-    Base::Runtime::EngineCore::GameTh,
-    "test_menu_draw",
+    ::Engine::Base::Runtime::EngineThreadID::GameTh,
+    "test_game_menu_draw",
     Draw,
     45
 );

@@ -69,26 +69,26 @@ bool m_AcceptRequests = false;
 const BootstrapManager::DeferredBootstrapRegistration::CleanRegistrar
     RegisterClose("gpu_requests_close", CloseRequests, 110);
 
-void Enqueue(std::function<void()> p_Function)
+void Enqueue(std::function<void()> p_Callback)
 {
     std::lock_guard<std::mutex> Lock(m_RequestsMutex);
 
     X_ASSERT(!m_AcceptRequests, "GPU request queue is closed");
 
-    m_Requests.push_back(std::move(p_Function));
+    m_Requests.push_back(std::move(p_Callback));
 }
 
-template<class Function>
-auto Request(Function p_FunctionValue)
+template<class Callback>
+auto Request(Callback p_Callback)
 {
-    using Result = std::invoke_result_t<Function>;
+    using Result = std::invoke_result_t<Callback>;
 
-    auto Task = std::make_shared<std::packaged_task<Result()>>(std::move(p_FunctionValue));
+    auto CallbackTask = std::make_shared<std::packaged_task<Result()>>(std::move(p_Callback));
 
-    auto Future = Task->get_future();
+    auto Future = CallbackTask->get_future();
 
-    Enqueue([Task] {
-        (*Task)();
+    Enqueue([CallbackTask] {
+        (*CallbackTask)();
     });
 
     return Future;
@@ -711,8 +711,8 @@ void ProcessRequests()
         Requests.swap(m_Requests);
     }
 
-    for (auto& Function : Requests) {
-        Function();
+    for (auto& Callback : Requests) {
+        Callback();
     }
 }
 

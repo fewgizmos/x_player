@@ -29,9 +29,9 @@ Registry& GetRegistry()
     return Value;
 }
 
-void Add(std::vector<Entry>& p_Entries, std::string p_Name, Task p_Func, int p_Order)
+void Add(std::vector<Entry>& p_Entries, std::string p_Name, std::function<void()> p_Callback, int p_Order)
 {
-    X_ASSERT(!p_Func, "Bootstrap function is empty: " + p_Name);
+    X_ASSERT(!p_Callback, "Bootstrap callback is empty: " + p_Name);
 
     X_ASSERT(std::any_of(p_Entries.begin(), p_Entries.end(),
         [&p_Name](const Entry& Item) {
@@ -39,7 +39,7 @@ void Add(std::vector<Entry>& p_Entries, std::string p_Name, Task p_Func, int p_O
         }),
         "Bootstrap name is already used: " + p_Name);
 
-    p_Entries.push_back({std::move(p_Name), p_Order, std::move(p_Func), GetRegistry().NextSequence++});
+    p_Entries.push_back({std::move(p_Name), p_Order, std::move(p_Callback), GetRegistry().NextSequence++});
 }
 
 std::vector<Entry> Snapshot(const std::vector<Entry>& p_Entries)
@@ -55,20 +55,20 @@ std::vector<Entry> Snapshot(const std::vector<Entry>& p_Entries)
 
 }
 
-void AddInit(std::string p_Name, Task p_Func, int p_Order)
+void AddInit(std::string p_Name, std::function<void()> p_Callback, int p_Order)
 {
     auto& Registry = GetRegistry();
 
     std::lock_guard<std::mutex> Lock(Registry.Mutex);
-    Add(Registry.Init, std::move(p_Name), std::move(p_Func), p_Order);
+    Add(Registry.Init, std::move(p_Name), std::move(p_Callback), p_Order);
 }
 
-void AddClean(std::string p_Name, Task p_Func, int p_Order)
+void AddClean(std::string p_Name, std::function<void()> p_Callback, int p_Order)
 {
     auto& Registry = GetRegistry();
 
     std::lock_guard<std::mutex> Lock(Registry.Mutex);
-    Add(Registry.Clean, std::move(p_Name), std::move(p_Func), p_Order);
+    Add(Registry.Clean, std::move(p_Name), std::move(p_Callback), p_Order);
 }
 
 std::vector<Entry> GetInitEntries()
@@ -89,14 +89,14 @@ std::vector<Entry> GetCleanEntries()
     return Snapshot(Registry.Clean);
 }
 
-InitRegistrar::InitRegistrar(std::string p_Name, Task p_Func, int p_Order)
+InitRegistrar::InitRegistrar(std::string p_Name, std::function<void()> p_Callback, int p_Order)
 {
-    AddInit(std::move(p_Name), std::move(p_Func), p_Order);
+    AddInit(std::move(p_Name), std::move(p_Callback), p_Order);
 }
 
-CleanRegistrar::CleanRegistrar(std::string p_Name, Task p_Func, int p_Order)
+CleanRegistrar::CleanRegistrar(std::string p_Name, std::function<void()> p_Callback, int p_Order)
 {
-    AddClean(std::move(p_Name), std::move(p_Func), p_Order);
+    AddClean(std::move(p_Name), std::move(p_Callback), p_Order);
 }
 
 }

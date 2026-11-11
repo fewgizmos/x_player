@@ -2,6 +2,7 @@
 
 #include "X/Engine/Base/JobSystem/JobManager.hpp"
 
+#include <functional>
 #include <mutex>
 #include <utility>
 #include <vector>
@@ -14,9 +15,9 @@ namespace
 
 struct Entry
 {
-    Tag TagValue;
+    unsigned char Thread;
     std::string Name;
-    Task Func;
+    std::function<void()> Callback;
     int Order;
 };
 
@@ -40,10 +41,10 @@ bool& Applied()
 
 }
 
-void Add(Tag p_Tag, std::string p_Name, Task p_Func, int p_Order)
+void Add(unsigned char p_Thread, std::string p_Name, std::function<void()> p_Callback, int p_Order)
 {
     std::lock_guard<std::mutex> Lock(EntriesMutex());
-    Entries().push_back({p_Tag, std::move(p_Name), std::move(p_Func), p_Order});
+    Entries().push_back({p_Thread, std::move(p_Name), std::move(p_Callback), p_Order});
 }
 
 void Apply()
@@ -55,16 +56,16 @@ void Apply()
     }
 
     for (Entry& Item : Entries()) {
-        It::AddTask(Item.TagValue, std::move(Item.Name), std::move(Item.Func), Item.Order);
+        It::AddTask(Item.Thread, std::move(Item.Name), std::move(Item.Callback), Item.Order);
     }
 
     Entries().clear();
     Applied() = true;
 }
 
-Registrar::Registrar(Tag p_Tag, std::string p_Name, Task p_Func, int p_Order)
+Registrar::Registrar(unsigned char p_Thread, std::string p_Name, std::function<void()> p_Callback, int p_Order)
 {
-    Add(p_Tag, std::move(p_Name), std::move(p_Func), p_Order);
+    Add(p_Thread, std::move(p_Name), std::move(p_Callback), p_Order);
 }
 
 }

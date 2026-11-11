@@ -5,7 +5,7 @@
 
 #include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
 #include "X/Engine/Base/JobSystem/DeferredTaskRegistration.hpp"
-#include "X/Engine/Base/Runtime/EngineCore.hpp"
+#include "X/Engine/Base/Runtime/EngineThreadIDs.hpp"
 
 #include "X/Engine/Base/Platform/SDL3WM.hpp"
 
@@ -48,7 +48,7 @@ const BootstrapManager::DeferredBootstrapRegistration::CleanRegistrar
     RegisterClean("surface_clean", Destroy, 40);
 
 const JobSystem::DeferredTaskRegistration::Registrar
-    RegisterWindowState(Runtime::EngineCore::GameTh, "surface_window_state", UpdateWindowState, 60);
+    RegisterWindowState(::Engine::Base::Runtime::EngineThreadID::GameTh, "surface_window_state", UpdateWindowState, 60);
 
 void ApplyWindowIcon()
 {

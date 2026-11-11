@@ -1,4 +1,5 @@
 #include "X/Engine/Base/Runtime/EngineCore.hpp"
+#include "X/Engine/Base/Runtime/EngineThreadIDs.hpp"
 
 #include "X/Engine/Util/Timer.hpp"
 
@@ -28,7 +29,7 @@ void CheckExit()
 }
 
 const JobSystem::DeferredTaskRegistration::Registrar RegisterTask(
-    GameTh, "checking_exit", CheckExit, 0
+    ::Engine::Base::Runtime::EngineThreadID::GameTh, "checking_exit", CheckExit, 0
 );
 
 }

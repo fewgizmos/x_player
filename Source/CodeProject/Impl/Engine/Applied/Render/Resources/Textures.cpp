@@ -12,7 +12,7 @@
 #include "X/Engine/Base/Render/Vulkan/Device.hpp"
 #include "X/Engine/Base/Render/Vulkan/Samplers.hpp"
 
-#include "X/Engine/Base/Runtime/EngineCore.hpp"
+#include "X/Engine/Base/Runtime/EngineThreadIDs.hpp"
 
 #include <stb_image.h>
 #include <vulkan/vulkan_core.h>
@@ -66,7 +66,7 @@ const ::Engine::Base::BootstrapManager::DeferredBootstrapRegistration::CleanRegi
 
 const ::Engine::Base::JobSystem::DeferredTaskRegistration::Registrar
     RegisterSync(
-        ::Engine::Base::Runtime::EngineCore::RenderTh,
+        ::Engine::Base::Runtime::EngineThreadID::RenderTh,
         "textures_sync_samplers",
         SyncSamplers,
         65
@@ -151,7 +151,7 @@ void Texture::BeginLoad()
     const std::string TexturePath = Path;
 
     ::Engine::Base::JobSystem::It::PushBackground(
-        ::Engine::Base::Runtime::EngineCore::ResourceLoaderTh,
+        ::Engine::Base::Runtime::EngineThreadID::ResourceLoaderTh,
         "texture_load_" + TexturePath,
         [Data, TexturePath] {
             try {

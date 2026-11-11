@@ -7,15 +7,15 @@
 namespace Engine::Base::JobSystem::It
 {
 
-JobThread& CreateThread(Tag p_Tag);
-JobThread& AttachCurrentThread(Tag p_Tag);
+JobThread& CreateThread(unsigned char p_Thread);
+JobThread& AttachCurrentThread(unsigned char p_Thread);
 
-JobThread& GetThread(Tag p_Tag);
+JobThread& GetThread(unsigned char p_Thread);
 
-void AddTask(Tag p_Tag, std::string p_Name, Task p_Func, int p_Order = DEFAULT_ORDER);
+void AddTask(unsigned char p_Thread, std::string p_Name, std::function<void()> p_Callback, int p_Order = DEFAULT_ORDER);
 void RemoveTask(const std::string& p_Name);
 
-void PushBackground(Tag p_Tag, std::string p_Name, Task p_Func, int p_Order = DEFAULT_ORDER);
+void PushBackground(unsigned char p_Thread, std::string p_Name, std::function<void()> p_Callback, int p_Order = DEFAULT_ORDER);
 
 void RunAll();
 void WaitAll();

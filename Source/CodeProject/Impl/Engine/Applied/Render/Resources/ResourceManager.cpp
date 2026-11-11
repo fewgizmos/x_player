@@ -9,7 +9,7 @@
 
 #include "X/Engine/Base/Render/RenderingPool.hpp"
 
-#include "X/Engine/Base/Runtime/EngineCore.hpp"
+#include "X/Engine/Base/Runtime/EngineThreadIDs.hpp"
 
 #include <exception>
 #include <iostream>
@@ -92,7 +92,7 @@ const ::Engine::Base::BootstrapManager::DeferredBootstrapRegistration::CleanRegi
 
 const ::Engine::Base::JobSystem::DeferredTaskRegistration::Registrar
     RegisterUpdate(
-        ::Engine::Base::Runtime::EngineCore::RenderTh,
+        ::Engine::Base::Runtime::EngineThreadID::RenderTh,
         "resources_update",
         UpdateAll,
         60

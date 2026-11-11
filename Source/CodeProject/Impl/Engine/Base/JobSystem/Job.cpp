@@ -29,8 +29,8 @@ void InsertSorted(std::vector<Job>& p_Jobs, Job&& p_Job)
 
 }
 
-JobThread::JobThread(Tag p_Tag, bool p_IsAttached, FrameSync& p_Sync)
-    : m_Tag(p_Tag)
+JobThread::JobThread(unsigned char p_Thread, bool p_IsAttached, FrameSync& p_Sync)
+    : ThreadIndex(p_Thread)
     , m_IsAttached(p_IsAttached)
     , m_Sync(p_Sync)
 {
@@ -110,7 +110,7 @@ void JobThread::StartFrame()
 void JobThread::RunFrame()
 {
     for (const Job& Item : m_Tasks) {
-        Execute(Item.Func);
+        Execute(Item.Callback);
     }
 }
 
@@ -145,20 +145,20 @@ void JobThread::Loop(std::stop_token p_Stop)
 
         Lock.unlock();
 
-        Execute(Next.Func);
+        Execute(Next.Callback);
 
         Lock.lock();
     }
 }
 
-void JobThread::Execute(const Task& p_Func)
+void JobThread::Execute(const std::function<void()>& p_Callback)
 {
     if (m_Sync.Stop.load()) {
         return;
     }
 
     try {
-        p_Func();
+        p_Callback();
     }
 
     catch (...) {

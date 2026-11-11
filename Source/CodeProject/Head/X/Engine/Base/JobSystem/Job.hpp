@@ -14,9 +14,6 @@
 namespace Engine::Base::JobSystem
 {
 
-using Tag  = unsigned char;
-using Task = std::function<void()>;
-
 inline constexpr int DEFAULT_ORDER = 50;
 
 struct Job
@@ -25,7 +22,7 @@ struct Job
 
     int Order = DEFAULT_ORDER;
 
-    Task Func;
+    std::function<void()> Callback;
 
     std::uint64_t Sequence = 0;
 };
@@ -45,12 +42,12 @@ struct FrameSync
 class JobThread
 {
 public:
-    JobThread(Tag p_Tag, bool p_IsAttached, FrameSync& p_Sync);
+    JobThread(unsigned char p_Thread, bool p_IsAttached, FrameSync& p_Sync);
 
     JobThread(const JobThread&) = delete;
     JobThread& operator=(const JobThread&) = delete;
 
-    Tag GetTag() const { return m_Tag; }
+    unsigned char GetThreadIndex() const { return ThreadIndex; }
 
     bool IsAttached() const { return m_IsAttached; }
 
@@ -78,11 +75,11 @@ private:
 
     void Loop(std::stop_token p_Stop);
 
-    void Execute(const Task& p_Func);
+    void Execute(const std::function<void()>& p_Callback);
 
     void FinishFrame();
 
-    Tag m_Tag;
+    unsigned char ThreadIndex;
     bool m_IsAttached;
 
     FrameSync& m_Sync;

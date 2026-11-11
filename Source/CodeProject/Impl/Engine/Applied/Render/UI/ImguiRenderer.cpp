@@ -16,7 +16,7 @@
 #include "X/Engine/Base/Render/Vulkan/Device.hpp"
 #include "X/Engine/Base/Render/Vulkan/Frame.hpp"
 #include "X/Engine/Base/Render/Vulkan/Shader.hpp"
-#include "X/Engine/Base/Runtime/EngineCore.hpp"
+#include "X/Engine/Base/Runtime/EngineThreadIDs.hpp"
 #include "X/Engine/Base/Viewport/Surface.hpp"
 
 #include <backends/imgui_impl_sdl3.h>
@@ -50,10 +50,10 @@ const ::Engine::Base::BootstrapManager::DeferredBootstrapRegistration::CleanRegi
     RegisterClean("imgui_renderer_cleanup", Cleanup, 70);
 
 const ::Engine::Base::JobSystem::DeferredTaskRegistration::Registrar
-    RegisterBeginFrame(::Engine::Base::Runtime::EngineCore::GameTh, "imgui_begin_frame", BeginFrame, 50);
+    RegisterBeginFrame(::Engine::Base::Runtime::EngineThreadID::GameTh, "imgui_begin_frame", BeginFrame, 50);
 
 const ::Engine::Base::JobSystem::DeferredTaskRegistration::Registrar
-    RegisterEndFrame(::Engine::Base::Runtime::EngineCore::GameTh, "imgui_end_frame", EndFrame, 40);
+    RegisterEndFrame(::Engine::Base::Runtime::EngineThreadID::GameTh, "imgui_end_frame", EndFrame, 40);
 
 void CheckVulkanResult(VkResult p_Result)
 {

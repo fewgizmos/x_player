@@ -2,7 +2,7 @@
 
 #include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
 #include "X/Engine/Base/JobSystem/DeferredTaskRegistration.hpp"
-#include "X/Engine/Base/Runtime/EngineCore.hpp"
+#include "X/Engine/Base/Runtime/EngineThreadIDs.hpp"
 
 #include <SDL3/SDL_init.h>
 
@@ -19,7 +19,7 @@ const BootstrapManager::DeferredBootstrapRegistration::CleanRegistrar
     RegisterClean("sdl3app_clean", Cleanup, 0);
 
 const JobSystem::DeferredTaskRegistration::Registrar RegisterTask(
-    Runtime::EngineCore::GameTh, "sdl3app_event_pump", PumpEvents, 90
+    ::Engine::Base::Runtime::EngineThreadID::GameTh, "sdl3app_event_pump", PumpEvents, 90
 );
 
 }

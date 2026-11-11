@@ -10,7 +10,7 @@ namespace Engine::Base::BootstrapManager::It
 void InitAll()
 {
     for (const Entry& Item : DeferredBootstrapRegistration::GetInitEntries()) {
-        Item.Func();
+        Item.Callback();
     }
 }
 
@@ -20,7 +20,7 @@ void CleanAll()
 
     for (const Entry& Item : DeferredBootstrapRegistration::GetCleanEntries()) {
         try {
-            Item.Func();
+            Item.Callback();
         }
 
         catch (...) {

@@ -2,7 +2,7 @@
 
 #include "X/Engine/Base/JobSystem/JobManager.hpp"
 #include "X/Engine/Base/Render/Vulkan/GpuResources.hpp"
-#include "X/Engine/Base/Runtime/EngineCore.hpp"
+#include "X/Engine/Base/Runtime/EngineThreadIDs.hpp"
 
 #include <glm/common.hpp>
 
@@ -106,7 +106,7 @@ void Mesh::BeginLoad()
     Data->Indices = std::move(m_Indices);
 
     ::Engine::Base::JobSystem::It::PushBackground(
-        ::Engine::Base::Runtime::EngineCore::ResourceLoaderTh,
+        ::Engine::Base::Runtime::EngineThreadID::ResourceLoaderTh,
         "mesh_load_" + GetKey(),
         [Data] {
             try {

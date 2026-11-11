@@ -2,7 +2,7 @@
 
 #include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
 #include "X/Engine/Base/JobSystem/DeferredTaskRegistration.hpp"
-#include "X/Engine/Base/Runtime/EngineCore.hpp"
+#include "X/Engine/Base/Runtime/EngineThreadIDs.hpp"
 
 #include "X/Engine/Util/Base/Assert.hpp"
 
@@ -22,9 +22,9 @@ namespace
 
 void Init()
 {
-    AttachCurrentThread(Runtime::EngineCore::GameTh);
-    CreateThread(Runtime::EngineCore::RenderTh);
-    CreateThread(Runtime::EngineCore::ResourceLoaderTh);
+    AttachCurrentThread(::Engine::Base::Runtime::EngineThreadID::GameTh);
+    CreateThread(::Engine::Base::Runtime::EngineThreadID::RenderTh);
+    CreateThread(::Engine::Base::Runtime::EngineThreadID::ResourceLoaderTh);
 
     DeferredTaskRegistration::Apply();
 }
@@ -36,68 +36,68 @@ const BootstrapManager::DeferredBootstrapRegistration::CleanRegistrar
 
 FrameSync m_Sync;
 
-std::array<std::unique_ptr<JobThread>, 256> m_ThreadsByTag;
+std::array<std::unique_ptr<JobThread>, 256> m_ThreadsByIndex;
 
 std::vector<JobThread*> m_Threads;
 
 JobThread* m_Attached = nullptr;
 
 std::mutex m_NamesMutex;
-std::unordered_map<std::string, Tag> m_TaskNames;
+std::unordered_map<std::string, unsigned char> m_TaskNames;
 
 bool m_FrameActive = false;
 
-std::string DescribeTag(Tag p_Tag)
+std::string DescribeThread(unsigned char p_Thread)
 {
-    return std::to_string(static_cast<int>(p_Tag));
+    return std::to_string(static_cast<int>(p_Thread));
 }
 
-JobThread& Register(Tag p_Tag, bool p_IsAttached)
+JobThread& Register(unsigned char p_Thread, bool p_IsAttached)
 {
-    X_ASSERT(m_ThreadsByTag[p_Tag] != nullptr, "Job thread already exists: " + DescribeTag(p_Tag));
+    X_ASSERT(m_ThreadsByIndex[p_Thread] != nullptr, "Job thread already exists: " + DescribeThread(p_Thread));
 
-    m_ThreadsByTag[p_Tag] = std::make_unique<JobThread>(p_Tag, p_IsAttached, m_Sync);
+    m_ThreadsByIndex[p_Thread] = std::make_unique<JobThread>(p_Thread, p_IsAttached, m_Sync);
 
-    m_Threads.push_back(m_ThreadsByTag[p_Tag].get());
+    m_Threads.push_back(m_ThreadsByIndex[p_Thread].get());
 
-    return *m_ThreadsByTag[p_Tag];
+    return *m_ThreadsByIndex[p_Thread];
 }
 
 }
 
-JobThread& CreateThread(Tag p_Tag)
+JobThread& CreateThread(unsigned char p_Thread)
 {
-    return Register(p_Tag, false);
+    return Register(p_Thread, false);
 }
 
-JobThread& AttachCurrentThread(Tag p_Tag)
+JobThread& AttachCurrentThread(unsigned char p_Thread)
 {
     X_ASSERT(m_Attached != nullptr, "Only one thread can be attached to the job system");
 
-    JobThread& Thread = Register(p_Tag, true);
+    JobThread& Thread = Register(p_Thread, true);
 
     m_Attached = &Thread;
 
     return Thread;
 }
 
-JobThread& GetThread(Tag p_Tag)
+JobThread& GetThread(unsigned char p_Thread)
 {
-    JobThread* Thread = m_ThreadsByTag[p_Tag].get();
+    JobThread* Thread = m_ThreadsByIndex[p_Thread].get();
 
-    X_ASSERT(Thread == nullptr, "Job thread does not exist: " + DescribeTag(p_Tag));
+    X_ASSERT(Thread == nullptr, "Job thread does not exist: " + DescribeThread(p_Thread));
 
     return *Thread;
 }
 
-void AddTask(Tag p_Tag, std::string p_Name, Task p_Func, int p_Order)
+void AddTask(unsigned char p_Thread, std::string p_Name, std::function<void()> p_Callback, int p_Order)
 {
-    JobThread& Thread = GetThread(p_Tag);
+    JobThread& Thread = GetThread(p_Thread);
 
     {
         std::lock_guard<std::mutex> Lock(m_NamesMutex);
 
-        const bool Inserted = m_TaskNames.emplace(p_Name, p_Tag).second;
+        const bool Inserted = m_TaskNames.emplace(p_Name, p_Thread).second;
 
         X_ASSERT(!Inserted, "Job name is already used: " + p_Name);
     }
@@ -105,14 +105,14 @@ void AddTask(Tag p_Tag, std::string p_Name, Task p_Func, int p_Order)
     Job Item;
     Item.Name  = std::move(p_Name);
     Item.Order = p_Order;
-    Item.Func  = std::move(p_Func);
+    Item.Callback = std::move(p_Callback);
 
     Thread.QueueAdd(std::move(Item));
 }
 
 void RemoveTask(const std::string& p_Name)
 {
-    Tag Owner = 0;
+    unsigned char Owner = 0;
 
     {
         std::lock_guard<std::mutex> Lock(m_NamesMutex);
@@ -131,14 +131,14 @@ void RemoveTask(const std::string& p_Name)
     GetThread(Owner).QueueRemove(p_Name);
 }
 
-void PushBackground(Tag p_Tag, std::string p_Name, Task p_Func, int p_Order)
+void PushBackground(unsigned char p_Thread, std::string p_Name, std::function<void()> p_Callback, int p_Order)
 {
     Job Item;
     Item.Name  = std::move(p_Name);
     Item.Order = p_Order;
-    Item.Func  = std::move(p_Func);
+    Item.Callback = std::move(p_Callback);
 
-    GetThread(p_Tag).PushBackground(std::move(Item));
+    GetThread(p_Thread).PushBackground(std::move(Item));
 }
 
 void RunAll()
@@ -207,7 +207,7 @@ void WaitAll()
 
 void Shutdown()
 {
-    for (std::unique_ptr<JobThread>& Thread : m_ThreadsByTag) {
+    for (std::unique_ptr<JobThread>& Thread : m_ThreadsByIndex) {
         Thread.reset();
     }
 

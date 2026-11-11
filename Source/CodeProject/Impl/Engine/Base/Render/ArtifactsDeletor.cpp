@@ -14,9 +14,9 @@ std::vector<std::function<void()>> m_Deletors;
 
 }
 
-void Push(std::function<void()> p_Function)
+void Push(std::function<void()> p_Callback)
 {
-    m_Deletors.push_back(std::move(p_Function));
+    m_Deletors.push_back(std::move(p_Callback));
 }
 
 void CleanAll()
@@ -24,12 +24,12 @@ void CleanAll()
     std::exception_ptr Failure;
 
     while (!m_Deletors.empty()) {
-        auto Function = std::move(m_Deletors.back());
+        auto Callback = std::move(m_Deletors.back());
 
         m_Deletors.pop_back();
 
         try {
-            Function();
+        Callback();
         }
 
         catch (...) {

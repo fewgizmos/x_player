@@ -9,7 +9,7 @@
 
 #include "X/Engine/Base/Render/Vulkan/Shader.hpp"
 
-#include "X/Engine/Base/Runtime/EngineCore.hpp"
+#include "X/Engine/Base/Runtime/EngineThreadIDs.hpp"
 
 #include <cstdint>
 #include <exception>
@@ -131,7 +131,7 @@ void Shader::BeginLoad()
     const auto Info = CreateInfo;
 
     ::Engine::Base::JobSystem::It::PushBackground(
-        ::Engine::Base::Runtime::EngineCore::ResourceLoaderTh, "shader_load",
+        ::Engine::Base::Runtime::EngineThreadID::ResourceLoaderTh, "shader_load",
         [State, Info] {
             try {
                 X_ASSERT(Info.VertexFile.empty() && Info.ComputeFile.empty(), "Shader requires vertex or compute stage");
