@@ -115,7 +115,7 @@ void Submit(
     SubmitInfo.signalSemaphoreInfoCount = p_Signal != nullptr ? 1 : 0;
     SubmitInfo.pSignalSemaphoreInfos = p_Signal;
 
-    std::lock_guard<std::mutex> Lock(Device::GetGraphicsQueueMutex());
+    std::lock_guard<std::mutex> Lock(Device::GetQueueSubmitMutex());
     const VkResult Result = Device::GetDisp().queueSubmit2(Device::GetQueues().Graphics, 1, &SubmitInfo, p_Fence);
 
     X_ASSERT(Result != VK_SUCCESS, "failed to submit command buffer");

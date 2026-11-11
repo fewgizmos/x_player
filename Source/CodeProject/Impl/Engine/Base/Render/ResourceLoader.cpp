@@ -377,13 +377,9 @@ void SubmitTransfer(Batch& p_Batch, const vkb::DispatchTable& p_Disp)
 
     X_ASSERT(
         [&] {
-            std::unique_lock<std::mutex> Lock;
-            if (!::Engine::Base::Render::Vk::Device::GetQueues().DedicatedTransfer) {
-                Lock = std::unique_lock<std::mutex>(
-                    ::Engine::Base::Render::Vk::Device::GetGraphicsQueueMutex()
-                );
-            }
-
+            std::lock_guard<std::mutex> Lock(
+                ::Engine::Base::Render::Vk::Device::GetQueueSubmitMutex()
+            );
             return p_Disp.queueSubmit2(
                 ::Engine::Base::Render::Vk::Device::GetQueues().Transfer,
                 1,
@@ -440,7 +436,7 @@ void SubmitGraphics(Batch& p_Batch, const vkb::DispatchTable& p_Disp)
     X_ASSERT(
         [&] {
             std::lock_guard<std::mutex> Lock(
-                ::Engine::Base::Render::Vk::Device::GetGraphicsQueueMutex()
+                ::Engine::Base::Render::Vk::Device::GetQueueSubmitMutex()
             );
 
             return p_Disp.queueSubmit2(

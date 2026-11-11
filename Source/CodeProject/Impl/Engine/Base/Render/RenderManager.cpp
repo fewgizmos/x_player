@@ -31,6 +31,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <mutex>
 
 namespace Engine::Base::Render::It
 {
@@ -253,7 +254,10 @@ void RenderFrame()
     Present.pSwapchains = &Swapchain;
     Present.pImageIndices = &Vk::Frame::GetImageIndex();
 
-    Result = Disp.queuePresentKHR(Vk::Device::GetQueues().Present, &Present);
+    {
+        std::lock_guard<std::mutex> Lock(Vk::Device::GetQueueSubmitMutex());
+        Result = Disp.queuePresentKHR(Vk::Device::GetQueues().Present, &Present);
+    }
 
     Vk::Frame::Advance();
 

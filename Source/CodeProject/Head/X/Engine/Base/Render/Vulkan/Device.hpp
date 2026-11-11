@@ -40,7 +40,7 @@ const vkb::DispatchTable& GetDisp();
 VkSurfaceKHR GetSurface();
 
 const QueueSet& GetQueues();
-std::mutex& GetGraphicsQueueMutex();
+std::mutex& GetQueueSubmitMutex();
 
 bool HasMemoryBudget();
 

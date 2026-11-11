@@ -23,7 +23,7 @@ vkb::Device m_Device;
 vkb::DispatchTable m_Disp;
 
 QueueSet m_Queues;
-std::mutex m_GraphicsQueueMutex;
+std::mutex m_QueueSubmitMutex;
 
 bool m_HasMemoryBudget = false;
 
@@ -163,7 +163,7 @@ VkSurfaceKHR GetSurface() { return m_Surface; }
 
 const QueueSet& GetQueues() { return m_Queues; }
 
-std::mutex& GetGraphicsQueueMutex() { return m_GraphicsQueueMutex; }
+std::mutex& GetQueueSubmitMutex() { return m_QueueSubmitMutex; }
 
 bool HasMemoryBudget() { return m_HasMemoryBudget; }
 
