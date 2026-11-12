@@ -75,6 +75,13 @@ VkResult AcquireNextImage(
     VkFence p_Fence,
     uint32_t* p_ImageIndex
 );
+void AcquireNextImageAsync(
+    VkSwapchainKHR p_Swapchain,
+    uint64_t p_Timeout,
+    VkSemaphore p_Semaphore,
+    VkFence p_Fence,
+    std::function<void(VkResult, uint32_t)> p_Completion
+);
 void ExecuteQueueOperation(std::function<void()> p_Operation);
 VkResult QueueSubmitLegacy(
     VkQueue p_Queue,

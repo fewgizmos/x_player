@@ -93,35 +93,10 @@ void StartQueueExecutor()
         m_QueueExecutorStarted = true;
         m_QueueExecutorStopping = false;
         m_QueueExecutorJobs.clear();
-    }
-
-    m_QueueExecutorThread = std::jthread([](std::stop_token p_Stop) {
-        while (!p_Stop.stop_requested()) {
-            std::function<void()> Job;
-            {
-                std::unique_lock<std::mutex> Lock(m_QueueExecutorMutex);
-                m_QueueExecutorCv.wait(Lock, [&p_Stop] {
-                    return p_Stop.stop_requested()
-                        || m_QueueExecutorStopping
-                        || !m_QueueExecutorJobs.empty();
-                });
-
-                if ((p_Stop.stop_requested() || m_QueueExecutorStopping)
-                    && m_QueueExecutorJobs.empty()) {
-                    return;
-                }
-
-                Job = std::move(m_QueueExecutorJobs.front());
-                m_QueueExecutorJobs.pop_front();
-            }
-
-            Job();
-        }
-    });
-
-    {
-        std::lock_guard<std::mutex> Lock(m_QueueExecutorMutex);
-        m_QueueExecutorThreadId = m_QueueExecutorThread.get_id();
+        m_QueueExecutorThreadId =
+            ::Engine::Base::JobSystem::It::GetThread(
+                ::Engine::Base::Runtime::EngineThreadID::RenderOpsDedicatedTh
+            ).GetThreadId();
     }
 }
 
@@ -145,10 +120,6 @@ void StopQueueExecutorInternal()
         m_QueueExecutorStopping = true;
     }
 
-    m_QueueExecutorThread.request_stop();
-    m_QueueExecutorCv.notify_all();
-    m_QueueExecutorThread = {};
-
     {
         std::lock_guard<std::mutex> Lock(m_QueueExecutorMutex);
         m_QueueExecutorStarted = false;
@@ -167,8 +138,6 @@ void PushQueueExecutorJob(std::function<void()> p_Job)
         if (m_QueueExecutorStarted
             && std::this_thread::get_id() == m_QueueExecutorThreadId) {
             ExecuteImmediately = true;
-        } else {
-            m_QueueExecutorJobs.push_back(std::move(p_Job));
         }
     }
 
@@ -177,7 +146,15 @@ void PushQueueExecutorJob(std::function<void()> p_Job)
         return;
     }
 
-    m_QueueExecutorCv.notify_one();
+    const std::string Name = "render_ops_vk_"
+        + std::to_string(m_NextQueueOperation.fetch_add(1, std::memory_order_relaxed));
+
+    ::Engine::Base::JobSystem::It::PushBackground(
+        ::Engine::Base::Runtime::EngineThreadID::RenderOpsDedicatedTh,
+        Name,
+        std::move(p_Job),
+        -500
+    );
 }
 
 }
@@ -215,6 +192,38 @@ VkResult AcquireNextImage(
         p_Semaphore,
         p_Fence,
         p_ImageIndex
+    );
+}
+
+void AcquireNextImageAsync(
+    VkSwapchainKHR p_Swapchain,
+    uint64_t p_Timeout,
+    VkSemaphore p_Semaphore,
+    VkFence p_Fence,
+    std::function<void(VkResult, uint32_t)> p_Completion
+)
+{
+    PushQueueExecutorJob(
+        [p_Swapchain, p_Timeout, p_Semaphore, p_Fence, Completion = std::move(p_Completion)] {
+            uint32_t ImageIndex = 0;
+            VkResult Result = VK_ERROR_UNKNOWN;
+
+            {
+                std::lock_guard<std::mutex> Lock(m_VulkanQueueCallMutex);
+
+                Result = m_Disp.acquireNextImageKHR(
+                    p_Swapchain,
+                    p_Timeout,
+                    p_Semaphore,
+                    p_Fence,
+                    &ImageIndex
+                );
+            }
+
+            if (Completion) {
+                Completion(Result, ImageIndex);
+            }
+        }
     );
 }
 
@@ -289,21 +298,21 @@ VkResult QueueWaitIdle(VkQueue p_Queue)
 
 VkResult GetFenceStatus(VkFence p_Fence)
 {
-    std::lock_guard<std::mutex> Lock(m_QueueSubmitMutex);
+    std::lock_guard<std::mutex> Lock(m_VulkanQueueCallMutex);
 
     return m_Disp.getFenceStatus(p_Fence);
 }
 
 VkResult ResetFence(VkFence p_Fence)
 {
-    std::lock_guard<std::mutex> Lock(m_QueueSubmitMutex);
+    std::lock_guard<std::mutex> Lock(m_VulkanQueueCallMutex);
 
     return m_Disp.resetFences(1, &p_Fence);
 }
 
 VkResult WaitForFence(VkFence p_Fence, VkBool32 p_WaitAll, uint64_t p_Timeout)
 {
-    std::lock_guard<std::mutex> Lock(m_QueueSubmitMutex);
+    std::lock_guard<std::mutex> Lock(m_VulkanQueueCallMutex);
 
     return m_Disp.waitForFences(1, &p_Fence, p_WaitAll, p_Timeout);
 }

@@ -1066,6 +1066,11 @@ void StopAcceptingJobs()
     m_AcceptingJobs.store(false, std::memory_order_release);
 }
 
+void DrainJobs()
+{
+    DrainLoaderJobs();
+}
+
 void DrainLoaderJobs()
 {
     const std::shared_ptr<std::promise<void>> Promise = std::make_shared<std::promise<void>>();

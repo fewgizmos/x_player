@@ -36,6 +36,7 @@ using Image = ::Engine::Base::Render::Image;
 void Init();
 void Cleanup();
 void StopAcceptingJobs();
+void DrainJobs();
 
 std::shared_ptr<ResourceJobTicket> PushFrameJobCallback(
     std::function<void()> p_Callback,

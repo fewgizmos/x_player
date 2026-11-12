@@ -56,6 +56,9 @@ Engine::Applied::Render::Resources::Ref<
 std::unique_ptr<MeshReference> m_Mesh;
 
 std::unique_ptr<TextureReference> m_DefaultEngineLogo;
+std::shared_ptr<const MeshSnapshot> m_FrameMesh;
+std::shared_ptr<const TextureSnapshot> m_FrameTexture;
+std::shared_ptr<const ShaderSnapshot> m_FrameShader;
 
 const ::Engine::Base::BootstrapManager::DeferredBootstrapRegistration::InitRegistrar
     RegisterInit("texture_test_renderer_init", Init, 30);
@@ -114,6 +117,23 @@ void CreateMesh()
     );
 }
 
+void CaptureFrameSnapshot()
+{
+    m_FrameMesh.reset();
+    m_FrameTexture.reset();
+    m_FrameShader.reset();
+
+    if (m_Shader.IsReady()
+        && m_Mesh
+        && m_Mesh->IsReady()
+        && m_DefaultEngineLogo
+        && m_DefaultEngineLogo->IsReady()) {
+        m_FrameMesh = (*m_Mesh)->GetSnapshot();
+        m_FrameTexture = (*m_DefaultEngineLogo)->GetSnapshot();
+        m_FrameShader = m_Shader->GetSnapshot();
+    }
+}
+
 }
 
 void Init()
@@ -132,6 +152,9 @@ void Init()
     );
 
     ::Engine::Base::Render::RenderingPool::Register("texture_test", Render, 5);
+    ::Engine::Base::Render::RenderingPool::RegisterSnapshot(
+        "texture_test_snapshot", CaptureFrameSnapshot, 5
+    );
 }
 
 void Cleanup()
@@ -144,18 +167,9 @@ void Cleanup()
 
 void Render()
 {
-    if (!m_Shader.IsReady()
-        || !m_Mesh
-        || !m_Mesh->IsReady()
-        || !m_DefaultEngineLogo
-        || !m_DefaultEngineLogo->IsReady()) {
-
-        return;
-    }
-
-    const std::shared_ptr<const MeshSnapshot> MeshValue = (*m_Mesh)->GetSnapshot();
-    const std::shared_ptr<const TextureSnapshot> TextureValue = (*m_DefaultEngineLogo)->GetSnapshot();
-    const std::shared_ptr<const ShaderSnapshot> ShaderValue = m_Shader->GetSnapshot();
+    const std::shared_ptr<const MeshSnapshot>& MeshValue = m_FrameMesh;
+    const std::shared_ptr<const TextureSnapshot>& TextureValue = m_FrameTexture;
+    const std::shared_ptr<const ShaderSnapshot>& ShaderValue = m_FrameShader;
     if (!MeshValue || !TextureValue || !ShaderValue) {
         return;
     }

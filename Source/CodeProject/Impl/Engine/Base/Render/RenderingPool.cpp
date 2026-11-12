@@ -20,7 +20,15 @@ struct Entry
     int Order;
 };
 
+struct SnapshotEntry
+{
+    std::string Name;
+    SnapshotCallback Callback;
+    int Order;
+};
+
 std::vector<Entry> m_Entries;
+std::vector<SnapshotEntry> m_Snapshots;
 
 bool m_Sealed = false;
 
@@ -43,6 +51,19 @@ void Register(std::string p_Name, RenderCallback p_Callback, int p_Order)
     m_Entries.push_back({std::move(p_Name), std::move(p_Callback), p_Order});
 }
 
+void RegisterSnapshot(std::string p_Name, SnapshotCallback p_Callback, int p_Order)
+{
+    X_ASSERT(m_Sealed, "Rendering pool is already sealed");
+    X_ASSERT(!p_Callback, "Empty renderer snapshot callback: " + p_Name);
+
+    X_ASSERT(std::any_of(m_Snapshots.begin(), m_Snapshots.end(),
+        [&](const SnapshotEntry& Item) {
+            return Item.Name == p_Name;
+        }), "Duplicate renderer snapshot: " + p_Name);
+
+    m_Snapshots.push_back({std::move(p_Name), std::move(p_Callback), p_Order});
+}
+
 void Seal()
 {
     std::stable_sort(m_Entries.begin(), m_Entries.end(),
@@ -50,7 +71,19 @@ void Seal()
             return p_A.Order > B.Order;
         });
 
+    std::stable_sort(m_Snapshots.begin(), m_Snapshots.end(),
+        [](const SnapshotEntry& p_A, const SnapshotEntry& p_B) {
+            return p_A.Order > p_B.Order;
+        });
+
     m_Sealed = true;
+}
+
+void CaptureFrameSnapshot()
+{
+    for (const SnapshotEntry& Item : m_Snapshots) {
+        Item.Callback();
+    }
 }
 
 void RenderAll()
@@ -65,6 +98,7 @@ void RenderAll()
 void Clear()
 {
     m_Entries.clear();
+    m_Snapshots.clear();
     m_Sealed = false;
 }
 

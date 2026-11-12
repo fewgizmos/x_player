@@ -48,6 +48,8 @@ struct PushConstants
 Engine::Applied::Render::Resources::Ref<Engine::Applied::Render::Resources::Shaders::Shader> m_Shader;
 std::unique_ptr<::Engine::Applied::Render::Resources::Ref<
     ::Engine::Applied::Render::Scene::Resources::Meshes::Mesh>> m_Mesh;
+std::shared_ptr<const MeshSnapshot> m_FrameMesh;
+std::shared_ptr<const ShaderSnapshot> m_FrameShader;
 
 const ::Engine::Base::BootstrapManager::DeferredBootstrapRegistration::InitRegistrar
     RegisterInit("triangle_test_renderer_init", Init, 40);
@@ -98,6 +100,17 @@ void CreateMesh()
     );
 }
 
+void CaptureFrameSnapshot()
+{
+    m_FrameMesh.reset();
+    m_FrameShader.reset();
+
+    if (m_Shader.IsReady() && m_Mesh && m_Mesh->IsReady()) {
+        m_FrameMesh = (*m_Mesh)->GetSnapshot();
+        m_FrameShader = m_Shader->GetSnapshot();
+    }
+}
+
 }
 
 void Init()
@@ -110,6 +123,9 @@ void Init()
     CreateMesh();
 
     ::Engine::Base::Render::RenderingPool::Register("triangle_test", Render, 10);
+    ::Engine::Base::Render::RenderingPool::RegisterSnapshot(
+        "triangle_test_snapshot", CaptureFrameSnapshot, 10
+    );
 }
 
 void Cleanup()
@@ -126,15 +142,12 @@ void Render()
     const auto& Swapchain = ::Engine::Base::Render::Vk::Frame::GetSwapchain();
     const auto& Disp = ::Engine::Base::Render::Vk::Device::GetDisp();
 
-    if (!m_Shader.IsReady() || !m_Mesh || !m_Mesh->IsReady()) {
+    if (!m_FrameMesh || !m_FrameShader) {
         return;
     }
 
-    const std::shared_ptr<const MeshSnapshot> Mesh = (*m_Mesh)->GetSnapshot();
-    const std::shared_ptr<const ShaderSnapshot> Shader = m_Shader->GetSnapshot();
-    if (!Mesh || !Shader) {
-        return;
-    }
+    const std::shared_ptr<const MeshSnapshot>& Mesh = m_FrameMesh;
+    const std::shared_ptr<const ShaderSnapshot>& Shader = m_FrameShader;
 
     const ::Engine::Base::Render::Pipeline& Pipeline = Shader->Graphics;
 

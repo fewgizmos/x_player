@@ -191,6 +191,7 @@ std::shared_ptr<::Engine::Base::Render::ResourceLoader::ResourceJobTicket>
 std::shared_ptr<::Engine::Base::Render::ResourceLoader::ResourceJobTicket>
     m_BufferCreateTickets[::Engine::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT];
 std::atomic<std::shared_ptr<const MaterialBufferSnapshot>> m_BufferSnapshot;
+std::shared_ptr<const MaterialBufferSnapshot> m_FrameBufferSnapshot;
 uint64_t m_Version = 0;
 uint64_t m_BufferVersions[::Engine::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT] = {};
 
@@ -701,6 +702,11 @@ std::shared_ptr<const MaterialSnapshot> Material::GetSnapshot() const
     return m_Snapshot.load(std::memory_order_acquire);
 }
 
+void CaptureFrameSnapshot()
+{
+    m_FrameBufferSnapshot = m_BufferSnapshot.load(std::memory_order_acquire);
+}
+
 uint32_t Material::GetIndex() const { return Index; }
 const MaterialData& Material::GetData() const { return Data; }
 bool Material::IsDoubleSided() const { return CreateInfo.DoubleSided; }
@@ -713,6 +719,11 @@ VkDescriptorSet Material::GetExtraSet() const { return CreateInfo.ExtraSet; }
 void Init()
 {
     ::Engine::Base::Render::RenderingPool::Register("scene_materials_flush", Flush, 100);
+    ::Engine::Base::Render::RenderingPool::RegisterSnapshot(
+        "scene_materials_snapshot",
+        CaptureFrameSnapshot,
+        100
+    );
 
     for (uint32_t I = 0; I < ::Engine::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT; ++I) {
         m_BufferCreateTickets[I] = ::Engine::Base::Render::ResourceLoader::PushFrameJobVk(
@@ -741,6 +752,7 @@ void Cleanup()
     m_Data.clear();
     m_FreeIndices.clear();
     m_ErasedMaterials.clear();
+    m_FrameBufferSnapshot.reset();
     m_Version = 0;
     for (auto& Version : m_BufferVersions) { Version = 0; }
 }
@@ -859,7 +871,7 @@ VkDeviceAddress GetBufferAddress()
 
 std::shared_ptr<const MaterialBufferSnapshot> GetBufferSnapshot()
 {
-    return m_BufferSnapshot.load(std::memory_order_acquire);
+    return m_FrameBufferSnapshot;
 }
 
 }

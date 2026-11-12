@@ -31,6 +31,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <atomic>
 #include <string>
 
 namespace Engine::Base::Render::It
@@ -42,6 +43,10 @@ namespace
 vkb::Instance m_Instance;
 
 uint32_t m_FrameCounter = 0;
+std::atomic<bool> m_AcquirePending = false;
+std::atomic<bool> m_AcquireReady = false;
+std::atomic<VkResult> m_AcquireResult = VK_NOT_READY;
+std::atomic<uint32_t> m_AcquireImageIndex = 0;
 
 const BootstrapManager::DeferredBootstrapRegistration::InitRegistrar
     RegisterInit("render_init", Init, 70);
@@ -99,6 +104,14 @@ void ClearBackground(VkCommandBuffer p_Cmd)
         VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT);
 }
 
+void RecreateSwapchain()
+{
+    Vk::Frame::RecreateSwapchain();
+    m_AcquirePending.store(false, std::memory_order_release);
+    m_AcquireReady.store(false, std::memory_order_release);
+    m_AcquireResult.store(VK_NOT_READY, std::memory_order_release);
+}
+
 }
 
 void Init()
@@ -148,6 +161,8 @@ void Init()
 void WaitIdle()
 {
     if (Vk::Device::GetDevice().device != VK_NULL_HANDLE) {
+        ResourceLoader::StopAcceptingJobs();
+        ResourceLoader::DrainJobs();
         Vk::Device::DrainRenderOperations();
         Vk::Device::WaitIdle();
         Vk::Device::StopQueueExecutor();
@@ -190,28 +205,48 @@ void RenderFrame()
     }
 
     if (Viewport::Surface::GetUnhandleResized()) {
-        Vk::Frame::RecreateSwapchain();
+        RecreateSwapchain();
     }
 
-    VkResult Result = Vk::Device::AcquireNextImage(
-        Vk::Frame::GetSwapchain(),
-        0,
-        Frame.SemaphoreAvailable,
-        VK_NULL_HANDLE,
-        &Vk::Frame::GetImageIndex()
-    );
+    if (!m_AcquirePending.load(std::memory_order_acquire)
+        && !m_AcquireReady.load(std::memory_order_acquire)) {
+        m_AcquirePending.store(true, std::memory_order_release);
+
+        Vk::Device::AcquireNextImageAsync(
+            Vk::Frame::GetSwapchain(),
+            0,
+            Frame.SemaphoreAvailable,
+            VK_NULL_HANDLE,
+            [](VkResult p_Result, uint32_t p_ImageIndex) {
+                m_AcquireImageIndex.store(p_ImageIndex, std::memory_order_relaxed);
+                m_AcquireResult.store(p_Result, std::memory_order_release);
+                m_AcquireReady.store(true, std::memory_order_release);
+                m_AcquirePending.store(false, std::memory_order_release);
+            }
+        );
+
+        return;
+    }
+
+    if (!m_AcquireReady.load(std::memory_order_acquire)) {
+        return;
+    }
+
+    const VkResult Result = m_AcquireResult.load(std::memory_order_acquire);
+    Vk::Frame::GetImageIndex() = m_AcquireImageIndex.load(std::memory_order_relaxed);
+    m_AcquireReady.store(false, std::memory_order_release);
 
     if (Result == VK_NOT_READY || Result == VK_TIMEOUT) {
         return;
     }
 
     if (Result == VK_ERROR_OUT_OF_DATE_KHR) {
-        Vk::Frame::RecreateSwapchain();
+        RecreateSwapchain();
         return;
     }
 
     if (Result == VK_ERROR_SURFACE_LOST_KHR) {
-        Vk::Frame::RecreateSwapchain();
+        RecreateSwapchain();
         return;
     }
 
@@ -226,6 +261,7 @@ void RenderFrame()
     vmaSetCurrentFrameIndex(Vk::GpuResources::GetAllocator(), m_FrameCounter++);
     Vk::Commands::Reset(Frame.CommandBuffer);
     Vk::Commands::Begin(Frame.CommandBuffer);
+    RenderingPool::CaptureFrameSnapshot();
     ResourceLoader::RecordPendingAcquires(Frame.CommandBuffer);
 
     ClearBackground(Frame.CommandBuffer);
@@ -303,7 +339,7 @@ void RenderFrame()
         X_ASSERT(Result != VK_SUCCESS && Result != VK_ERROR_OUT_OF_DATE_KHR && Result != VK_SUBOPTIMAL_KHR,
             "Failed to present swapchain image");
 
-        Vk::Frame::RecreateSwapchain();
+        RecreateSwapchain();
 
         return;
     }
