@@ -139,7 +139,7 @@ void RecreateSwapchain()
 {
     Viewport::Surface::ClearUnhandleResized();
 
-    X_ASSERT(Device::GetDisp().deviceWaitIdle() != VK_SUCCESS, "Failed to wait before swapchain recreation");
+    Device::WaitIdle();
 
     DestroySwapchainImageData();
 

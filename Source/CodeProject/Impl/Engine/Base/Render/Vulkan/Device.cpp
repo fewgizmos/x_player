@@ -14,6 +14,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <deque>
+#include <exception>
 #include <functional>
 #include <future>
 #include <thread>
@@ -32,6 +33,7 @@ vkb::DispatchTable m_Disp;
 
 QueueSet m_Queues;
 std::mutex m_QueueSubmitMutex;
+std::mutex m_VulkanQueueCallMutex;
 std::atomic<uint64_t> m_NextQueueOperation = 0;
 std::atomic<uint64_t> m_NextRenderCompletionValue = 0;
 VkSemaphore m_RenderCompletionSemaphore = VK_NULL_HANDLE;
@@ -40,15 +42,59 @@ std::condition_variable m_QueueExecutorCv;
 std::deque<std::function<void()>> m_QueueExecutorJobs;
 std::jthread m_QueueExecutorThread;
 std::thread::id m_QueueExecutorThreadId;
+bool m_QueueExecutorStarted = false;
 bool m_QueueExecutorStopping = false;
 
 bool m_HasMemoryBudget = false;
 
 VkPhysicalDeviceIDProperties m_IdProperties = {};
 
+VkResult Submit2Locked(
+    VkQueue p_Queue,
+    uint32_t p_SubmitCount,
+    const VkSubmitInfo2* p_Submits,
+    VkFence p_Fence
+)
+{
+    std::lock_guard<std::mutex> Lock(m_VulkanQueueCallMutex);
+
+    return m_Disp.queueSubmit2(
+        p_Queue,
+        p_SubmitCount,
+        p_Submits,
+        p_Fence
+    );
+}
+
+VkResult SubmitLegacyLocked(
+    VkQueue p_Queue,
+    uint32_t p_SubmitCount,
+    const VkSubmitInfo* p_Submits,
+    VkFence p_Fence
+)
+{
+    std::lock_guard<std::mutex> Lock(m_VulkanQueueCallMutex);
+
+    return m_Disp.queueSubmit(
+        p_Queue,
+        p_SubmitCount,
+        p_Submits,
+        p_Fence
+    );
+}
+
 void StartQueueExecutor()
 {
-    m_QueueExecutorStopping = false;
+    {
+        std::lock_guard<std::mutex> Lock(m_QueueExecutorMutex);
+
+        X_ASSERT(m_QueueExecutorStarted, "queue executor is already started");
+
+        m_QueueExecutorStarted = true;
+        m_QueueExecutorStopping = false;
+        m_QueueExecutorJobs.clear();
+    }
+
     m_QueueExecutorThread = std::jthread([](std::stop_token p_Stop) {
         while (!p_Stop.stop_requested()) {
             std::function<void()> Job;
@@ -72,21 +118,43 @@ void StartQueueExecutor()
             Job();
         }
     });
-    m_QueueExecutorThreadId = m_QueueExecutorThread.get_id();
+
+    {
+        std::lock_guard<std::mutex> Lock(m_QueueExecutorMutex);
+        m_QueueExecutorThreadId = m_QueueExecutorThread.get_id();
+    }
+}
+
+bool IsQueueExecutorThread()
+{
+    std::lock_guard<std::mutex> Lock(m_QueueExecutorMutex);
+
+    return m_QueueExecutorStarted
+        && std::this_thread::get_id() == m_QueueExecutorThreadId;
 }
 
 void StopQueueExecutorInternal()
 {
     {
         std::lock_guard<std::mutex> Lock(m_QueueExecutorMutex);
+
+        if (!m_QueueExecutorStarted) {
+            return;
+        }
+
         m_QueueExecutorStopping = true;
     }
 
     m_QueueExecutorThread.request_stop();
     m_QueueExecutorCv.notify_all();
     m_QueueExecutorThread = {};
-    m_QueueExecutorThreadId = {};
-    m_QueueExecutorJobs.clear();
+
+    {
+        std::lock_guard<std::mutex> Lock(m_QueueExecutorMutex);
+        m_QueueExecutorStarted = false;
+        m_QueueExecutorThreadId = {};
+        m_QueueExecutorJobs.clear();
+    }
 }
 
 void PushQueueExecutorJob(std::function<void()> p_Job)
@@ -96,7 +164,8 @@ void PushQueueExecutorJob(std::function<void()> p_Job)
     {
         std::lock_guard<std::mutex> Lock(m_QueueExecutorMutex);
 
-        if (std::this_thread::get_id() == m_QueueExecutorThreadId) {
+        if (m_QueueExecutorStarted
+            && std::this_thread::get_id() == m_QueueExecutorThreadId) {
             ExecuteImmediately = true;
         } else {
             m_QueueExecutorJobs.push_back(std::move(p_Job));
@@ -116,6 +185,127 @@ void PushQueueExecutorJob(std::function<void()> p_Job)
 void StopQueueExecutor()
 {
     StopQueueExecutorInternal();
+}
+
+void WaitIdle()
+{
+    ExecuteQueueOperation([] {
+        std::lock_guard<std::mutex> Lock(m_VulkanQueueCallMutex);
+
+        X_ASSERT(
+            m_Disp.deviceWaitIdle() != VK_SUCCESS,
+            "Failed to wait for Vulkan device"
+        );
+    });
+}
+
+VkResult AcquireNextImage(
+    VkSwapchainKHR p_Swapchain,
+    uint64_t p_Timeout,
+    VkSemaphore p_Semaphore,
+    VkFence p_Fence,
+    uint32_t* p_ImageIndex
+)
+{
+    std::lock_guard<std::mutex> Lock(m_VulkanQueueCallMutex);
+
+    return m_Disp.acquireNextImageKHR(
+        p_Swapchain,
+        p_Timeout,
+        p_Semaphore,
+        p_Fence,
+        p_ImageIndex
+    );
+}
+
+void ExecuteQueueOperation(std::function<void()> p_Operation)
+{
+    if (IsQueueExecutorThread()) {
+        p_Operation();
+
+        return;
+    }
+
+    const std::shared_ptr<std::promise<void>> Promise =
+        std::make_shared<std::promise<void>>();
+    std::future<void> Future = Promise->get_future();
+
+    PushQueueExecutorJob(
+        [Operation = std::move(p_Operation), Promise] {
+            try {
+                Operation();
+                Promise->set_value();
+            }
+            catch (...) {
+                Promise->set_exception(std::current_exception());
+            }
+        }
+    );
+
+    Future.get();
+}
+
+VkResult QueueSubmitLegacy(
+    VkQueue p_Queue,
+    uint32_t p_SubmitCount,
+    const VkSubmitInfo* p_Submits,
+    VkFence p_Fence
+)
+{
+    const std::shared_ptr<std::promise<VkResult>> Promise =
+        std::make_shared<std::promise<VkResult>>();
+    std::future<VkResult> Future = Promise->get_future();
+
+    ExecuteQueueOperation(
+        [Promise, p_Queue, p_SubmitCount, p_Submits, p_Fence] {
+            Promise->set_value(SubmitLegacyLocked(
+                p_Queue,
+                p_SubmitCount,
+                p_Submits,
+                p_Fence
+            ));
+        }
+    );
+
+    return Future.get();
+}
+
+VkResult QueueWaitIdle(VkQueue p_Queue)
+{
+    const std::shared_ptr<std::promise<VkResult>> Promise =
+        std::make_shared<std::promise<VkResult>>();
+    std::future<VkResult> Future = Promise->get_future();
+
+    ExecuteQueueOperation(
+        [Promise, p_Queue] {
+            std::lock_guard<std::mutex> Lock(m_VulkanQueueCallMutex);
+
+            Promise->set_value(m_Disp.queueWaitIdle(p_Queue));
+        }
+    );
+
+    return Future.get();
+}
+
+VkResult GetFenceStatus(VkFence p_Fence)
+{
+    std::lock_guard<std::mutex> Lock(m_QueueSubmitMutex);
+
+    return m_Disp.getFenceStatus(p_Fence);
+}
+
+VkResult ResetFence(VkFence p_Fence)
+{
+    std::lock_guard<std::mutex> Lock(m_QueueSubmitMutex);
+
+    return m_Disp.resetFences(1, &p_Fence);
+}
+
+VkResult WaitForFence(VkFence p_Fence, VkBool32 p_WaitAll, uint64_t p_Timeout)
+{
+    std::lock_guard<std::mutex> Lock(m_QueueSubmitMutex);
+
+    return m_Disp.waitForFences(1, &p_Fence, p_WaitAll, p_Timeout);
 }
 
 void CreateSurface(const vkb::Instance& p_Instance)
@@ -281,9 +471,7 @@ VkResult QueueSubmit2(
 
     PushQueueExecutorJob(
         [Promise, p_Queue, p_SubmitCount, p_Submits, p_Fence] {
-            std::lock_guard<std::mutex> Lock(m_QueueSubmitMutex);
-
-            Promise->set_value(m_Disp.queueSubmit2(
+            Promise->set_value(Submit2Locked(
                 p_Queue,
                 p_SubmitCount,
                 p_Submits,
@@ -295,6 +483,100 @@ VkResult QueueSubmit2(
     return Future.get();
 }
 
+void QueueSubmit2Async(
+    VkQueue p_Queue,
+    uint32_t p_SubmitCount,
+    const VkSubmitInfo2* p_Submits,
+    VkFence p_Fence,
+    std::function<void(VkResult)> p_Completion
+)
+{
+    struct SubmitOperation
+    {
+        VkQueue Queue = VK_NULL_HANDLE;
+        VkFence Fence = VK_NULL_HANDLE;
+        std::vector<VkSubmitInfo2> Submits;
+        std::vector<VkCommandBufferSubmitInfo> Commands;
+        std::vector<VkSemaphoreSubmitInfo> Waits;
+        std::vector<VkSemaphoreSubmitInfo> Signals;
+        std::function<void(VkResult)> Completion;
+    };
+
+    const std::shared_ptr<SubmitOperation> Operation =
+        std::make_shared<SubmitOperation>();
+    Operation->Queue = p_Queue;
+    Operation->Fence = p_Fence;
+    Operation->Submits.resize(p_SubmitCount);
+    Operation->Completion = std::move(p_Completion);
+
+    std::size_t CommandCount = 0;
+    std::size_t WaitCount = 0;
+    std::size_t SignalCount = 0;
+    for (uint32_t I = 0; I < p_SubmitCount; ++I) {
+        CommandCount += p_Submits[I].commandBufferInfoCount;
+        WaitCount += p_Submits[I].waitSemaphoreInfoCount;
+        SignalCount += p_Submits[I].signalSemaphoreInfoCount;
+    }
+
+    Operation->Commands.reserve(CommandCount);
+    Operation->Waits.reserve(WaitCount);
+    Operation->Signals.reserve(SignalCount);
+
+    for (uint32_t I = 0; I < p_SubmitCount; ++I) {
+        const VkSubmitInfo2& Source = p_Submits[I];
+        VkSubmitInfo2& Target = Operation->Submits[I];
+
+        Target = Source;
+
+        const std::size_t CommandOffset = Operation->Commands.size();
+        const std::size_t WaitOffset = Operation->Waits.size();
+        const std::size_t SignalOffset = Operation->Signals.size();
+
+        Operation->Commands.insert(
+            Operation->Commands.end(),
+            Source.pCommandBufferInfos,
+            Source.pCommandBufferInfos + Source.commandBufferInfoCount
+        );
+        Operation->Waits.insert(
+            Operation->Waits.end(),
+            Source.pWaitSemaphoreInfos,
+            Source.pWaitSemaphoreInfos + Source.waitSemaphoreInfoCount
+        );
+        Operation->Signals.insert(
+            Operation->Signals.end(),
+            Source.pSignalSemaphoreInfos,
+            Source.pSignalSemaphoreInfos + Source.signalSemaphoreInfoCount
+        );
+
+        Target.pCommandBufferInfos = Source.commandBufferInfoCount > 0
+            ? Operation->Commands.data() + CommandOffset
+            : nullptr;
+        Target.pWaitSemaphoreInfos = Source.waitSemaphoreInfoCount > 0
+            ? Operation->Waits.data() + WaitOffset
+            : nullptr;
+        Target.pSignalSemaphoreInfos = Source.signalSemaphoreInfoCount > 0
+            ? Operation->Signals.data() + SignalOffset
+            : nullptr;
+    }
+
+    PushQueueExecutorJob(
+        [Operation] {
+            VkResult Result = VK_SUCCESS;
+
+            Result = Submit2Locked(
+                Operation->Queue,
+                static_cast<uint32_t>(Operation->Submits.size()),
+                Operation->Submits.data(),
+                Operation->Fence
+            );
+
+            if (Operation->Completion) {
+                Operation->Completion(Result);
+            }
+        }
+    );
+}
+
 VkResult QueuePresent(const VkPresentInfoKHR* p_PresentInfo)
 {
     const std::shared_ptr<std::promise<VkResult>> Promise =
@@ -303,7 +585,7 @@ VkResult QueuePresent(const VkPresentInfoKHR* p_PresentInfo)
 
     PushQueueExecutorJob(
         [Promise, p_PresentInfo] {
-            std::lock_guard<std::mutex> Lock(m_QueueSubmitMutex);
+            std::lock_guard<std::mutex> Lock(m_VulkanQueueCallMutex);
 
             Promise->set_value(m_Disp.queuePresentKHR(m_Queues.Present, p_PresentInfo));
         }
@@ -401,19 +683,11 @@ uint64_t QueueSubmitAndPresentAsync(
     Operation->Swapchain = p_PresentInfo->pSwapchains[0];
     Operation->ImageIndex = p_PresentInfo->pImageIndices[0];
 
-    const std::string Name = "render_ops_submit_present_"
-        + std::to_string(m_NextQueueOperation.fetch_add(1, std::memory_order_relaxed));
+    PushQueueExecutorJob(
+        [Operation] {
+            VkResult SubmitResult = VK_SUCCESS;
 
-    const std::shared_ptr<std::promise<void>> Promise =
-        std::make_shared<std::promise<void>>();
-
-    std::future<void> Future = Promise->get_future();
-
-    ::Engine::Base::JobSystem::It::PushBackground(
-        ::Engine::Base::Runtime::EngineThreadID::RenderOpsDedicatedTh,
-        Name,
-        [Operation, Promise] {
-            const VkResult SubmitResult = QueueSubmit2(
+            SubmitResult = Submit2Locked(
                 Operation->Queue,
                 1,
                 &Operation->Submit,
@@ -421,14 +695,15 @@ uint64_t QueueSubmitAndPresentAsync(
             );
 
             if (SubmitResult == VK_SUCCESS) {
-                QueuePresent(&Operation->Present);
-            }
+                std::lock_guard<std::mutex> Lock(m_VulkanQueueCallMutex);
 
-            Promise->set_value();
+                    m_Disp.queuePresentKHR(
+                        m_Queues.Present,
+                        &Operation->Present
+                    );
+            }
         }
     );
-
-    Future.get();
 
     return Operation->CompletionValue;
 }

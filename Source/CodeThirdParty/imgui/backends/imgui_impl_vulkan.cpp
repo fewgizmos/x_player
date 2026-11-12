@@ -116,6 +116,19 @@
 #include "imgui.h"
 #ifndef IMGUI_DISABLE
 #include "imgui_impl_vulkan.h"
+
+namespace Engine::Base::Render::Vk::Device
+{
+
+VkResult QueueSubmitLegacy(
+    VkQueue p_Queue,
+    uint32_t p_SubmitCount,
+    const VkSubmitInfo* p_Submits,
+    VkFence p_Fence
+);
+VkResult QueueWaitIdle(VkQueue p_Queue);
+
+}
 #include <stdio.h>
 #ifndef IM_MAX
 #define IM_MAX(A, B)    (((A) >= (B)) ? (A) : (B))
@@ -916,12 +929,26 @@ void ImGui_ImplVulkan_UpdateTexture(ImTextureData* tex)
             end_info.pCommandBuffers = &bd->TexCommandBuffer;
             err = vkEndCommandBuffer(bd->TexCommandBuffer);
             check_vk_result(err);
-            err = vkQueueSubmit(v->Queue, 1, &end_info, VK_NULL_HANDLE);
+
+            VkFenceCreateInfo fence_info = {};
+            fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+            VkFence upload_fence = VK_NULL_HANDLE;
+            err = vkCreateFence(v->Device, &fence_info, v->Allocator, &upload_fence);
             check_vk_result(err);
+
+            err = Engine::Base::Render::Vk::Device::QueueSubmitLegacy(
+                v->Queue,
+                1,
+                &end_info,
+                upload_fence
+            );
+            check_vk_result(err);
+
+            err = vkWaitForFences(v->Device, 1, &upload_fence, VK_TRUE, UINT64_MAX);
+            check_vk_result(err);
+            vkDestroyFence(v->Device, upload_fence, v->Allocator);
         }
 
-        err = vkQueueWaitIdle(v->Queue); // FIXME-OPT: Suboptimal!
-        check_vk_result(err);
         vkDestroyBuffer(v->Device, upload_buffer, v->Allocator);
         vkFreeMemory(v->Device, upload_buffer_memory, v->Allocator);
 
@@ -1933,7 +1960,12 @@ void ImGui_ImplVulkanH_CreateOrResizeWindow(VkInstance instance, VkPhysicalDevic
 
     VkQueue queue;
     vkGetDeviceQueue(device, queue_family, 0, &queue);
-    err = vkQueueSubmit(queue, 1, &submit_info, fence);
+    err = Engine::Base::Render::Vk::Device::QueueSubmitLegacy(
+        queue,
+        1,
+        &submit_info,
+        fence
+    );
     check_vk_result(err);
     err = vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX);
     check_vk_result(err);

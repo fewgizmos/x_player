@@ -31,6 +31,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <string>
 
 namespace Engine::Base::Render::It
 {
@@ -148,7 +149,7 @@ void WaitIdle()
 {
     if (Vk::Device::GetDevice().device != VK_NULL_HANDLE) {
         Vk::Device::DrainRenderOperations();
-        X_ASSERT(Vk::Device::GetDisp().deviceWaitIdle() != VK_SUCCESS, "Failed to wait for Vulkan device");
+        Vk::Device::WaitIdle();
         Vk::Device::StopQueueExecutor();
     }
 }
@@ -175,8 +176,12 @@ void RenderFrame()
     const auto& Disp = Vk::Device::GetDisp();
     auto& Frame = Vk::Frame::GetCurrentFrame();
 
-    X_ASSERT(Disp.waitForFences(1, &Frame.FenceInflight, VK_TRUE, UINT64_MAX) != VK_SUCCESS,
-        "Failed to wait for frame fence");
+    const VkResult FrameStatus = Vk::Device::GetFenceStatus(Frame.FenceInflight);
+    if (FrameStatus == VK_NOT_READY) {
+        return;
+    }
+
+    X_ASSERT(FrameStatus != VK_SUCCESS, "Failed to query frame fence");
 
     const auto Extent = Viewport::Surface::GetExtent();
 
@@ -188,15 +193,32 @@ void RenderFrame()
         Vk::Frame::RecreateSwapchain();
     }
 
-    VkResult Result = Disp.acquireNextImageKHR(Vk::Frame::GetSwapchain(), UINT64_MAX,
-        Frame.SemaphoreAvailable, VK_NULL_HANDLE, &Vk::Frame::GetImageIndex());
+    VkResult Result = Vk::Device::AcquireNextImage(
+        Vk::Frame::GetSwapchain(),
+        0,
+        Frame.SemaphoreAvailable,
+        VK_NULL_HANDLE,
+        &Vk::Frame::GetImageIndex()
+    );
+
+    if (Result == VK_NOT_READY || Result == VK_TIMEOUT) {
+        return;
+    }
 
     if (Result == VK_ERROR_OUT_OF_DATE_KHR) {
         Vk::Frame::RecreateSwapchain();
         return;
     }
 
-    X_ASSERT(Result != VK_SUCCESS && Result != VK_SUBOPTIMAL_KHR, "Failed to acquire swapchain image");
+    if (Result == VK_ERROR_SURFACE_LOST_KHR) {
+        Vk::Frame::RecreateSwapchain();
+        return;
+    }
+
+    X_ASSERT(
+        Result != VK_SUCCESS && Result != VK_SUBOPTIMAL_KHR,
+        "Failed to acquire swapchain image: " + std::to_string(static_cast<int>(Result))
+    );
 
     const bool Recreate = Result == VK_SUBOPTIMAL_KHR;
     auto& Image = Vk::Frame::GetCurrentImage();
@@ -204,7 +226,6 @@ void RenderFrame()
     vmaSetCurrentFrameIndex(Vk::GpuResources::GetAllocator(), m_FrameCounter++);
     Vk::Commands::Reset(Frame.CommandBuffer);
     Vk::Commands::Begin(Frame.CommandBuffer);
-    ResourceLoader::BeginFrame();
     ResourceLoader::RecordPendingAcquires(Frame.CommandBuffer);
 
     ClearBackground(Frame.CommandBuffer);
@@ -218,7 +239,7 @@ void RenderFrame()
 
     Vk::Commands::End(Frame.CommandBuffer);
 
-    X_ASSERT(Disp.resetFences(1, &Frame.FenceInflight) != VK_SUCCESS, "Failed to reset frame fence");
+    X_ASSERT(Vk::Device::ResetFence(Frame.FenceInflight) != VK_SUCCESS, "Failed to reset frame fence");
 
     VkSemaphoreSubmitInfo Wait{VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
 
@@ -274,7 +295,7 @@ void RenderFrame()
         Frame.FenceInflight,
         &Present
     );
-    (void)RenderCompletionValue;
+    ResourceLoader::OnRenderSubmitted(RenderCompletionValue);
 
     Vk::Frame::Advance();
 

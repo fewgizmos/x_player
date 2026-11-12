@@ -151,16 +151,11 @@ std::string Texture::GetTypeName() const
 
 void Texture::BeginLoad()
 {
-    if (m_Image.Handle != VK_NULL_HANDLE) {
-        ::Engine::Base::Render::ResourceLoader::DestroyImage(m_Image);
-    }
-
-    ReleaseIndex(m_Index);
-
     AdvanceVersionChecksum();
 
     m_LoadData = std::make_shared<LoadData>();
     m_GpuTicket.reset();
+    m_DescriptorTicket.reset();
     m_GpuVersionChecksum = 0;
     m_Index = UINT32_MAX;
 
@@ -236,14 +231,56 @@ void Texture::Update()
             return;
         }
 
-        m_Image = m_LoadData->Image;
-        m_LoadData->Pixels.clear();
+        if (m_DescriptorTicket) {
+            if (!m_DescriptorTicket->Done.load(std::memory_order_acquire)) {
+                SetState(ResourceState::Uploading);
 
-        m_Index = TakeIndex();
+                return;
+            }
 
-        ::Engine::Base::Render::Vk::Descriptors::WriteImage(
-            m_Set, 1, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, m_Image.View,
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_NULL_HANDLE, m_Index);
+            if (m_DescriptorTicket->Failed.load(std::memory_order_acquire)
+                || m_DescriptorTicket->Rejected.load(std::memory_order_acquire)) {
+                SetFailed(m_DescriptorTicket->FailureReason);
+
+                return;
+            }
+        } else {
+            const Engine::Base::Render::Image PreviousImage = m_Image;
+            const uint32_t PreviousIndex = m_Index;
+
+            m_Image = m_LoadData->Image;
+            m_LoadData->Pixels.clear();
+            m_Index = TakeIndex();
+
+            const VkImageView ImageView = m_Image.View;
+            const uint32_t TextureIndex = m_Index;
+            m_DescriptorTicket =
+                ::Engine::Base::Render::ResourceLoader::PushFrameJobCallback(
+                    [Set = m_Set, ImageView, TextureIndex] {
+                        ::Engine::Base::Render::Vk::Descriptors::WriteImage(
+                            Set,
+                            1,
+                            VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+                            ImageView,
+                            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                            VK_NULL_HANDLE,
+                            TextureIndex
+                        );
+                    },
+                    ::Engine::Configs::Static::ResourceLoader::GPU_OPS_HIGH_ORDER,
+                    { 0, 0, 0, 0, 1 }
+                );
+
+            if (PreviousImage.Handle != VK_NULL_HANDLE) {
+                Engine::Base::Render::Image OldImage = PreviousImage;
+                ::Engine::Base::Render::ResourceLoader::DestroyImage(OldImage);
+            }
+
+            ReleaseIndex(PreviousIndex);
+            SetState(ResourceState::Uploading);
+
+            return;
+        }
 
         const std::shared_ptr<TextureSnapshot> Snapshot = std::make_shared<TextureSnapshot>();
         Snapshot->Image = m_Image;
@@ -328,6 +365,14 @@ void Texture::Update()
                 ::Engine::Base::Render::ResourceLoader::DestroyImage(Data->Image);
                 throw;
             }
+        },
+        ::Engine::Configs::Static::ResourceLoader::GPU_OPS_NORMAL_ORDER,
+        {
+            Data->Pixels.size(),
+            1,
+            1,
+            0,
+            0
         }
     );
     m_GpuTicket->VersionChecksum = VersionChecksum;

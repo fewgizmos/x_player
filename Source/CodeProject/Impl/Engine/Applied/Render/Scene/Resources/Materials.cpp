@@ -722,7 +722,9 @@ void Init()
                     VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                     VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
                 );
-            }
+            },
+            ::Engine::Configs::Static::ResourceLoader::GPU_OPS_HIGH_ORDER,
+            { 0, 0, 1, 0, 0 }
         );
     }
 }
@@ -820,6 +822,14 @@ void Flush()
                 Data.data(),
                 sizeof(MaterialData) * Data.size()
             );
+        },
+        ::Engine::Configs::Static::ResourceLoader::GPU_OPS_NORMAL_ORDER,
+        {
+            sizeof(MaterialData) * m_Data.size(),
+            1,
+            0,
+            0,
+            1
         }
     );
 

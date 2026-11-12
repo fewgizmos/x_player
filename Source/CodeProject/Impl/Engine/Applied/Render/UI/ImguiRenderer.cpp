@@ -65,7 +65,11 @@ void UploadFontTexture()
     ImGuiIO& Io = ImGui::GetIO();
 
     if (Io.Fonts->TexData != nullptr) {
-        ImGui_ImplVulkan_UpdateTexture(Io.Fonts->TexData);
+        ::Engine::Base::Render::Vk::Device::ExecuteQueueOperation(
+            [&Io] {
+                ImGui_ImplVulkan_UpdateTexture(Io.Fonts->TexData);
+            }
+        );
     }
 }
 

@@ -128,10 +128,11 @@ void DestroyPipelineAsync(::Engine::Base::Render::Pipeline& p_Target)
     const ::Engine::Base::Render::Pipeline Target = p_Target;
     p_Target = {};
 
-    ::Engine::Base::Render::ResourceLoader::PushFrameJobCallback(
+    ::Engine::Base::Render::ResourceLoader::PushDeferredGpuCallback(
         [Target] {
             ::Engine::Base::Render::Vk::Shader::DestroyPipeline(Target);
-        }
+        },
+        ::Engine::Configs::Static::ResourceLoader::GPU_OPS_HIGH_ORDER
     );
 }
 
@@ -150,9 +151,6 @@ std::string Shader::GetTypeName() const { return "Shader"; }
 
 void Shader::BeginLoad()
 {
-    DestroyPipelineAsync(Graphics);
-    DestroyPipelineAsync(Compute);
-
     AdvanceVersionChecksum();
 
     LoadState = std::make_shared<LoadData>();
@@ -214,6 +212,9 @@ void Shader::Update()
             return;
         }
 
+        const ::Engine::Base::Render::Pipeline PreviousGraphics = Graphics;
+        const ::Engine::Base::Render::Pipeline PreviousCompute = Compute;
+
         Graphics = LoadState->Graphics;
         Compute = LoadState->ComputePipeline;
 
@@ -225,6 +226,11 @@ void Shader::Update()
             std::shared_ptr<const ShaderSnapshot>(Published),
             std::memory_order_release
         );
+
+        ::Engine::Base::Render::Pipeline OldGraphics = PreviousGraphics;
+        ::Engine::Base::Render::Pipeline OldCompute = PreviousCompute;
+        DestroyPipelineAsync(OldGraphics);
+        DestroyPipelineAsync(OldCompute);
 
         SetState(ResourceState::Ready);
         return;
@@ -273,7 +279,9 @@ void Shader::Update()
                 Data->ComputePipeline = {};
                 throw;
             }
-        }
+        },
+        ::Engine::Configs::Static::ResourceLoader::GPU_OPS_HIGH_ORDER,
+        { 0, 0, 1, 0, 0 }
     );
     GpuTicket->VersionChecksum = VersionChecksum;
 }

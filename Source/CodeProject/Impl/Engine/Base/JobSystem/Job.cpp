@@ -153,10 +153,6 @@ void JobThread::Loop(std::stop_token p_Stop)
 
 void JobThread::Execute(const std::function<void()>& p_Callback)
 {
-    if (m_Sync.Stop.load()) {
-        return;
-    }
-
     try {
         p_Callback();
     }

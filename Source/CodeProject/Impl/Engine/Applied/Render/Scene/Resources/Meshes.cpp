@@ -1,5 +1,7 @@
 #include "X/Engine/Applied/Render/Scene/Resources/Meshes.hpp"
 
+#include "X/Configs/Static.hpp"
+
 #include "X/Engine/Base/JobSystem/JobManager.hpp"
 #include "X/Engine/Base/Render/ResourceLoader.hpp"
 #include "X/Engine/Base/Render/Vulkan/GpuResources.hpp"
@@ -106,14 +108,6 @@ std::string Mesh::GetTypeName() const
 
 void Mesh::BeginLoad()
 {
-    if (m_VertexBuffer.Handle != VK_NULL_HANDLE) {
-        ::Engine::Base::Render::ResourceLoader::DestroyBuffer(m_VertexBuffer);
-    }
-
-    if (m_IndexBuffer.Handle != VK_NULL_HANDLE) {
-        ::Engine::Base::Render::ResourceLoader::DestroyBuffer(m_IndexBuffer);
-    }
-
     AdvanceVersionChecksum();
 
     LoadDataState = std::make_shared<LoadData>();
@@ -263,6 +257,9 @@ void Mesh::Update()
 
             return;
         }
+        const ::Engine::Base::Render::Buffer PreviousVertexBuffer = m_VertexBuffer;
+        const ::Engine::Base::Render::Buffer PreviousIndexBuffer = m_IndexBuffer;
+
         m_VertexBuffer = LoadDataState->VertexBuffer;
         m_IndexBuffer = LoadDataState->IndexBuffer;
 
@@ -284,6 +281,16 @@ void Mesh::Update()
             std::shared_ptr<const MeshSnapshot>(Snapshot),
             std::memory_order_release
         );
+
+        if (PreviousVertexBuffer.Handle != VK_NULL_HANDLE) {
+            ::Engine::Base::Render::Buffer OldBuffer = PreviousVertexBuffer;
+            ::Engine::Base::Render::ResourceLoader::DestroyBuffer(OldBuffer);
+        }
+
+        if (PreviousIndexBuffer.Handle != VK_NULL_HANDLE) {
+            ::Engine::Base::Render::Buffer OldBuffer = PreviousIndexBuffer;
+            ::Engine::Base::Render::ResourceLoader::DestroyBuffer(OldBuffer);
+        }
 
         SetState(::Engine::Applied::Render::Resources::ResourceState::Ready);
         return;
@@ -374,6 +381,15 @@ void Mesh::Update()
                     ::Engine::Base::Render::ResourceLoader::DestroyBuffer(Data->IndexBuffer);
                     throw;
                 }
+            },
+            ::Engine::Configs::Static::ResourceLoader::GPU_OPS_NORMAL_ORDER,
+            {
+                sizeof(Vertex) * Data->Vertices.size()
+                    + sizeof(uint32_t) * Data->SortedIndices.size(),
+                2,
+                2,
+                0,
+                0
             }
         );
         m_GpuTicket->VersionChecksum = VersionChecksum;

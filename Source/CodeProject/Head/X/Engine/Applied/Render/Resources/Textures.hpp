@@ -47,6 +47,7 @@ private:
     uint32_t m_Index = UINT32_MAX;
     std::shared_ptr<LoadData> m_LoadData;
     std::shared_ptr<::Engine::Base::Render::ResourceLoader::ResourceJobTicket> m_GpuTicket;
+    std::shared_ptr<::Engine::Base::Render::ResourceLoader::ResourceJobTicket> m_DescriptorTicket;
     uint64_t m_GpuVersionChecksum = 0;
     std::atomic<std::shared_ptr<const TextureSnapshot>> m_Snapshot;
 };

@@ -21,6 +21,15 @@ struct ResourceJobTicket
     std::string FailureReason;
 };
 
+struct GpuResourceOpsBudget
+{
+    VkDeviceSize UploadBytes = 0;
+    uint32_t CopyCommands = 0;
+    uint32_t ResourceCreates = 0;
+    uint32_t ResourceDestroys = 0;
+    uint32_t DescriptorUpdates = 0;
+};
+
 using Buffer = ::Engine::Base::Render::Buffer;
 using Image = ::Engine::Base::Render::Image;
 
@@ -28,11 +37,26 @@ void Init();
 void Cleanup();
 void StopAcceptingJobs();
 
-std::shared_ptr<ResourceJobTicket> PushFrameJobCallback(std::function<void()> p_Callback);
-std::shared_ptr<ResourceJobTicket> PushFrameJobVk(std::function<void(VkCommandBuffer)> p_Callback);
+std::shared_ptr<ResourceJobTicket> PushFrameJobCallback(
+    std::function<void()> p_Callback,
+    int p_Order = 100,
+    GpuResourceOpsBudget p_Budget = {}
+);
+std::shared_ptr<ResourceJobTicket> PushFrameJobVk(
+    std::function<void(VkCommandBuffer)> p_Callback,
+    int p_Order = 100,
+    GpuResourceOpsBudget p_Budget = {}
+);
+void PushDeferredGpuCallback(
+    std::function<void()> p_Callback,
+    int p_Order = 100
+);
 
 void BeginFrame();
+void AdvanceBudgetFrame();
+GpuResourceOpsBudget GetBudgetUsage();
 void RecordPendingAcquires(VkCommandBuffer p_CommandBuffer);
+void OnRenderSubmitted(uint64_t p_RenderCompletionValue);
 struct CompletionWait
 {
     VkSemaphore Semaphore = VK_NULL_HANDLE;
