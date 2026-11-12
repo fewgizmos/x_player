@@ -445,8 +445,10 @@ void Mesh::Unload()
 
 const ::Engine::Base::Render::Buffer& Mesh::GetVertexBuffer() const { return m_VertexBuffer; }
 const ::Engine::Base::Render::Buffer& Mesh::GetIndexBuffer() const { return m_IndexBuffer; }
+
 uint32_t Mesh::GetVertexCount() const { return m_VertexCount; }
 uint32_t Mesh::GetIndexCount() const { return m_IndexCount; }
+
 const glm::vec3& Mesh::GetBoundsMin() const { return m_BoundsMin; }
 const glm::vec3& Mesh::GetBoundsMax() const { return m_BoundsMax; }
 

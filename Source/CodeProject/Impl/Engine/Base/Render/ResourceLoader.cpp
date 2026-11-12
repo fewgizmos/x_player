@@ -22,7 +22,6 @@
 #include <memory>
 #include <mutex>
 #include <string>
-#include <thread>
 #include <utility>
 #include <vector>
 
@@ -105,6 +104,7 @@ struct PendingGpuJob
     std::function<void(VkCommandBuffer)> Callback;
     std::shared_ptr<ResourceJobTicket> Ticket;
     GpuResourceOpsBudget Budget;
+
     int Order = 100;
     uint32_t Age = 0;
     uint64_t Sequence = 0;
@@ -149,7 +149,9 @@ std::atomic<uint64_t> m_CompletedTransferValue = 0;
 std::atomic<uint64_t> m_CompletedGraphicsValue = 0;
 std::atomic<uint32_t> m_PendingDestroyJobs = 0;
 std::atomic<uint64_t> m_FrameTransferWaitValue = 0;
+
 GpuResourceOpsBudget m_BudgetUsage;
+
 uint64_t m_BudgetFrame = 0;
 std::mutex m_BudgetMutex;
 std::mutex m_DestroyMutex;
@@ -579,8 +581,10 @@ void FinishBatch(Batch& p_Batch)
             Ticket->FailureReason = p_Batch.FailureReason.empty()
                 ? "resource loader batch was not submitted"
                 : p_Batch.FailureReason;
+
             Ticket->Failed.store(true, std::memory_order_release);
             Ticket->Done.store(true, std::memory_order_release);
+
         } else if (p_Batch.Submitted
             && !p_Batch.WaitForRenderCompletion
             && !Ticket->Failed.load(std::memory_order_acquire)) {
@@ -870,18 +874,19 @@ void RecordAcquire(
         Barrier.srcStageMask = VK_PIPELINE_STAGE_2_NONE;
         Barrier.srcAccessMask = 0;
         Barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-        Barrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT
-            | VK_ACCESS_2_MEMORY_WRITE_BIT;
+        Barrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
         Barrier.srcQueueFamilyIndex = Queues.TransferFamily;
         Barrier.dstQueueFamilyIndex = Queues.GraphicsFamily;
         Barrier.buffer = Source.Handle;
         Barrier.size = Source.Size;
+
         Buffers.push_back(Barrier);
     }
 
     VkDependencyInfo Dependency{ VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
     Dependency.bufferMemoryBarrierCount = static_cast<uint32_t>(Buffers.size());
     Dependency.pBufferMemoryBarriers = Buffers.data();
+
     ::Engine::Base::Render::Vk::Device::GetDisp().cmdPipelineBarrier2(
         p_CommandBuffer,
         &Dependency
@@ -1231,6 +1236,7 @@ void BeginFrame()
             std::size_t Index = 0;
             int BestOrder = 0;
             uint64_t BestSequence = 0;
+
             const bool AllowOversized = m_BudgetUsage.UploadBytes == 0
                 && m_BudgetUsage.CopyCommands == 0
                 && m_BudgetUsage.ResourceCreates == 0
@@ -1613,9 +1619,11 @@ Image CreateImage(
 
     VkImageViewCreateInfo ViewInfo{ VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
     ViewInfo.image = Result.Handle;
+
     ViewInfo.viewType = p_IsCube
         ? VK_IMAGE_VIEW_TYPE_CUBE
         : (p_ArrayLayers > 1 ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D);
+
     ViewInfo.format = p_Format;
     ViewInfo.subresourceRange.aspectMask = p_Aspect;
     ViewInfo.subresourceRange.levelCount = p_MipLevels;
@@ -1654,6 +1662,7 @@ void DestroyImage(Image& p_Target)
     const uint64_t GraphicsValue = m_NextGraphicsValue.load(std::memory_order_acquire);
     const uint64_t RenderValue =
         ::Engine::Base::Render::Vk::Device::GetRenderCompletionValue();
+
     m_PendingDestroyJobs.fetch_add(1, std::memory_order_acq_rel);
 
     QueueDeferredImageDestroy(
