@@ -37,6 +37,9 @@ namespace
 using Mesh = ::Engine::Applied::Render::Scene::Resources::Meshes::Mesh;
 using Vertex = ::Engine::Applied::Render::Scene::Resources::Meshes::Vertex;
 using Texture = ::Engine::Applied::Render::Resources::Textures::Texture;
+using MeshSnapshot = ::Engine::Applied::Render::Scene::Resources::Meshes::MeshSnapshot;
+using ShaderSnapshot = ::Engine::Applied::Render::Resources::Shaders::ShaderSnapshot;
+using TextureSnapshot = ::Engine::Applied::Render::Resources::Textures::TextureSnapshot;
 using MeshReference = ::Engine::Applied::Render::Resources::Ref<Mesh>;
 using TextureReference = ::Engine::Applied::Render::Resources::Ref<Texture>;
 
@@ -150,9 +153,14 @@ void Render()
         return;
     }
 
-    const Mesh& MeshValue = *m_Mesh->Get();
-    const Texture& TextureValue = *m_DefaultEngineLogo->Get();
-    const Engine::Base::Render::Pipeline& Pipeline = m_Shader->GetGraphicsPipeline();
+    const std::shared_ptr<const MeshSnapshot> MeshValue = (*m_Mesh)->GetSnapshot();
+    const std::shared_ptr<const TextureSnapshot> TextureValue = (*m_DefaultEngineLogo)->GetSnapshot();
+    const std::shared_ptr<const ShaderSnapshot> ShaderValue = m_Shader->GetSnapshot();
+    if (!MeshValue || !TextureValue || !ShaderValue) {
+        return;
+    }
+
+    const Engine::Base::Render::Pipeline& Pipeline = ShaderValue->Graphics;
 
     const ::Engine::Base::Render::FrameData& Frame =
         ::Engine::Base::Render::Vk::Frame::GetCurrentFrame();
@@ -183,7 +191,7 @@ void Render()
             glm::ortho(0.0f, Width, Height, 0.0f, -1.0f, 1.0f),
             { Width * 0.5f, Height * 0.5f, 0.0f }
         ),
-        TextureValue.GetIndex(),
+        TextureValue->Index,
         0
     };
 
@@ -204,12 +212,12 @@ void Render()
         Frame.CommandBuffer,
         0,
         1,
-        &MeshValue.GetVertexBuffer().Handle,
+        &MeshValue->VertexBuffer.Handle,
         &Offset
     );
     Disp.cmdBindIndexBuffer(
         Frame.CommandBuffer,
-        MeshValue.GetIndexBuffer().Handle,
+        MeshValue->IndexBuffer.Handle,
         0,
         VK_INDEX_TYPE_UINT32
     );
@@ -236,7 +244,7 @@ void Render()
 
     Disp.cmdDrawIndexed(
         Frame.CommandBuffer,
-        MeshValue.GetIndexCount(),
+        MeshValue->IndexCount,
         1,
         0,
         0,

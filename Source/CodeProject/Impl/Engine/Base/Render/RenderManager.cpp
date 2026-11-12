@@ -31,7 +31,6 @@
 
 #include <cmath>
 #include <cstdint>
-#include <mutex>
 
 namespace Engine::Base::Render::It
 {
@@ -148,7 +147,9 @@ void Init()
 void WaitIdle()
 {
     if (Vk::Device::GetDevice().device != VK_NULL_HANDLE) {
+        Vk::Device::DrainRenderOperations();
         X_ASSERT(Vk::Device::GetDisp().deviceWaitIdle() != VK_SUCCESS, "Failed to wait for Vulkan device");
+        Vk::Device::StopQueueExecutor();
     }
 }
 
@@ -163,6 +164,7 @@ void Cleanup()
 
     if (Vk::Device::GetDevice().device != VK_NULL_HANDLE) {
         Vk::Samplers::DestroyAll();
+        Vk::Device::DestroyRenderCompletionSemaphore();
     }
 
     ArtifactsDeletor::CleanAll();
@@ -228,43 +230,60 @@ void RenderFrame()
     Signal.semaphore = Image.SemaphoreFinished;
     Signal.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
 
-    VkSemaphoreSubmitInfo TransferWait{ VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO };
-    const VkSemaphoreSubmitInfo* TransferWaitPtr = nullptr;
-    if (ResourceLoader::HasTransferSubmission()) {
-        TransferWait.semaphore = ResourceLoader::GetCompletionSemaphore();
-        TransferWait.value = ResourceLoader::GetCompletionValue();
-        TransferWait.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-        TransferWaitPtr = &TransferWait;
+    ResourceLoader::CompletionWait CompletionWaits[2] = {};
+    const uint32_t CompletionCount = ResourceLoader::GetCompletionWaits(
+        CompletionWaits,
+        2
+    );
+    VkSemaphoreSubmitInfo LoaderWaits[2] = {};
+    for (uint32_t I = 0; I < CompletionCount; ++I) {
+        LoaderWaits[I].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+        LoaderWaits[I].semaphore = CompletionWaits[I].Semaphore;
+        LoaderWaits[I].value = CompletionWaits[I].Value;
+        LoaderWaits[I].stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
     }
 
-    Vk::Commands::Submit(
-        Frame.CommandBuffer,
-        &Wait,
-        &Signal,
-        Frame.FenceInflight,
-        TransferWaitPtr
-    );
-
     VkSwapchainKHR Swapchain = Vk::Frame::GetSwapchain();
-    VkPresentInfoKHR Present{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
 
+    VkPresentInfoKHR Present{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
     Present.waitSemaphoreCount = 1;
     Present.pWaitSemaphores = &Image.SemaphoreFinished;
     Present.swapchainCount = 1;
     Present.pSwapchains = &Swapchain;
     Present.pImageIndices = &Vk::Frame::GetImageIndex();
 
-    {
-        std::lock_guard<std::mutex> Lock(Vk::Device::GetQueueSubmitMutex());
-        Result = Disp.queuePresentKHR(Vk::Device::GetQueues().Present, &Present);
+    VkCommandBufferSubmitInfo Command{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO };
+    Command.commandBuffer = Frame.CommandBuffer;
+
+    VkSemaphoreSubmitInfo Waits[3] = { Wait };
+    for (uint32_t I = 0; I < CompletionCount; ++I) {
+        Waits[I + 1] = LoaderWaits[I];
     }
+
+    VkSubmitInfo2 Submit{ VK_STRUCTURE_TYPE_SUBMIT_INFO_2 };
+    Submit.waitSemaphoreInfoCount = CompletionCount + 1;
+    Submit.pWaitSemaphoreInfos = Waits;
+    Submit.commandBufferInfoCount = 1;
+    Submit.pCommandBufferInfos = &Command;
+    Submit.signalSemaphoreInfoCount = 1;
+    Submit.pSignalSemaphoreInfos = &Signal;
+
+    const uint64_t RenderCompletionValue = Vk::Device::QueueSubmitAndPresentAsync(
+        &Submit,
+        Vk::Device::GetQueues().Graphics,
+        Frame.FenceInflight,
+        &Present
+    );
+    (void)RenderCompletionValue;
 
     Vk::Frame::Advance();
 
     if (Result == VK_ERROR_OUT_OF_DATE_KHR || Result == VK_SUBOPTIMAL_KHR || Recreate) {
         X_ASSERT(Result != VK_SUCCESS && Result != VK_ERROR_OUT_OF_DATE_KHR && Result != VK_SUBOPTIMAL_KHR,
             "Failed to present swapchain image");
+
         Vk::Frame::RecreateSwapchain();
+
         return;
     }
 

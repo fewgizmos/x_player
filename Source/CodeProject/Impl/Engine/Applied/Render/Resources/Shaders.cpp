@@ -13,6 +13,7 @@
 
 #include <cstdint>
 #include <exception>
+#include <stdexcept>
 #include <mutex>
 #include <utility>
 #include <vector>
@@ -27,6 +28,10 @@ struct Shader::LoadData
     std::vector<uint32_t> Vertex;
     std::vector<uint32_t> Fragment;
     std::vector<uint32_t> Compute;
+
+    ::Engine::Base::Render::Pipeline Graphics;
+    ::Engine::Base::Render::Pipeline ComputePipeline;
+    uint64_t VersionChecksum = 0;
 
     std::string FailureReason;
     bool Finished = false;
@@ -114,6 +119,22 @@ std::vector<uint32_t> Compile(const std::string& p_File, ::Engine::Base::Render:
     );
 }
 
+void DestroyPipelineAsync(::Engine::Base::Render::Pipeline& p_Target)
+{
+    if (p_Target.Handle == VK_NULL_HANDLE && p_Target.Layout == VK_NULL_HANDLE) {
+        return;
+    }
+
+    const ::Engine::Base::Render::Pipeline Target = p_Target;
+    p_Target = {};
+
+    ::Engine::Base::Render::ResourceLoader::PushFrameJobCallback(
+        [Target] {
+            ::Engine::Base::Render::Vk::Shader::DestroyPipeline(Target);
+        }
+    );
+}
+
 }
 
 Shader::Shader(ShaderCreateInfo p_CreateInfo)
@@ -129,11 +150,20 @@ std::string Shader::GetTypeName() const { return "Shader"; }
 
 void Shader::BeginLoad()
 {
-    const auto State = LoadState;
-    const auto Info = CreateInfo;
+    DestroyPipelineAsync(Graphics);
+    DestroyPipelineAsync(Compute);
+
+    AdvanceVersionChecksum();
+
+    LoadState = std::make_shared<LoadData>();
+    GpuTicket.reset();
+
+    const std::shared_ptr<LoadData> State = LoadState;
+    const ShaderCreateInfo Info = CreateInfo;
+    State->VersionChecksum = GetVersionChecksum();
 
     ::Engine::Base::JobSystem::It::PushBackground(
-        ::Engine::Base::Runtime::EngineThreadID::ResourceLoaderTh, "shader_load",
+        ::Engine::Base::Runtime::EngineThreadID::RenderResourceLoaderTh, "shader_load",
         [State, Info] {
             try {
                 X_ASSERT(Info.VertexFile.empty() && Info.ComputeFile.empty(), "Shader requires vertex or compute stage");
@@ -157,7 +187,46 @@ void Shader::BeginLoad()
 
 void Shader::Update()
 {
-    if (GetState() != ResourceState::Loading) {
+    if (GetState() != ResourceState::LoadingCpu
+        && GetState() != ResourceState::QueuedGpu
+        && GetState() != ResourceState::Uploading) {
+        return;
+    }
+
+    if (GpuTicket) {
+        if (GetVersionChecksum() != GpuTicket->VersionChecksum) {
+            SetRejected("shader GPU job version is stale");
+            return;
+        }
+
+        if (!GpuTicket->Done.load(std::memory_order_acquire)) {
+            SetState(ResourceState::Uploading);
+            return;
+        }
+
+        if (GpuTicket->Rejected.load(std::memory_order_acquire)) {
+            SetRejected(GpuTicket->FailureReason);
+            return;
+        }
+
+        if (GpuTicket->Failed.load(std::memory_order_acquire)) {
+            SetFailed(GpuTicket->FailureReason);
+            return;
+        }
+
+        Graphics = LoadState->Graphics;
+        Compute = LoadState->ComputePipeline;
+
+        const std::shared_ptr<ShaderSnapshot> Published = std::make_shared<ShaderSnapshot>();
+        Published->Graphics = Graphics;
+        Published->Compute = Compute;
+        Published->VersionChecksum = GpuTicket->VersionChecksum;
+        Snapshot.store(
+            std::shared_ptr<const ShaderSnapshot>(Published),
+            std::memory_order_release
+        );
+
+        SetState(ResourceState::Ready);
         return;
     }
 
@@ -170,40 +239,70 @@ void Shader::Update()
         return;
     }
 
-    try {
-        if (!LoadState->Vertex.empty()) {
-            Graphics = ::Engine::Base::Render::Vk::Shader::CreateGraphicsPipeline(
-                LoadState->Vertex, LoadState->Fragment, CreateInfo.Graphics);
+    const std::shared_ptr<LoadData> Data = LoadState;
+    const ShaderCreateInfo Info = CreateInfo;
+    const uint64_t VersionChecksum = GetVersionChecksum();
+    SetState(ResourceState::QueuedGpu);
+    GpuTicket = ::Engine::Base::Render::ResourceLoader::PushFrameJobCallback(
+        [Data, Info, VersionChecksum] {
+            std::lock_guard<std::mutex> Lock(Data->Mutex);
+
+            if (Data->VersionChecksum != VersionChecksum) {
+                return;
+            }
+
+            try {
+                if (!Data->Vertex.empty()) {
+                    Data->Graphics = ::Engine::Base::Render::Vk::Shader::CreateGraphicsPipeline(
+                        Data->Vertex,
+                        Data->Fragment,
+                        Info.Graphics
+                    );
+                }
+                if (!Data->Compute.empty()) {
+                    Data->ComputePipeline = ::Engine::Base::Render::Vk::Shader::CreateComputePipeline(
+                        Data->Compute,
+                        Info.Compute
+                    );
+                }
+            }
+            catch (...) {
+                ::Engine::Base::Render::Vk::Shader::DestroyPipeline(Data->Graphics);
+                ::Engine::Base::Render::Vk::Shader::DestroyPipeline(Data->ComputePipeline);
+                Data->Graphics = {};
+                Data->ComputePipeline = {};
+                throw;
+            }
         }
-        if (!LoadState->Compute.empty()) {
-            Compute = ::Engine::Base::Render::Vk::Shader::CreateComputePipeline(LoadState->Compute, CreateInfo.Compute);
-        }
-        LoadState->Vertex.clear();
-        LoadState->Fragment.clear();
-        LoadState->Compute.clear();
-        SetState(ResourceState::Ready);
-    }
-    catch (const std::exception& Error) {
-        Unload();
-        SetFailed(Error.what());
-    }
-    catch (...) {
-        Unload();
-        SetFailed("Unknown shader pipeline failure");
-    }
+    );
+    GpuTicket->VersionChecksum = VersionChecksum;
 }
 
 void Shader::Unload()
 {
-    ::Engine::Base::Render::Vk::Shader::DestroyPipeline(Graphics);
-    ::Engine::Base::Render::Vk::Shader::DestroyPipeline(Compute);
+    AdvanceVersionChecksum();
 
-    Graphics = {};
-    Compute = {};
+    {
+        std::lock_guard<std::mutex> Lock(LoadState->Mutex);
+        LoadState->VersionChecksum = GetVersionChecksum();
+    }
+
+    if (GetState() == ResourceState::Unloading) {
+        return;
+    }
+
+    SetState(ResourceState::Unloading);
+    DestroyPipelineAsync(Graphics);
+    DestroyPipelineAsync(Compute);
 }
 
 const ::Engine::Base::Render::Pipeline& Shader::GetGraphicsPipeline() const { return Graphics; }
 const ::Engine::Base::Render::Pipeline& Shader::GetComputePipeline() const { return Compute; }
 RenderQueue Shader::GetRenderQueue() const { return CreateInfo.Queue; }
+
+std::shared_ptr<const ShaderSnapshot> Shader::GetSnapshot() const
+{
+    return Snapshot.load(std::memory_order_acquire);
+}
 
 }

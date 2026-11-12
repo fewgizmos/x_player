@@ -32,6 +32,14 @@ const JobSystem::DeferredTaskRegistration::Registrar RegisterTask(
     ::Engine::Base::Runtime::EngineThreadID::GameTh, "checking_exit", CheckExit, 0
 );
 
+void CreateBaseThreads()
+{
+    JobSystem::It::AttachCurrentThread(::Engine::Base::Runtime::EngineThreadID::GameTh);
+    JobSystem::It::CreateThread(::Engine::Base::Runtime::EngineThreadID::RenderTh);
+    JobSystem::It::CreateThread(::Engine::Base::Runtime::EngineThreadID::RenderResourceLoaderTh);
+    JobSystem::It::CreateThread(::Engine::Base::Runtime::EngineThreadID::RenderOpsDedicatedTh);
+}
+
 }
 
 int Run()
@@ -84,7 +92,12 @@ int Run()
     return EXIT_SUCCESS;
 }
 
-void StartUp() { BootstrapManager::It::InitAll(); }
+void StartUp()
+{
+    CreateBaseThreads();
+
+    BootstrapManager::It::InitAll();
+}
 
 void CleanUp() { BootstrapManager::It::CleanAll(); }
 

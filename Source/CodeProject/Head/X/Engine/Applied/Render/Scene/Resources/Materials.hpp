@@ -5,6 +5,7 @@
 #include "X/Engine/Applied/Render/Resources/Textures.hpp"
 
 #include "X/Engine/Base/Render/Vulkan/GpuResources.hpp"
+#include "X/Engine/Base/Render/ResourceLoader.hpp"
 #include "X/Engine/Base/Render/Vulkan/Samplers.hpp"
 
 #include <glm/vec2.hpp>
@@ -157,6 +158,20 @@ struct MaterialData
     float Padding1;
 };
 
+struct MaterialSnapshot
+{
+    MaterialData Data = {};
+    uint32_t Index = UINT32_MAX;
+    uint64_t VersionChecksum = 0;
+};
+
+struct MaterialBufferSnapshot
+{
+    ::Engine::Base::Render::Buffer Buffer;
+    VkDeviceAddress Address = 0;
+    uint64_t Version = 0;
+};
+
 class Material final : public ::Engine::Applied::Render::Resources::Resource
 {
 public:
@@ -176,6 +191,8 @@ public:
     const ::Engine::Applied::Render::Resources::Ref<
         ::Engine::Applied::Render::Resources::Shaders::Shader>& GetShader() const;
     VkDescriptorSet GetExtraSet() const;
+    void SetGpuTicket(std::shared_ptr<::Engine::Base::Render::ResourceLoader::ResourceJobTicket> p_Ticket);
+    std::shared_ptr<const MaterialSnapshot> GetSnapshot() const;
 
 private:
     struct LoadData;
@@ -184,6 +201,8 @@ private:
     MaterialData Data = {};
     uint32_t Index = UINT32_MAX;
     std::shared_ptr<LoadData> LoadState;
+    std::shared_ptr<::Engine::Base::Render::ResourceLoader::ResourceJobTicket> m_GpuTicket;
+    std::atomic<std::shared_ptr<const MaterialSnapshot>> m_Snapshot;
 };
 
 void Init();
@@ -193,5 +212,6 @@ void Flush();
 const std::vector<MaterialData>& GetData();
 const ::Engine::Base::Render::Buffer& GetBuffer();
 VkDeviceAddress GetBufferAddress();
+std::shared_ptr<const MaterialBufferSnapshot> GetBufferSnapshot();
 
 }

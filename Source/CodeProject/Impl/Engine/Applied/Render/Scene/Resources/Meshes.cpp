@@ -35,9 +35,11 @@ struct Mesh::LoadData
     std::string FailureReason;
     bool Finished = false;
     bool Failed = false;
+    uint64_t VersionChecksum = 0;
 
     ::Engine::Base::Render::Buffer VertexBuffer;
     ::Engine::Base::Render::Buffer IndexBuffer;
+    bool UploadRejected = false;
 };
 
 namespace
@@ -104,15 +106,28 @@ std::string Mesh::GetTypeName() const
 
 void Mesh::BeginLoad()
 {
+    if (m_VertexBuffer.Handle != VK_NULL_HANDLE) {
+        ::Engine::Base::Render::ResourceLoader::DestroyBuffer(m_VertexBuffer);
+    }
+
+    if (m_IndexBuffer.Handle != VK_NULL_HANDLE) {
+        ::Engine::Base::Render::ResourceLoader::DestroyBuffer(m_IndexBuffer);
+    }
+
     AdvanceVersionChecksum();
 
+    LoadDataState = std::make_shared<LoadData>();
+    m_GpuTicket.reset();
+    m_GpuVersionChecksum = 0;
+
     const std::shared_ptr<LoadData> Data = LoadDataState;
+    Data->VersionChecksum = GetVersionChecksum();
 
     Data->Vertices = std::move(m_Vertices);
     Data->Indices = std::move(m_Indices);
 
     ::Engine::Base::JobSystem::It::PushBackground(
-        ::Engine::Base::Runtime::EngineThreadID::ResourceLoaderTh,
+        ::Engine::Base::Runtime::EngineThreadID::RenderResourceLoaderTh,
         "mesh_load_" + GetKey(),
         [Data] {
             try {
@@ -209,18 +224,41 @@ void Mesh::BeginLoad()
 
 void Mesh::Update()
 {
-    if (GetState() != ::Engine::Applied::Render::Resources::ResourceState::Loading) {
+    if (GetState() != ::Engine::Applied::Render::Resources::ResourceState::LoadingCpu
+        && GetState() != ::Engine::Applied::Render::Resources::ResourceState::QueuedGpu
+        && GetState() != ::Engine::Applied::Render::Resources::ResourceState::Uploading) {
 
         return;
     }
 
     if (m_GpuTicket) {
+        if (GetVersionChecksum() != m_GpuVersionChecksum) {
+            SetRejected("mesh GPU job version is stale");
+            return;
+        }
+
         if (!m_GpuTicket->Done.load(std::memory_order_acquire)) {
+            SetState(::Engine::Applied::Render::Resources::ResourceState::Uploading);
 
             return;
         }
-        if (m_GpuTicket->Failed.load(std::memory_order_acquire)
-            || m_GpuTicket->Rejected.load(std::memory_order_acquire)) {
+        if (m_GpuTicket->Rejected.load(std::memory_order_acquire)) {
+            SetRejected(m_GpuTicket->FailureReason);
+
+            return;
+        }
+
+        bool UploadRejected = false;
+        {
+            std::lock_guard<std::mutex> Lock(LoadDataState->Mutex);
+            UploadRejected = LoadDataState->UploadRejected;
+        }
+
+        if (UploadRejected) {
+            SetRejected("mesh upload version is stale");
+            return;
+        }
+        if (m_GpuTicket->Failed.load(std::memory_order_acquire)) {
             SetFailed(m_GpuTicket->FailureReason);
 
             return;
@@ -233,6 +271,19 @@ void Mesh::Update()
             LoadDataState->Vertices.clear();
             LoadDataState->SortedIndices.clear();
         }
+
+        const std::shared_ptr<MeshSnapshot> Snapshot = std::make_shared<MeshSnapshot>();
+        Snapshot->VertexBuffer = m_VertexBuffer;
+        Snapshot->IndexBuffer = m_IndexBuffer;
+        Snapshot->VertexCount = m_VertexCount;
+        Snapshot->IndexCount = m_IndexCount;
+        Snapshot->BoundsMin = m_BoundsMin;
+        Snapshot->BoundsMax = m_BoundsMax;
+        Snapshot->VersionChecksum = m_GpuVersionChecksum;
+        m_Snapshot.store(
+            std::shared_ptr<const MeshSnapshot>(Snapshot),
+            std::memory_order_release
+        );
 
         SetState(::Engine::Applied::Render::Resources::ResourceState::Ready);
         return;
@@ -277,6 +328,8 @@ void Mesh::Update()
         m_BoundsMax = BoundsMax;
 
         const std::shared_ptr<LoadData> Data = LoadDataState;
+        m_GpuVersionChecksum = GetVersionChecksum();
+        const uint64_t VersionChecksum = m_GpuVersionChecksum;
 
         if (KEEP_CPU_DATA) {
             std::lock_guard<std::mutex> Lock(Data->Mutex);
@@ -284,31 +337,46 @@ void Mesh::Update()
             m_Indices = Data->SortedIndices;
         }
 
+        SetState(::Engine::Applied::Render::Resources::ResourceState::QueuedGpu);
         m_GpuTicket = ::Engine::Base::Render::ResourceLoader::PushFrameJobVk(
-            [Data](VkCommandBuffer) {
-                Data->VertexBuffer = ::Engine::Base::Render::ResourceLoader::CreateBuffer(
-                    sizeof(Vertex) * Data->Vertices.size(),
-                    VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
-                );
+            [Data, VersionChecksum](VkCommandBuffer) {
+                std::lock_guard<std::mutex> Lock(Data->Mutex);
+                if (Data->VersionChecksum != VersionChecksum) {
+                    Data->UploadRejected = true;
+                    return;
+                }
 
-                Data->IndexBuffer = ::Engine::Base::Render::ResourceLoader::CreateBuffer(
-                    sizeof(uint32_t) * Data->SortedIndices.size(),
-                    VK_BUFFER_USAGE_INDEX_BUFFER_BIT
-                );
+                try {
+                    Data->VertexBuffer = ::Engine::Base::Render::ResourceLoader::CreateBuffer(
+                        sizeof(Vertex) * Data->Vertices.size(),
+                        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
+                    );
 
-                ::Engine::Base::Render::ResourceLoader::QueueBufferUpload(
-                    Data->VertexBuffer,
-                    Data->Vertices.data(),
-                    Data->VertexBuffer.Size
-                );
+                    Data->IndexBuffer = ::Engine::Base::Render::ResourceLoader::CreateBuffer(
+                        sizeof(uint32_t) * Data->SortedIndices.size(),
+                        VK_BUFFER_USAGE_INDEX_BUFFER_BIT
+                    );
 
-                ::Engine::Base::Render::ResourceLoader::QueueBufferUpload(
-                    Data->IndexBuffer,
-                    Data->SortedIndices.data(),
-                    Data->IndexBuffer.Size
-                );
+                    ::Engine::Base::Render::ResourceLoader::QueueBufferUpload(
+                        Data->VertexBuffer,
+                        Data->Vertices.data(),
+                        Data->VertexBuffer.Size
+                    );
+
+                    ::Engine::Base::Render::ResourceLoader::QueueBufferUpload(
+                        Data->IndexBuffer,
+                        Data->SortedIndices.data(),
+                        Data->IndexBuffer.Size
+                    );
+                }
+                catch (...) {
+                    ::Engine::Base::Render::ResourceLoader::DestroyBuffer(Data->VertexBuffer);
+                    ::Engine::Base::Render::ResourceLoader::DestroyBuffer(Data->IndexBuffer);
+                    throw;
+                }
             }
         );
+        m_GpuTicket->VersionChecksum = VersionChecksum;
     }
     catch (const std::exception& Error) {
         if (m_VertexBuffer.Handle != VK_NULL_HANDLE) {
@@ -338,6 +406,18 @@ void Mesh::Unload()
 {
     AdvanceVersionChecksum();
 
+    {
+        std::lock_guard<std::mutex> Lock(LoadDataState->Mutex);
+        LoadDataState->VersionChecksum = GetVersionChecksum();
+        LoadDataState->UploadRejected = true;
+    }
+
+    if (GetState() == ::Engine::Applied::Render::Resources::ResourceState::Unloading) {
+        return;
+    }
+
+    SetState(::Engine::Applied::Render::Resources::ResourceState::Unloading);
+
     if (m_VertexBuffer.Handle != VK_NULL_HANDLE) {
         ::Engine::Base::Render::ResourceLoader::DestroyBuffer(m_VertexBuffer);
     }
@@ -353,5 +433,10 @@ uint32_t Mesh::GetVertexCount() const { return m_VertexCount; }
 uint32_t Mesh::GetIndexCount() const { return m_IndexCount; }
 const glm::vec3& Mesh::GetBoundsMin() const { return m_BoundsMin; }
 const glm::vec3& Mesh::GetBoundsMax() const { return m_BoundsMax; }
+
+std::shared_ptr<const MeshSnapshot> Mesh::GetSnapshot() const
+{
+    return m_Snapshot.load(std::memory_order_acquire);
+}
 
 }

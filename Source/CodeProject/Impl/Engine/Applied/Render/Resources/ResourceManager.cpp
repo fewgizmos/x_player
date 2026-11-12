@@ -39,7 +39,6 @@ std::vector<RetiredResource> m_Retired;
 void Destroy(Resource* p_Resource)
 {
     std::unique_ptr<Resource> Owner(p_Resource);
-    Owner->SetState(ResourceState::Unloading);
     Owner->Unload();
 }
 
@@ -64,6 +63,23 @@ void CollectRetired()
 
 void Cleanup()
 {
+    std::vector<std::shared_ptr<Resource>> Active;
+    {
+        std::lock_guard<std::mutex> Lock(m_ResourcesMutex);
+
+        for (const auto& [Key, Weak] : m_Resources) {
+            if (const std::shared_ptr<Resource> ResourceValue = Weak.lock()) {
+                Active.push_back(ResourceValue);
+            }
+        }
+
+        m_Resources.clear();
+    }
+
+    for (const std::shared_ptr<Resource>& ResourceValue : Active) {
+        ResourceValue->Unload();
+    }
+
     while (true) {
         std::vector<RetiredResource> Retired;
         {
@@ -155,6 +171,12 @@ void Resource::SetFailed(std::string p_Reason)
     m_State = ResourceState::Failed;
 }
 
+void Resource::SetRejected(std::string p_Reason)
+{
+    FailureReason = std::move(p_Reason);
+    m_State = ResourceState::Rejected;
+}
+
 bool Resource::TryMarkFailureReported()
 {
     bool Expected = false;
@@ -217,7 +239,9 @@ void UpdateAll()
         }
 
 #ifdef XP_DEV_FEATURES_ENABLED
-        if (Resource->GetState() == ResourceState::Failed && Resource->TryMarkFailureReported()) {
+        if ((Resource->GetState() == ResourceState::Failed
+                || Resource->GetState() == ResourceState::Rejected)
+            && Resource->TryMarkFailureReported()) {
             std::cerr << "Resource failed: "
                       << Resource->GetTypeName() << ":" << Resource->GetKey();
 

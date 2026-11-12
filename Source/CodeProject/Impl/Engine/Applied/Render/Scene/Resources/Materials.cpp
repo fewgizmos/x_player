@@ -20,6 +20,7 @@
 #include <glm/vec4.hpp>
 
 #include <bit>
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -37,6 +38,7 @@ struct Material::LoadData
 {
     std::mutex Mutex;
     MaterialData Data = {};
+    uint64_t VersionChecksum = 0;
     std::string FailureReason;
     bool Finished = false;
     bool Failed = false;
@@ -181,12 +183,14 @@ struct ErasedMaterial
 };
 
 std::vector<ErasedMaterial> m_ErasedMaterials;
+std::vector<Material*> m_PendingGpuMaterials;
 
 ::Engine::Base::Render::Buffer m_Buffers[::Engine::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT];
 std::shared_ptr<::Engine::Base::Render::ResourceLoader::ResourceJobTicket>
     m_BufferTickets[::Engine::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT];
 std::shared_ptr<::Engine::Base::Render::ResourceLoader::ResourceJobTicket>
     m_BufferCreateTickets[::Engine::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT];
+std::atomic<std::shared_ptr<const MaterialBufferSnapshot>> m_BufferSnapshot;
 uint64_t m_Version = 0;
 uint64_t m_BufferVersions[::Engine::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT] = {};
 
@@ -401,21 +405,32 @@ void ReleaseIndex(uint32_t p_Index)
     m_ErasedMaterials.push_back({ p_Index, ::Engine::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT });
 }
 
-bool TextureFailed(const MaterialTexture& p_Texture, std::string& p_Reason)
+bool TextureFailed(
+    const MaterialTexture& p_Texture,
+    std::string& p_Reason,
+    bool& p_Rejected
+)
 {
     if (!p_Texture.Target || p_Texture.Target.IsReady()) {
         return false;
     }
 
-    if (p_Texture.Target.GetState() == ::Engine::Applied::Render::Resources::ResourceState::Failed) {
+    if (p_Texture.Target.GetState() == ::Engine::Applied::Render::Resources::ResourceState::Failed
+        || p_Texture.Target.GetState() == ::Engine::Applied::Render::Resources::ResourceState::Rejected) {
         p_Reason = p_Texture.Target->GetKey() + ": " + p_Texture.Target->GetFailureReason();
+        p_Rejected = p_Texture.Target.GetState()
+            == ::Engine::Applied::Render::Resources::ResourceState::Rejected;
         return true;
     }
 
     return false;
 }
 
-bool TexturesReady(const MaterialCreateInfo& p_CreateInfo, std::string& p_Reason)
+bool TexturesReady(
+    const MaterialCreateInfo& p_CreateInfo,
+    std::string& p_Reason,
+    bool& p_Rejected
+)
 {
     const MaterialTexture* Textures[MATERIAL_TEXTURES_COUNT + 1] = {
         &p_CreateInfo.BaseColorTexture,
@@ -437,7 +452,7 @@ bool TexturesReady(const MaterialCreateInfo& p_CreateInfo, std::string& p_Reason
 
     bool Ready = true;
     for (const MaterialTexture* Texture : Textures) {
-        if (TextureFailed(*Texture, p_Reason)) {
+        if (TextureFailed(*Texture, p_Reason, p_Rejected)) {
             return false;
         }
 
@@ -457,7 +472,15 @@ void SetTexture(MaterialData& p_Data, uint32_t p_Slot, const MaterialTexture& p_
         return;
     }
 
-    p_TextureIndex = p_Source.Target->GetIndex();
+    const std::shared_ptr<const ::Engine::Applied::Render::Resources::Textures::TextureSnapshot> Snapshot =
+        p_Source.Target->GetSnapshot();
+    if (!Snapshot) {
+        p_TextureIndex = NO_TEXTURE;
+        p_SamplerIndex = 0;
+        return;
+    }
+
+    p_TextureIndex = Snapshot->Index;
     p_SamplerIndex = ::Engine::Base::Render::Vk::Samplers::Make(p_Source.Sampler);
 
     ::Engine::Applied::Render::Resources::Textures::SyncSamplers();
@@ -473,7 +496,10 @@ Material::Material(MaterialCreateInfo p_CreateInfo)
 {
 }
 
-Material::~Material() = default;
+Material::~Material()
+{
+    std::erase(m_PendingGpuMaterials, this);
+}
 
 std::string Material::GetTypeName() const
 {
@@ -482,7 +508,16 @@ std::string Material::GetTypeName() const
 
 void Material::BeginLoad()
 {
+    std::erase(m_PendingGpuMaterials, this);
+
+    ReleaseIndex(Index);
+    Index = UINT32_MAX;
+
     AdvanceVersionChecksum();
+
+    LoadState = std::make_shared<LoadData>();
+    m_GpuTicket.reset();
+    Index = UINT32_MAX;
 
     if (!CreateInfo.TargetShader) {
         SetFailed("Material requires Shader Ref");
@@ -491,9 +526,10 @@ void Material::BeginLoad()
 
     const std::shared_ptr<LoadData> DataState = LoadState;
     const MaterialCreateInfo Info = CreateInfo;
+    DataState->VersionChecksum = GetVersionChecksum();
 
     ::Engine::Base::JobSystem::It::PushBackground(
-        ::Engine::Base::Runtime::EngineThreadID::ResourceLoaderTh,
+        ::Engine::Base::Runtime::EngineThreadID::RenderResourceLoaderTh,
         "material_load_" + GetKey(),
         [DataState, Info] {
             try {
@@ -517,12 +553,47 @@ void Material::BeginLoad()
 
 void Material::Update()
 {
-    if (GetState() != ::Engine::Applied::Render::Resources::ResourceState::Loading) {
+    if (GetState() != ::Engine::Applied::Render::Resources::ResourceState::LoadingCpu
+        && GetState() != ::Engine::Applied::Render::Resources::ResourceState::QueuedGpu
+        && GetState() != ::Engine::Applied::Render::Resources::ResourceState::Uploading) {
+        return;
+    }
+
+    if (m_GpuTicket) {
+        if (!m_GpuTicket->Done.load(std::memory_order_acquire)) {
+            SetState(::Engine::Applied::Render::Resources::ResourceState::Uploading);
+            return;
+        }
+
+        if (m_GpuTicket->Rejected.load(std::memory_order_acquire)) {
+            SetRejected(m_GpuTicket->FailureReason);
+            return;
+        }
+
+        if (m_GpuTicket->Failed.load(std::memory_order_acquire)) {
+            SetFailed(m_GpuTicket->FailureReason);
+            return;
+        }
+
+        SetState(::Engine::Applied::Render::Resources::ResourceState::Ready);
+
+        const std::shared_ptr<MaterialSnapshot> Snapshot = std::make_shared<MaterialSnapshot>();
+        Snapshot->Data = Data;
+        Snapshot->Index = Index;
+        Snapshot->VersionChecksum = GetVersionChecksum();
+        m_Snapshot.store(
+            std::shared_ptr<const MaterialSnapshot>(Snapshot),
+            std::memory_order_release
+        );
         return;
     }
 
     if (CreateInfo.TargetShader.GetState() == ::Engine::Applied::Render::Resources::ResourceState::Failed) {
         SetFailed("Shader dependency failed: " + CreateInfo.TargetShader->GetFailureReason());
+        return;
+    }
+    if (CreateInfo.TargetShader.GetState() == ::Engine::Applied::Render::Resources::ResourceState::Rejected) {
+        SetRejected("Shader dependency rejected: " + CreateInfo.TargetShader->GetFailureReason());
         return;
     }
     if (!CreateInfo.TargetShader.IsReady()) {
@@ -536,6 +607,11 @@ void Material::Update()
             return;
         }
 
+        if (LoadState->VersionChecksum != GetVersionChecksum()) {
+            SetRejected("material CPU job version is stale");
+            return;
+        }
+
         if (LoadState->Failed) {
             SetFailed(LoadState->FailureReason);
             return;
@@ -545,10 +621,15 @@ void Material::Update()
     }
 
     std::string FailureReason;
+    bool DependencyRejected = false;
 
-    if (!TexturesReady(CreateInfo, FailureReason)) {
+    if (!TexturesReady(CreateInfo, FailureReason, DependencyRejected)) {
         if (!FailureReason.empty()) {
-            SetFailed("texture dependency failed: " + FailureReason);
+            if (DependencyRejected) {
+                SetRejected("texture dependency rejected: " + FailureReason);
+            } else {
+                SetFailed("texture dependency failed: " + FailureReason);
+            }
         }
         return;
     }
@@ -569,7 +650,13 @@ void Material::Update()
     SetTexture(Data, 13, CreateInfo.SheenRoughnessTexture, Data.SheenRoughnessTexture, Data.SheenRoughnessSampler);
 
     if (CreateInfo.HeightTexture.Target) {
-        Data.HeightTexture = CreateInfo.HeightTexture.Target->GetIndex();
+        const std::shared_ptr<const ::Engine::Applied::Render::Resources::Textures::TextureSnapshot> Snapshot =
+            CreateInfo.HeightTexture.Target->GetSnapshot();
+        if (!Snapshot) {
+            return;
+        }
+
+        Data.HeightTexture = Snapshot->Index;
         Data.HeightSampler = ::Engine::Base::Render::Vk::Samplers::Make(CreateInfo.HeightTexture.Sampler);
         ::Engine::Applied::Render::Resources::Textures::SyncSamplers();
     }
@@ -582,15 +669,36 @@ void Material::Update()
         ++m_Version;
     }
 
-    SetState(::Engine::Applied::Render::Resources::ResourceState::Ready);
+    m_PendingGpuMaterials.push_back(this);
+    SetState(::Engine::Applied::Render::Resources::ResourceState::QueuedGpu);
 }
 
 void Material::Unload()
 {
+    std::erase(m_PendingGpuMaterials, this);
+
     AdvanceVersionChecksum();
+
+    if (GetState() == ::Engine::Applied::Render::Resources::ResourceState::Unloading) {
+        return;
+    }
+
+    SetState(::Engine::Applied::Render::Resources::ResourceState::Unloading);
 
     ReleaseIndex(Index);
     Index = UINT32_MAX;
+}
+
+void Material::SetGpuTicket(
+    std::shared_ptr<::Engine::Base::Render::ResourceLoader::ResourceJobTicket> p_Ticket
+)
+{
+    m_GpuTicket = std::move(p_Ticket);
+}
+
+std::shared_ptr<const MaterialSnapshot> Material::GetSnapshot() const
+{
+    return m_Snapshot.load(std::memory_order_acquire);
 }
 
 uint32_t Material::GetIndex() const { return Index; }
@@ -621,6 +729,8 @@ void Init()
 
 void Cleanup()
 {
+    m_PendingGpuMaterials.clear();
+
     for (auto& Buffer : m_Buffers) {
         ::Engine::Base::Render::ResourceLoader::DestroyBuffer(Buffer);
     }
@@ -651,11 +761,45 @@ void Flush()
     }
 
     const uint32_t Frame = ::Engine::Base::Render::Vk::Frame::GetCurrentFrameIndex();
+    if (m_BufferTickets[Frame]
+        && m_BufferTickets[Frame]->Done.load(std::memory_order_acquire)
+        && !m_BufferTickets[Frame]->Failed.load(std::memory_order_acquire)
+        && !m_BufferTickets[Frame]->Rejected.load(std::memory_order_acquire)) {
+        const std::shared_ptr<MaterialBufferSnapshot> Snapshot =
+            std::make_shared<MaterialBufferSnapshot>();
+        Snapshot->Buffer = m_Buffers[Frame];
+        Snapshot->Address = m_Buffers[Frame].Address;
+        Snapshot->Version = m_BufferVersions[Frame];
+        m_BufferSnapshot.store(
+            std::shared_ptr<const MaterialBufferSnapshot>(Snapshot),
+            std::memory_order_release
+        );
+    }
+
     if (!m_BufferCreateTickets[Frame]
         || !m_BufferCreateTickets[Frame]->Done.load(std::memory_order_acquire)) {
 
         return;
     }
+
+    if (m_BufferCreateTickets[Frame]->Rejected.load(std::memory_order_acquire)) {
+        for (Material* MaterialValue : m_PendingGpuMaterials) {
+            MaterialValue->SetRejected(m_BufferCreateTickets[Frame]->FailureReason);
+        }
+
+        m_PendingGpuMaterials.clear();
+        return;
+    }
+
+    if (m_BufferCreateTickets[Frame]->Failed.load(std::memory_order_acquire)) {
+        for (Material* MaterialValue : m_PendingGpuMaterials) {
+            MaterialValue->SetFailed(m_BufferCreateTickets[Frame]->FailureReason);
+        }
+
+        m_PendingGpuMaterials.clear();
+        return;
+    }
+
     if (m_BufferVersions[Frame] == m_Version || m_Data.empty()) {
         return;
     }
@@ -679,7 +823,13 @@ void Flush()
         }
     );
 
+    for (Material* MaterialValue : m_PendingGpuMaterials) {
+        MaterialValue->SetGpuTicket(m_BufferTickets[Frame]);
+    }
+    m_PendingGpuMaterials.clear();
+
     m_BufferVersions[Frame] = m_Version;
+
 }
 
 const std::vector<MaterialData>& GetData()
@@ -695,6 +845,11 @@ const ::Engine::Base::Render::Buffer& GetBuffer()
 VkDeviceAddress GetBufferAddress()
 {
     return GetBuffer().Address;
+}
+
+std::shared_ptr<const MaterialBufferSnapshot> GetBufferSnapshot()
+{
+    return m_BufferSnapshot.load(std::memory_order_acquire);
 }
 
 }

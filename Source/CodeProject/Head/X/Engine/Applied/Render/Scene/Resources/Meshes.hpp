@@ -15,6 +15,17 @@
 namespace Engine::Applied::Render::Scene::Resources::Meshes
 {
 
+struct MeshSnapshot
+{
+    ::Engine::Base::Render::Buffer VertexBuffer;
+    ::Engine::Base::Render::Buffer IndexBuffer;
+    uint32_t VertexCount = 0;
+    uint32_t IndexCount = 0;
+    glm::vec3 BoundsMin = glm::vec3(0.0f);
+    glm::vec3 BoundsMax = glm::vec3(0.0f);
+    uint64_t VersionChecksum = 0;
+};
+
 inline bool KEEP_CPU_DATA = false;
 
 struct Vertex
@@ -52,6 +63,7 @@ public:
     uint32_t GetIndexCount() const;
     const glm::vec3& GetBoundsMin() const;
     const glm::vec3& GetBoundsMax() const;
+    std::shared_ptr<const MeshSnapshot> GetSnapshot() const;
 
 private:
     std::vector<Vertex> m_Vertices;
@@ -69,6 +81,8 @@ private:
     struct LoadData;
     std::shared_ptr<LoadData> LoadDataState;
     std::shared_ptr<::Engine::Base::Render::ResourceLoader::ResourceJobTicket> m_GpuTicket;
+    uint64_t m_GpuVersionChecksum = 0;
+    std::atomic<std::shared_ptr<const MeshSnapshot>> m_Snapshot;
 };
 
 }

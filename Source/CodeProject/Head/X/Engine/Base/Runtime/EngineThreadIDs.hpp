@@ -7,7 +7,8 @@ enum EngineThreadID : unsigned char
 {
     GameTh,
     RenderTh,
-    ResourceLoaderTh,
+    RenderResourceLoaderTh,
+    RenderOpsDedicatedTh,
 };
 
 }

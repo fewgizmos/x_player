@@ -12,10 +12,13 @@ namespace Engine::Applied::Render::Resources
 
 enum class ResourceState
 {
-    Loading,
+    LoadingCpu,
+    QueuedGpu,
+    Uploading,
     Ready,
     Failed,
-    Unloading
+    Unloading,
+    Rejected
 };
 
 class Resource
@@ -40,6 +43,7 @@ public:
     virtual void Unload() = 0;
     void SetState(ResourceState p_State);
     void SetFailed(std::string p_Reason);
+    void SetRejected(std::string p_Reason);
 
 private:
     friend std::shared_ptr<Resource> Acquire(std::unique_ptr<Resource> p_Resource);
@@ -49,7 +53,7 @@ private:
 
     std::string m_Key;
     std::atomic<uint64_t> m_VersionChecksum = 0;
-    std::atomic<ResourceState> m_State = ResourceState::Loading;
+    std::atomic<ResourceState> m_State = ResourceState::LoadingCpu;
     std::string FailureReason;
     std::atomic<bool> FailureReported = false;
 };

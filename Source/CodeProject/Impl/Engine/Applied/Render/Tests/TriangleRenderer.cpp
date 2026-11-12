@@ -37,6 +37,9 @@ namespace Engine::Applied::Render::Tests::TriangleRenderer
 namespace
 {
 
+using MeshSnapshot = ::Engine::Applied::Render::Scene::Resources::Meshes::MeshSnapshot;
+using ShaderSnapshot = ::Engine::Applied::Render::Resources::Shaders::ShaderSnapshot;
+
 struct PushConstants
 {
     glm::mat4 Projection;
@@ -127,8 +130,13 @@ void Render()
         return;
     }
 
-    const auto& Mesh = *m_Mesh->Get();
-    const auto& Pipeline = m_Shader->GetGraphicsPipeline();
+    const std::shared_ptr<const MeshSnapshot> Mesh = (*m_Mesh)->GetSnapshot();
+    const std::shared_ptr<const ShaderSnapshot> Shader = m_Shader->GetSnapshot();
+    if (!Mesh || !Shader) {
+        return;
+    }
+
+    const ::Engine::Base::Render::Pipeline& Pipeline = Shader->Graphics;
 
     VkRenderingAttachmentInfo Attachment{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
     Attachment.imageView = Image.ImageView;
@@ -162,8 +170,8 @@ void Render()
     Disp.cmdBindPipeline(Frame.CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, Pipeline.Handle);
 
     const VkDeviceSize Offset = 0;
-    Disp.cmdBindVertexBuffers(Frame.CommandBuffer, 0, 1, &Mesh.GetVertexBuffer().Handle, &Offset);
-    Disp.cmdBindIndexBuffer(Frame.CommandBuffer, Mesh.GetIndexBuffer().Handle, 0, VK_INDEX_TYPE_UINT32);
+    Disp.cmdBindVertexBuffers(Frame.CommandBuffer, 0, 1, &Mesh->VertexBuffer.Handle, &Offset);
+    Disp.cmdBindIndexBuffer(Frame.CommandBuffer, Mesh->IndexBuffer.Handle, 0, VK_INDEX_TYPE_UINT32);
 
     ::Engine::Base::Render::Vk::Commands::PushConstants(
         Frame.CommandBuffer,
@@ -173,7 +181,7 @@ void Render()
         &Constants
     );
 
-    Disp.cmdDrawIndexed(Frame.CommandBuffer, Mesh.GetIndexCount(), 1, 0, 0, 0);
+    Disp.cmdDrawIndexed(Frame.CommandBuffer, Mesh->IndexCount, 1, 0, 0, 0);
     Disp.cmdEndRendering(Frame.CommandBuffer);
 }
 

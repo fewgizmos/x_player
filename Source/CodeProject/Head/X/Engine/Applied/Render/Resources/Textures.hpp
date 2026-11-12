@@ -14,6 +14,14 @@
 namespace Engine::Applied::Render::Resources::Textures
 {
 
+struct TextureSnapshot
+{
+    Engine::Base::Render::Image Image;
+    uint32_t Index = UINT32_MAX;
+    VkFormat Format = VK_FORMAT_UNDEFINED;
+    uint64_t VersionChecksum = 0;
+};
+
 class Texture final : public Resource
 {
 public:
@@ -30,6 +38,7 @@ public:
     const Engine::Base::Render::Image& GetImage() const;
     uint32_t GetIndex() const;
     VkFormat GetFormat() const;
+    std::shared_ptr<const TextureSnapshot> GetSnapshot() const;
 
 private:
     std::string Path;
@@ -38,6 +47,8 @@ private:
     uint32_t m_Index = UINT32_MAX;
     std::shared_ptr<LoadData> m_LoadData;
     std::shared_ptr<::Engine::Base::Render::ResourceLoader::ResourceJobTicket> m_GpuTicket;
+    uint64_t m_GpuVersionChecksum = 0;
+    std::atomic<std::shared_ptr<const TextureSnapshot>> m_Snapshot;
 };
 
 void Init();

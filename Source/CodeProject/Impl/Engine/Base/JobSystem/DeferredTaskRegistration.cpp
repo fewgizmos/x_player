@@ -2,6 +2,8 @@
 
 #include "X/Engine/Base/JobSystem/JobManager.hpp"
 
+#include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
+
 #include <functional>
 #include <mutex>
 #include <utility>
@@ -12,6 +14,9 @@ namespace Engine::Base::JobSystem::DeferredTaskRegistration
 
 namespace
 {
+
+const BootstrapManager::DeferredBootstrapRegistration::InitRegistrar
+    RegisterAppling("jobsystem_deferred_task_appling", Apply, 60);
 
 struct Entry
 {

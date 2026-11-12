@@ -39,9 +39,11 @@ struct Texture::LoadData
     uint32_t Height = 0;
 
     Engine::Base::Render::Image Image;
+    bool UploadRejected = false;
 
     std::string FailureReason;
     bool Finished = false;
+    uint64_t VersionChecksum = 0;
 };
 
 namespace
@@ -149,7 +151,18 @@ std::string Texture::GetTypeName() const
 
 void Texture::BeginLoad()
 {
+    if (m_Image.Handle != VK_NULL_HANDLE) {
+        ::Engine::Base::Render::ResourceLoader::DestroyImage(m_Image);
+    }
+
+    ReleaseIndex(m_Index);
+
     AdvanceVersionChecksum();
+
+    m_LoadData = std::make_shared<LoadData>();
+    m_GpuTicket.reset();
+    m_GpuVersionChecksum = 0;
+    m_Index = UINT32_MAX;
 
     if (Format != VK_FORMAT_R8G8B8A8_SRGB && Format != VK_FORMAT_R8G8B8A8_UNORM) {
         SetFailed("Unsupported decoded texture format; expected RGBA8 SRGB or UNORM");
@@ -158,9 +171,10 @@ void Texture::BeginLoad()
 
     const std::shared_ptr<LoadData> Data = m_LoadData;
     const std::string TexturePath = Path;
+    Data->VersionChecksum = GetVersionChecksum();
 
     ::Engine::Base::JobSystem::It::PushBackground(
-        ::Engine::Base::Runtime::EngineThreadID::ResourceLoaderTh,
+        ::Engine::Base::Runtime::EngineThreadID::RenderResourceLoaderTh,
         "texture_load_" + TexturePath,
         [Data, TexturePath] {
             try {
@@ -182,18 +196,41 @@ void Texture::BeginLoad()
 
 void Texture::Update()
 {
-    if (GetState() != ResourceState::Loading) {
+    if (GetState() != ResourceState::LoadingCpu
+        && GetState() != ResourceState::QueuedGpu
+        && GetState() != ResourceState::Uploading) {
 
         return;
     }
 
     if (m_GpuTicket) {
+        if (GetVersionChecksum() != m_GpuVersionChecksum) {
+            SetRejected("texture GPU job version is stale");
+            return;
+        }
+
         if (!m_GpuTicket->Done.load(std::memory_order_acquire)) {
+            SetState(ResourceState::Uploading);
 
             return;
         }
-        if (m_GpuTicket->Failed.load(std::memory_order_acquire)
-            || m_GpuTicket->Rejected.load(std::memory_order_acquire)) {
+        if (m_GpuTicket->Rejected.load(std::memory_order_acquire)) {
+            SetRejected(m_GpuTicket->FailureReason);
+
+            return;
+        }
+
+        bool UploadRejected = false;
+        {
+            std::lock_guard<std::mutex> Lock(m_LoadData->Mutex);
+            UploadRejected = m_LoadData->UploadRejected;
+        }
+
+        if (UploadRejected) {
+            SetRejected("texture upload version is stale");
+            return;
+        }
+        if (m_GpuTicket->Failed.load(std::memory_order_acquire)) {
             SetFailed(m_GpuTicket->FailureReason);
 
             return;
@@ -207,6 +244,17 @@ void Texture::Update()
         ::Engine::Base::Render::Vk::Descriptors::WriteImage(
             m_Set, 1, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, m_Image.View,
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_NULL_HANDLE, m_Index);
+
+        const std::shared_ptr<TextureSnapshot> Snapshot = std::make_shared<TextureSnapshot>();
+        Snapshot->Image = m_Image;
+        Snapshot->Index = m_Index;
+        Snapshot->Format = Format;
+        Snapshot->VersionChecksum = m_GpuVersionChecksum;
+        m_Snapshot.store(
+            std::shared_ptr<const TextureSnapshot>(Snapshot),
+            std::memory_order_release
+        );
+
         SetState(ResourceState::Ready);
         return;
     }
@@ -248,30 +296,58 @@ void Texture::Update()
 
     const std::shared_ptr<LoadData> Data = m_LoadData;
     const VkFormat TextureFormat = Format;
+    m_GpuVersionChecksum = GetVersionChecksum();
+    const uint64_t VersionChecksum = m_GpuVersionChecksum;
 
+    SetState(ResourceState::QueuedGpu);
     m_GpuTicket = ::Engine::Base::Render::ResourceLoader::PushFrameJobVk(
-        [Data, TextureFormat, Width, Height, MipLevels](VkCommandBuffer) {
-            Data->Image = ::Engine::Base::Render::ResourceLoader::CreateImage(
-                { Width, Height, 1 },
-                TextureFormat,
-                VK_IMAGE_USAGE_TRANSFER_SRC_BIT
-                    | VK_IMAGE_USAGE_TRANSFER_DST_BIT
-                    | VK_IMAGE_USAGE_SAMPLED_BIT,
-                VK_IMAGE_ASPECT_COLOR_BIT,
-                MipLevels
-            );
-            ::Engine::Base::Render::ResourceLoader::QueueImageUpload(
-                Data->Image,
-                Data->Pixels.data(),
-                Data->Pixels.size()
-            );
+        [Data, TextureFormat, Width, Height, MipLevels, VersionChecksum](VkCommandBuffer) {
+            std::lock_guard<std::mutex> Lock(Data->Mutex);
+            if (Data->VersionChecksum != VersionChecksum) {
+                Data->UploadRejected = true;
+                return;
+            }
+
+            try {
+                Data->Image = ::Engine::Base::Render::ResourceLoader::CreateImage(
+                    { Width, Height, 1 },
+                    TextureFormat,
+                    VK_IMAGE_USAGE_TRANSFER_SRC_BIT
+                        | VK_IMAGE_USAGE_TRANSFER_DST_BIT
+                        | VK_IMAGE_USAGE_SAMPLED_BIT,
+                    VK_IMAGE_ASPECT_COLOR_BIT,
+                    MipLevels
+                );
+                ::Engine::Base::Render::ResourceLoader::QueueImageUpload(
+                    Data->Image,
+                    Data->Pixels.data(),
+                    Data->Pixels.size()
+                );
+            }
+            catch (...) {
+                ::Engine::Base::Render::ResourceLoader::DestroyImage(Data->Image);
+                throw;
+            }
         }
     );
+    m_GpuTicket->VersionChecksum = VersionChecksum;
 }
 
 void Texture::Unload()
 {
     AdvanceVersionChecksum();
+
+    {
+        std::lock_guard<std::mutex> Lock(m_LoadData->Mutex);
+        m_LoadData->VersionChecksum = GetVersionChecksum();
+        m_LoadData->UploadRejected = true;
+    }
+
+    if (GetState() == ResourceState::Unloading) {
+        return;
+    }
+
+    SetState(ResourceState::Unloading);
 
     if (m_Image.Handle != VK_NULL_HANDLE) {
         ::Engine::Base::Render::ResourceLoader::DestroyImage(m_Image);
@@ -292,6 +368,11 @@ uint32_t Texture::GetIndex() const
 }
 
 VkFormat Texture::GetFormat() const { return Format; }
+
+std::shared_ptr<const TextureSnapshot> Texture::GetSnapshot() const
+{
+    return m_Snapshot.load(std::memory_order_acquire);
+}
 
 void Init()
 {

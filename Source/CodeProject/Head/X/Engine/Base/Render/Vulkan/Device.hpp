@@ -41,6 +41,24 @@ VkSurfaceKHR GetSurface();
 
 const QueueSet& GetQueues();
 std::mutex& GetQueueSubmitMutex();
+VkResult QueueSubmit2(
+    VkQueue p_Queue,
+    uint32_t p_SubmitCount,
+    const VkSubmitInfo2* p_Submits,
+    VkFence p_Fence
+);
+VkResult QueuePresent(const VkPresentInfoKHR* p_PresentInfo);
+uint64_t QueueSubmitAndPresentAsync(
+    const VkSubmitInfo2* p_Submit,
+    VkQueue p_Queue,
+    VkFence p_Fence,
+    const VkPresentInfoKHR* p_PresentInfo
+);
+VkSemaphore GetRenderCompletionSemaphore();
+uint64_t GetRenderCompletionValue();
+void DestroyRenderCompletionSemaphore();
+void DrainRenderOperations();
+void StopQueueExecutor();
 
 bool HasMemoryBudget();
 

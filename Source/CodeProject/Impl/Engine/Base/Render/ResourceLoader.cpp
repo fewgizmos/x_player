@@ -14,10 +14,12 @@
 #include "X/Engine/Base/Render/Vulkan/Frame.hpp"
 
 #include <atomic>
+#include <algorithm>
 #include <condition_variable>
 #include <cstddef>
 #include <exception>
 #include <future>
+#include <iostream>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -29,6 +31,7 @@ namespace Engine::Base::Render::ResourceLoader
 {
 
 void DestroyBuffer(Buffer& p_Target);
+void DrainLoaderJobs();
 
 namespace
 {
@@ -37,6 +40,12 @@ struct AcquireBuffer
 {
     VkBuffer Handle = VK_NULL_HANDLE;
     VkDeviceSize Size = 0;
+};
+
+struct PendingAcquire
+{
+    uint64_t TransferSubmitValue = 0;
+    std::vector<AcquireBuffer> Buffers;
 };
 
 struct StagingBlock
@@ -91,6 +100,7 @@ std::vector<std::unique_ptr<Batch>> m_Batches;
 
 std::vector<std::unique_ptr<StagingBlock>> m_BufferStaging;
 std::vector<std::unique_ptr<StagingBlock>> m_ImageStaging;
+std::vector<PendingAcquire> m_PendingAcquires;
 
 thread_local Batch* m_ActiveBatch = nullptr;
 std::size_t m_NextJob = 0;
@@ -100,23 +110,27 @@ std::atomic<bool> m_AcceptingJobs = true;
 VkSemaphore m_TransferTimeline = VK_NULL_HANDLE;
 VkSemaphore m_GraphicsTimeline = VK_NULL_HANDLE;
 
-uint64_t m_NextTransferValue = 0;
-uint64_t m_NextGraphicsValue = 0;
+std::atomic<uint64_t> m_NextTransferValue = 0;
+std::atomic<uint64_t> m_NextGraphicsValue = 0;
 
 std::atomic<uint64_t> m_CompletedTransferValue = 0;
 std::atomic<uint64_t> m_CompletedGraphicsValue = 0;
+std::atomic<uint32_t> m_PendingDestroyJobs = 0;
+std::atomic<uint64_t> m_FrameTransferWaitValue = 0;
+std::mutex m_DestroyMutex;
+std::condition_variable m_DestroyCv;
 
 const ::Engine::Base::BootstrapManager::DeferredBootstrapRegistration::InitRegistrar
     RegisterInit("resource_loader_init", Init, 65);
 
 const ::Engine::Base::BootstrapManager::DeferredBootstrapRegistration::CleanRegistrar
-    RegisterClean("resource_loader_cleanup", Cleanup, 70);
+    RegisterClean("resource_loader_cleanup", Cleanup, 61);
 
 void PollCompletedTimelines();
 
 const ::Engine::Base::JobSystem::DeferredTaskRegistration::Registrar
     RegisterTimelinePoll(
-        ::Engine::Base::Runtime::EngineThreadID::ResourceLoaderTh,
+        ::Engine::Base::Runtime::EngineThreadID::RenderResourceLoaderTh,
         "resource_loader_poll_timelines",
         PollCompletedTimelines,
         10
@@ -165,7 +179,7 @@ void PollCompletedTimelines()
 bool IsLoaderThread()
 {
     const ::Engine::Base::JobSystem::JobThread& LoaderThread = ::Engine::Base::JobSystem::It::GetThread(
-        ::Engine::Base::Runtime::EngineThreadID::ResourceLoaderTh
+        ::Engine::Base::Runtime::EngineThreadID::RenderResourceLoaderTh
     );
 
     return std::this_thread::get_id() == LoaderThread.GetThreadId();
@@ -182,11 +196,61 @@ void DestroyBufferNow(Buffer p_Target)
 
 void DestroyImageNow(Image p_Target)
 {
-    ::Engine::Base::Render::Vk::Device::GetDisp().destroyImageView(p_Target.View, nullptr);
+    if (p_Target.View != VK_NULL_HANDLE) {
+        ::Engine::Base::Render::Vk::Device::GetDisp().destroyImageView(p_Target.View, nullptr);
+    }
+
     vmaDestroyImage(::Engine::Base::Render::Vk::GpuResources::GetAllocator(),
         p_Target.Handle,
         p_Target.Allocation
     );
+}
+
+void WaitForResourceUse(
+    uint64_t p_TransferValue,
+    uint64_t p_GraphicsValue,
+    uint64_t p_RenderValue
+)
+{
+    const vkb::DispatchTable& Disp = ::Engine::Base::Render::Vk::Device::GetDisp();
+
+    if (p_TransferValue != 0) {
+        VkSemaphoreWaitInfo WaitInfo{ VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO };
+        WaitInfo.semaphoreCount = 1;
+        WaitInfo.pSemaphores = &m_TransferTimeline;
+        WaitInfo.pValues = &p_TransferValue;
+
+        X_ASSERT(
+            Disp.waitSemaphores(&WaitInfo, UINT64_MAX) != VK_SUCCESS,
+            "failed to wait for transfer resource use"
+        );
+    }
+
+    if (p_GraphicsValue != 0) {
+        VkSemaphoreWaitInfo WaitInfo{ VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO };
+        WaitInfo.semaphoreCount = 1;
+        WaitInfo.pSemaphores = &m_GraphicsTimeline;
+        WaitInfo.pValues = &p_GraphicsValue;
+
+        X_ASSERT(
+            Disp.waitSemaphores(&WaitInfo, UINT64_MAX) != VK_SUCCESS,
+            "failed to wait for graphics resource use"
+        );
+    }
+
+    if (p_RenderValue != 0) {
+        VkSemaphoreWaitInfo WaitInfo{ VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO };
+        WaitInfo.semaphoreCount = 1;
+        const VkSemaphore Semaphore =
+            ::Engine::Base::Render::Vk::Device::GetRenderCompletionSemaphore();
+        WaitInfo.pSemaphores = &Semaphore;
+        WaitInfo.pValues = &p_RenderValue;
+
+        X_ASSERT(
+            Disp.waitSemaphores(&WaitInfo, UINT64_MAX) != VK_SUCCESS,
+            "failed to wait for render resource use"
+        );
+    }
 }
 
 VkDeviceSize AlignStagingOffset(VkDeviceSize p_Offset)
@@ -266,27 +330,38 @@ void FinishBatch(Batch& p_Batch)
         [&p_Batch] { return p_Batch.RecordingFinished; }
     );
 
-    if (!p_Batch.Submitted) {
-
-        return;
-    }
-
     const vkb::DispatchTable& Disp = ::Engine::Base::Render::Vk::Device::GetDisp();
-    X_ASSERT(
-        Disp.waitForFences(1, &p_Batch.Fence, VK_TRUE, UINT64_MAX) != VK_SUCCESS,
-        "failed to wait for resource loader batch"
-    );
-
-    if (p_Batch.GraphicsSubmitted) {
+    if (p_Batch.Submitted) {
         X_ASSERT(
-            Disp.waitForFences(1, &p_Batch.GraphicsFence, VK_TRUE, UINT64_MAX) != VK_SUCCESS,
-            "failed to wait for resource loader graphics batch"
+            Disp.waitForFences(1, &p_Batch.Fence, VK_TRUE, UINT64_MAX) != VK_SUCCESS,
+            "failed to wait for resource loader batch"
         );
+
+        if (p_Batch.GraphicsSubmitted) {
+            X_ASSERT(
+                Disp.waitForFences(1, &p_Batch.GraphicsFence, VK_TRUE, UINT64_MAX) != VK_SUCCESS,
+                "failed to wait for resource loader graphics batch"
+            );
+        }
     }
 
     for (const std::shared_ptr<ResourceJobTicket>& Ticket : p_Batch.Tickets) {
-        if (!Ticket->Failed.load(std::memory_order_acquire)) {
+        if (!p_Batch.Submitted && !Ticket->Done.load(std::memory_order_acquire)) {
+            Ticket->FailureReason = p_Batch.FailureReason.empty()
+                ? "resource loader batch was not submitted"
+                : p_Batch.FailureReason;
+            Ticket->Failed.store(true, std::memory_order_release);
             Ticket->Done.store(true, std::memory_order_release);
+        } else if (p_Batch.Submitted
+            && !Ticket->Failed.load(std::memory_order_acquire)) {
+            Ticket->Done.store(true, std::memory_order_release);
+        }
+    }
+
+    if (!p_Batch.Submitted) {
+        for (const StagingUse& Use : p_Batch.Staging) {
+            Use.Block->Offset = 0;
+            Use.Block->RetireValue = 0;
         }
     }
 
@@ -376,17 +451,12 @@ void SubmitTransfer(Batch& p_Batch, const vkb::DispatchTable& p_Disp)
     );
 
     X_ASSERT(
-        [&] {
-            std::lock_guard<std::mutex> Lock(
-                ::Engine::Base::Render::Vk::Device::GetQueueSubmitMutex()
-            );
-            return p_Disp.queueSubmit2(
-                ::Engine::Base::Render::Vk::Device::GetQueues().Transfer,
-                1,
-                &Submit,
-                p_Batch.Fence
-            );
-        }() != VK_SUCCESS,
+        ::Engine::Base::Render::Vk::Device::QueueSubmit2(
+            ::Engine::Base::Render::Vk::Device::GetQueues().Transfer,
+            1,
+            &Submit,
+            p_Batch.Fence
+        ) != VK_SUCCESS,
         "failed to submit resource loader batch"
     );
 
@@ -396,6 +466,12 @@ void SubmitTransfer(Batch& p_Batch, const vkb::DispatchTable& p_Disp)
         if (!Use.Image) {
             Use.Block->RetireValue = p_Batch.TransferSubmitValue;
         }
+    }
+
+    if (::Engine::Base::Render::Vk::Device::GetQueues().DedicatedTransfer
+        && !p_Batch.Buffers.empty()) {
+        std::lock_guard<std::mutex> Lock(m_Mutex);
+        m_PendingAcquires.push_back({ p_Batch.TransferSubmitValue, p_Batch.Buffers });
     }
 }
 
@@ -434,18 +510,12 @@ void SubmitGraphics(Batch& p_Batch, const vkb::DispatchTable& p_Disp)
     );
 
     X_ASSERT(
-        [&] {
-            std::lock_guard<std::mutex> Lock(
-                ::Engine::Base::Render::Vk::Device::GetQueueSubmitMutex()
-            );
-
-            return p_Disp.queueSubmit2(
-                ::Engine::Base::Render::Vk::Device::GetQueues().Graphics,
-                1,
-                &Submit,
-                p_Batch.GraphicsFence
-            );
-        }() != VK_SUCCESS,
+        ::Engine::Base::Render::Vk::Device::QueueSubmit2(
+            ::Engine::Base::Render::Vk::Device::GetQueues().Graphics,
+            1,
+            &Submit,
+            p_Batch.GraphicsFence
+        ) != VK_SUCCESS,
         "failed to submit resource loader graphics batch"
     );
 
@@ -482,6 +552,18 @@ void ExecuteBatch(
         p_Batch.FailureReason = "Unknown resource loader batch failure";
     }
 
+    if (!p_Batch.FailureReason.empty()) {
+        for (const std::shared_ptr<ResourceJobTicket>& Ticket : p_Tickets) {
+            if (Ticket->Done.load(std::memory_order_acquire)) {
+                continue;
+            }
+
+            Ticket->FailureReason = p_Batch.FailureReason;
+            Ticket->Failed.store(true, std::memory_order_release);
+            Ticket->Done.store(true, std::memory_order_release);
+        }
+    }
+
     m_ActiveBatch = nullptr;
 
     {
@@ -502,37 +584,44 @@ void RecordReleaseBuffer(VkCommandBuffer p_CommandBuffer, const AcquireBuffer& p
     Barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
     Barrier.dstStageMask = VK_PIPELINE_STAGE_2_NONE;
     Barrier.dstAccessMask = 0;
+
     Barrier.srcQueueFamilyIndex = Queues.DedicatedTransfer
         ? Queues.TransferFamily
         : VK_QUEUE_FAMILY_IGNORED;
+
     Barrier.dstQueueFamilyIndex = Queues.DedicatedTransfer
         ? Queues.GraphicsFamily
         : VK_QUEUE_FAMILY_IGNORED;
+
     Barrier.buffer = p_Buffer.Handle;
     Barrier.size = p_Buffer.Size;
 
     VkDependencyInfo Dependency{ VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
     Dependency.bufferMemoryBarrierCount = 1;
     Dependency.pBufferMemoryBarriers = &Barrier;
+
     ::Engine::Base::Render::Vk::Device::GetDisp().cmdPipelineBarrier2(
         p_CommandBuffer,
         &Dependency
     );
 }
 
-void RecordAcquire(VkCommandBuffer p_CommandBuffer, const Batch& p_Batch)
+void RecordAcquire(
+    VkCommandBuffer p_CommandBuffer,
+    const std::vector<AcquireBuffer>& p_Buffers
+)
 {
     const ::Engine::Base::Render::QueueSet& Queues =
         ::Engine::Base::Render::Vk::Device::GetQueues();
     if (!Queues.DedicatedTransfer
-        || p_Batch.Buffers.empty()) {
+        || p_Buffers.empty()) {
 
         return;
     }
 
     std::vector<VkBufferMemoryBarrier2> Buffers;
 
-    for (const AcquireBuffer& Source : p_Batch.Buffers) {
+    for (const AcquireBuffer& Source : p_Buffers) {
         VkBufferMemoryBarrier2 Barrier{ VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2 };
         Barrier.srcStageMask = VK_PIPELINE_STAGE_2_NONE;
         Barrier.srcAccessMask = 0;
@@ -562,6 +651,12 @@ void Init()
     const vkb::DispatchTable& Disp = ::Engine::Base::Render::Vk::Device::GetDisp();
 
     m_AcceptingJobs.store(true, std::memory_order_release);
+    m_NextTransferValue.store(0, std::memory_order_release);
+    m_NextGraphicsValue.store(0, std::memory_order_release);
+    m_CompletedTransferValue.store(0, std::memory_order_release);
+    m_CompletedGraphicsValue.store(0, std::memory_order_release);
+    m_FrameTransferWaitValue.store(0, std::memory_order_release);
+    m_PendingAcquires.clear();
 
     m_TransferTimeline = MakeTimelineSemaphore();
     m_GraphicsTimeline = MakeTimelineSemaphore();
@@ -626,12 +721,14 @@ void Init()
 
 void Cleanup()
 {
-    m_AcceptingJobs.store(false, std::memory_order_release);
+    StopAcceptingJobs();
 
     if (!m_Initialized) {
 
         return;
     }
+
+    BeginFrame();
 
     for (const std::unique_ptr<Batch>& BatchPtr : m_Batches) {
         Batch& BatchValue = *BatchPtr;
@@ -666,8 +763,17 @@ void Cleanup()
         DestroyBuffer(Block->Resource);
     }
 
+    DrainLoaderJobs();
+
     m_BufferStaging.clear();
     m_ImageStaging.clear();
+
+    std::unique_lock<std::mutex> DestroyLock(m_DestroyMutex);
+    m_DestroyCv.wait(
+        DestroyLock,
+        [] { return m_PendingDestroyJobs.load(std::memory_order_acquire) == 0; }
+    );
+
     m_Batches.clear();
 
     const vkb::DispatchTable& Disp = ::Engine::Base::Render::Vk::Device::GetDisp();
@@ -680,18 +786,37 @@ void Cleanup()
 
     m_PendingJobs.clear();
     m_PendingTickets.clear();
+    m_PendingAcquires.clear();
 
     m_Initialized = false;
 }
 
 void StopAcceptingJobs()
 {
+    std::lock_guard<std::mutex> Lock(m_Mutex);
     m_AcceptingJobs.store(false, std::memory_order_release);
+}
+
+void DrainLoaderJobs()
+{
+    const std::shared_ptr<std::promise<void>> Promise = std::make_shared<std::promise<void>>();
+    std::future<void> Future = Promise->get_future();
+
+    ::Engine::Base::JobSystem::It::PushBackground(
+        ::Engine::Base::Runtime::EngineThreadID::RenderResourceLoaderTh,
+        "resource_loader_shutdown_drain",
+        [Promise] { Promise->set_value(); },
+        -1000
+    );
+
+    Future.get();
 }
 
 std::shared_ptr<ResourceJobTicket> PushFrameJobCallback(std::function<void()> p_Callback)
 {
     const std::shared_ptr<ResourceJobTicket> Ticket = std::make_shared<ResourceJobTicket>();
+
+    std::lock_guard<std::mutex> Lock(m_Mutex);
 
     if (!m_AcceptingJobs.load(std::memory_order_acquire)) {
         Ticket->Rejected.store(true, std::memory_order_release);
@@ -704,7 +829,7 @@ std::shared_ptr<ResourceJobTicket> PushFrameJobCallback(std::function<void()> p_
     const std::string Name = "resource_callback_" + std::to_string(m_NextJob++);
 
     ::Engine::Base::JobSystem::It::PushBackground(
-        ::Engine::Base::Runtime::EngineThreadID::ResourceLoaderTh,
+        ::Engine::Base::Runtime::EngineThreadID::RenderResourceLoaderTh,
         Name,
         [Callback = std::move(p_Callback), Ticket] {
             try {
@@ -713,6 +838,11 @@ std::shared_ptr<ResourceJobTicket> PushFrameJobCallback(std::function<void()> p_
             }
             catch (const std::exception& Error) {
                 Ticket->FailureReason = Error.what();
+                Ticket->Failed.store(true, std::memory_order_release);
+                Ticket->Done.store(true, std::memory_order_release);
+            }
+            catch (...) {
+                Ticket->FailureReason = "unknown resource loader callback failure";
                 Ticket->Failed.store(true, std::memory_order_release);
                 Ticket->Done.store(true, std::memory_order_release);
             }
@@ -776,7 +906,7 @@ void BeginFrame()
 
     const std::string Name = "resource_gpu_batch_" + std::to_string(m_NextJob++);
     ::Engine::Base::JobSystem::It::PushBackground(
-        ::Engine::Base::Runtime::EngineThreadID::ResourceLoaderTh,
+        ::Engine::Base::Runtime::EngineThreadID::RenderResourceLoaderTh,
         Name,
         [&BatchValue, Jobs = std::move(Jobs), Tickets = std::move(Tickets)]() mutable {
             ExecuteBatch(BatchValue, std::move(Jobs), std::move(Tickets));
@@ -788,36 +918,57 @@ void BeginFrame()
 
 void RecordPendingAcquires(VkCommandBuffer p_CommandBuffer)
 {
-    RecordAcquire(
-        p_CommandBuffer,
-        *m_Batches.at(::Engine::Base::Render::Vk::Frame::GetCurrentFrameIndex())
-    );
+    std::vector<PendingAcquire> Acquires;
+    {
+        std::lock_guard<std::mutex> Lock(m_Mutex);
+        Acquires.swap(m_PendingAcquires);
+    }
+
+    uint64_t TransferWaitValue = 0;
+    for (const PendingAcquire& Acquire : Acquires) {
+        RecordAcquire(p_CommandBuffer, Acquire.Buffers);
+        TransferWaitValue = std::max(TransferWaitValue, Acquire.TransferSubmitValue);
+    }
+
+    m_FrameTransferWaitValue.store(TransferWaitValue, std::memory_order_release);
 }
 
-VkSemaphore GetCompletionSemaphore()
+uint32_t GetCompletionWaits(CompletionWait* p_Waits, uint32_t p_Capacity)
 {
+    if (p_Waits == nullptr || p_Capacity == 0) {
+        return 0;
+    }
+
     const Batch& BatchValue =
         *m_Batches.at(::Engine::Base::Render::Vk::Frame::GetCurrentFrameIndex());
 
-    return BatchValue.GraphicsSubmitted ? m_GraphicsTimeline : m_TransferTimeline;
-}
+    uint32_t Count = 0;
+    const std::function<void(VkSemaphore, uint64_t)> AddWait =
+        [&p_Waits, &Count, p_Capacity](VkSemaphore p_Semaphore, uint64_t p_Value) {
+            for (uint32_t I = 0; I < Count; ++I) {
+                if (p_Waits[I].Semaphore == p_Semaphore) {
+                    p_Waits[I].Value = std::max(p_Waits[I].Value, p_Value);
+                    return;
+                }
+            }
 
-uint64_t GetCompletionValue()
-{
-    const Batch& BatchValue =
-        *m_Batches.at(::Engine::Base::Render::Vk::Frame::GetCurrentFrameIndex());
+            if (Count < p_Capacity) {
+                p_Waits[Count++] = { p_Semaphore, p_Value };
+            }
+        };
 
-    return BatchValue.GraphicsSubmitted
-        ? BatchValue.GraphicsSubmitValue
-        : BatchValue.TransferSubmitValue;
-}
+    const uint64_t TransferWaitValue = m_FrameTransferWaitValue.load(std::memory_order_acquire);
+    if (TransferWaitValue != 0) {
+        AddWait(m_TransferTimeline, TransferWaitValue);
+    }
 
-bool HasTransferSubmission()
-{
-    const Batch& BatchValue =
-        *m_Batches.at(::Engine::Base::Render::Vk::Frame::GetCurrentFrameIndex());
+    if (BatchValue.GraphicsSubmitted) {
+        AddWait(m_GraphicsTimeline, BatchValue.GraphicsSubmitValue);
+    } else if (BatchValue.Submitted) {
+        AddWait(m_TransferTimeline, BatchValue.TransferSubmitValue);
+    }
 
-    return BatchValue.Submitted;
+    return Count;
 }
 
 void QueueBufferUpload(const Buffer& p_Target, const void* p_Data, VkDeviceSize p_Size)
@@ -937,31 +1088,44 @@ void DestroyBuffer(Buffer& p_Target)
     p_Target = {};
 
     if (IsLoaderThread()) {
+        WaitForResourceUse(
+            m_NextTransferValue.load(std::memory_order_acquire),
+            m_NextGraphicsValue.load(std::memory_order_acquire),
+            ::Engine::Base::Render::Vk::Device::GetRenderCompletionValue()
+        );
         DestroyBufferNow(Target);
 
         return;
     }
 
-    const std::shared_ptr<std::promise<void>> Promise = std::make_shared<std::promise<void>>();
-    std::future<void> Future = Promise->get_future();
     const std::string Name = "resource_destroy_buffer_" + std::to_string(m_NextJob++);
+    const uint64_t TransferValue = m_NextTransferValue.load(std::memory_order_acquire);
+    const uint64_t GraphicsValue = m_NextGraphicsValue.load(std::memory_order_acquire);
+    const uint64_t RenderValue =
+        ::Engine::Base::Render::Vk::Device::GetRenderCompletionValue();
+
+    m_PendingDestroyJobs.fetch_add(1, std::memory_order_acq_rel);
 
     ::Engine::Base::JobSystem::It::PushBackground(
-        ::Engine::Base::Runtime::EngineThreadID::ResourceLoaderTh,
+        ::Engine::Base::Runtime::EngineThreadID::RenderResourceLoaderTh,
         Name,
-        [Target, Promise] {
+        [Target, TransferValue, GraphicsValue, RenderValue] {
             try {
+                WaitForResourceUse(TransferValue, GraphicsValue, RenderValue);
                 DestroyBufferNow(Target);
-                Promise->set_value();
+            }
+            catch (const std::exception& Error) {
+                std::cerr << "Resource buffer destruction failed: " << Error.what() << "\n";
             }
             catch (...) {
-                Promise->set_exception(std::current_exception());
+                std::cerr << "Resource buffer destruction failed: unknown error\n";
             }
+
+            m_PendingDestroyJobs.fetch_sub(1, std::memory_order_acq_rel);
+            m_DestroyCv.notify_all();
         },
         110
     );
-
-    Future.get();
 }
 
 Image CreateImage(
@@ -1028,6 +1192,8 @@ Image CreateImage(
             Result.Handle,
             Result.Allocation
         );
+        Result.Handle = VK_NULL_HANDLE;
+        Result.Allocation = VK_NULL_HANDLE;
         X_ASSERT(true, "failed to create resource image view");
     }
 
@@ -1045,31 +1211,43 @@ void DestroyImage(Image& p_Target)
     p_Target = {};
 
     if (IsLoaderThread()) {
+        WaitForResourceUse(
+            m_NextTransferValue.load(std::memory_order_acquire),
+            m_NextGraphicsValue.load(std::memory_order_acquire),
+            ::Engine::Base::Render::Vk::Device::GetRenderCompletionValue()
+        );
         DestroyImageNow(Target);
 
         return;
     }
 
-    const std::shared_ptr<std::promise<void>> Promise = std::make_shared<std::promise<void>>();
-    std::future<void> Future = Promise->get_future();
     const std::string Name = "resource_destroy_image_" + std::to_string(m_NextJob++);
+    const uint64_t TransferValue = m_NextTransferValue.load(std::memory_order_acquire);
+    const uint64_t GraphicsValue = m_NextGraphicsValue.load(std::memory_order_acquire);
+    const uint64_t RenderValue =
+        ::Engine::Base::Render::Vk::Device::GetRenderCompletionValue();
+    m_PendingDestroyJobs.fetch_add(1, std::memory_order_acq_rel);
 
     ::Engine::Base::JobSystem::It::PushBackground(
-        ::Engine::Base::Runtime::EngineThreadID::ResourceLoaderTh,
+        ::Engine::Base::Runtime::EngineThreadID::RenderResourceLoaderTh,
         Name,
-        [Target, Promise] {
+        [Target, TransferValue, GraphicsValue, RenderValue] {
             try {
+                WaitForResourceUse(TransferValue, GraphicsValue, RenderValue);
                 DestroyImageNow(Target);
-                Promise->set_value();
+            }
+            catch (const std::exception& Error) {
+                std::cerr << "Resource image destruction failed: " << Error.what() << "\n";
             }
             catch (...) {
-                Promise->set_exception(std::current_exception());
+                std::cerr << "Resource image destruction failed: unknown error\n";
             }
+
+            m_PendingDestroyJobs.fetch_sub(1, std::memory_order_acq_rel);
+            m_DestroyCv.notify_all();
         },
         110
     );
-
-    Future.get();
 }
 
 VkImageView CreateImageView(
