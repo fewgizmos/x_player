@@ -82,6 +82,7 @@ void AcquireNextImageAsync(
     VkFence p_Fence,
     std::function<void(VkResult, uint32_t)> p_Completion
 );
+void ConsumeSemaphore(VkSemaphore p_Semaphore);
 void ExecuteQueueOperation(std::function<void()> p_Operation);
 VkResult QueueSubmitLegacy(
     VkQueue p_Queue,

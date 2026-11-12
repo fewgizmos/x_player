@@ -47,6 +47,8 @@ std::atomic<bool> m_AcquirePending = false;
 std::atomic<bool> m_AcquireReady = false;
 std::atomic<VkResult> m_AcquireResult = VK_NOT_READY;
 std::atomic<uint32_t> m_AcquireImageIndex = 0;
+VkSemaphore m_AcquireSemaphore = VK_NULL_HANDLE;
+bool m_AcquireSemaphoreSignaled = false;
 
 const BootstrapManager::DeferredBootstrapRegistration::InitRegistrar
     RegisterInit("render_init", Init, 70);
@@ -106,6 +108,13 @@ void ClearBackground(VkCommandBuffer p_Cmd)
 
 void RecreateSwapchain()
 {
+    Vk::Device::DrainRenderOperations();
+
+    if (m_AcquireSemaphoreSignaled) {
+        Vk::Device::ConsumeSemaphore(m_AcquireSemaphore);
+        m_AcquireSemaphoreSignaled = false;
+    }
+
     Vk::Frame::RecreateSwapchain();
     m_AcquirePending.store(false, std::memory_order_release);
     m_AcquireReady.store(false, std::memory_order_release);
@@ -211,15 +220,20 @@ void RenderFrame()
     if (!m_AcquirePending.load(std::memory_order_acquire)
         && !m_AcquireReady.load(std::memory_order_acquire)) {
         m_AcquirePending.store(true, std::memory_order_release);
+        const VkSemaphore AcquireSemaphore = Frame.SemaphoreAvailable;
 
         Vk::Device::AcquireNextImageAsync(
             Vk::Frame::GetSwapchain(),
             0,
             Frame.SemaphoreAvailable,
             VK_NULL_HANDLE,
-            [](VkResult p_Result, uint32_t p_ImageIndex) {
+            [AcquireSemaphore](VkResult p_Result, uint32_t p_ImageIndex) {
                 m_AcquireImageIndex.store(p_ImageIndex, std::memory_order_relaxed);
                 m_AcquireResult.store(p_Result, std::memory_order_release);
+                if (p_Result == VK_SUCCESS || p_Result == VK_SUBOPTIMAL_KHR) {
+                    m_AcquireSemaphore = AcquireSemaphore;
+                    m_AcquireSemaphoreSignaled = true;
+                }
                 m_AcquireReady.store(true, std::memory_order_release);
                 m_AcquirePending.store(false, std::memory_order_release);
             }
@@ -331,6 +345,7 @@ void RenderFrame()
         Frame.FenceInflight,
         &Present
     );
+    m_AcquireSemaphoreSignaled = false;
     ResourceLoader::OnRenderSubmitted(RenderCompletionValue);
 
     Vk::Frame::Advance();

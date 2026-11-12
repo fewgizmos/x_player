@@ -227,6 +227,35 @@ void AcquireNextImageAsync(
     );
 }
 
+void ConsumeSemaphore(VkSemaphore p_Semaphore)
+{
+    ExecuteQueueOperation([p_Semaphore] {
+        VkSemaphoreSubmitInfo Wait{ VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO };
+        Wait.semaphore = p_Semaphore;
+        Wait.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+
+        VkSubmitInfo2 Submit{ VK_STRUCTURE_TYPE_SUBMIT_INFO_2 };
+        Submit.waitSemaphoreInfoCount = 1;
+        Submit.pWaitSemaphoreInfos = &Wait;
+
+        std::lock_guard<std::mutex> Lock(m_VulkanQueueCallMutex);
+
+        X_ASSERT(
+            m_Disp.queueSubmit2(
+                m_Queues.Graphics,
+                1,
+                &Submit,
+                VK_NULL_HANDLE
+            ) != VK_SUCCESS,
+            "failed to consume acquire semaphore"
+        );
+        X_ASSERT(
+            m_Disp.deviceWaitIdle() != VK_SUCCESS,
+            "failed to wait after consuming acquire semaphore"
+        );
+    });
+}
+
 void ExecuteQueueOperation(std::function<void()> p_Operation)
 {
     if (IsQueueExecutorThread()) {

@@ -149,7 +149,7 @@ void ImmediateSubmit(const std::function<void(VkCommandBuffer)>& p_Record)
 
     Submit(Cmd, nullptr, nullptr, Fence);
 
-    Result = Disp.waitForFences(1, &Fence, VK_TRUE, UINT64_MAX);
+    Result = Device::WaitForFence(Fence, VK_TRUE, UINT64_MAX);
 
     Disp.destroyFence(Fence, nullptr);
     Disp.freeCommandBuffers(m_Pool, 1, &Cmd);
