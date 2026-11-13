@@ -27,12 +27,13 @@ namespace Graphics
 {
 
 inline constexpr unsigned char BACKGROUND_RGB[3] = {13, 17, 23};
+
 inline constexpr const char* SHADERS_DIR = "Resources/Shaders/";
 
 inline constexpr int MAX_FRAMES_IN_FLIGHT = 4;
 
-inline constexpr uint32_t MAX_SAMPLERS = 64;
-inline constexpr uint32_t MAX_TEXTURES = 4096;
+inline constexpr uint32_t MAX_SAMPLERS  = 64;
+inline constexpr uint32_t MAX_TEXTURES  = 4096;
 inline constexpr uint32_t MAX_MATERIALS = 4096;
 
 inline constexpr VkFormat DEPTH_FORMAT = VK_FORMAT_D32_SFLOAT;
@@ -49,7 +50,7 @@ namespace Tests
 {
 
 inline constexpr bool TRIANGLE_RENDERER_ENABLED = true;
-inline constexpr bool TEXTURE_RENDERER_ENABLED = true;
+inline constexpr bool TEXTURE_RENDERER_ENABLED  = true;
 
 }
 
@@ -64,19 +65,21 @@ namespace ResourceLoader
 {
 
 inline constexpr int BATCH_COUNT = Graphics::MAX_FRAMES_IN_FLIGHT;
+
 inline constexpr VkDeviceSize BUFFER_STAGING_BLOCK_SIZE = 64 * 1024 * 1024;
-inline constexpr VkDeviceSize IMAGE_STAGING_BLOCK_SIZE = 128 * 1024 * 1024;
+inline constexpr VkDeviceSize IMAGE_STAGING_BLOCK_SIZE  = 128 * 1024 * 1024;
 
 inline constexpr VkDeviceSize GPU_UPLOAD_BYTES_PER_FRAME = 32 * 1024 * 1024;
-inline constexpr uint32_t GPU_COPY_COMMANDS_PER_FRAME = 128;
-inline constexpr uint32_t GPU_RESOURCE_CREATES_PER_FRAME = 32;
-inline constexpr uint32_t GPU_RESOURCE_DESTROYS_PER_FRAME = 64;
+
+inline constexpr uint32_t GPU_COPY_COMMANDS_PER_FRAME      = 128;
+inline constexpr uint32_t GPU_RESOURCE_CREATES_PER_FRAME   = 32;
+inline constexpr uint32_t GPU_RESOURCE_DESTROYS_PER_FRAME  = 64;
 inline constexpr uint32_t GPU_DESCRIPTOR_UPDATES_PER_FRAME = 256;
 
-inline constexpr int GPU_OPS_CRITICAL_ORDER = 1;
-inline constexpr int GPU_OPS_HIGH_ORDER = 10;
-inline constexpr int GPU_OPS_NORMAL_ORDER = 100;
-inline constexpr int GPU_OPS_LOW_ORDER = 1000;
+inline constexpr int GPU_OPS_CRITICAL_ORDER  = 1;
+inline constexpr int GPU_OPS_HIGH_ORDER      = 10;
+inline constexpr int GPU_OPS_NORMAL_ORDER    = 100;
+inline constexpr int GPU_OPS_LOW_ORDER       = 1000;
 inline constexpr int GPU_OPS_MAX_AGING_BOOST = 900;
 
 }

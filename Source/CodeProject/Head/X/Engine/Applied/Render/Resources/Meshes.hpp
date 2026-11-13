@@ -1,8 +1,8 @@
 #pragma once
 
 #include "X/Engine/Applied/Render/Resources/ResourceManager.hpp"
-#include "X/Engine/Base/Render/ResourceLoader.hpp"
 
+#include "X/Engine/Base/Render/ResourceLoader.hpp"
 #include "X/Engine/Base/Render/Vulkan/GpuResources.hpp"
 
 #include <glm/vec3.hpp>
@@ -12,7 +12,7 @@
 #include <memory>
 #include <vector>
 
-namespace Engine::Applied::Render::Scene::Resources::Meshes
+namespace Engine::Applied::Render::Resources::Meshes
 {
 
 struct MeshSnapshot

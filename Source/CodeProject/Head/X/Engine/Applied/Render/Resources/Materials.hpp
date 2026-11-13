@@ -17,16 +17,16 @@
 #include <string>
 #include <vector>
 
-namespace Engine::Applied::Render::Scene::Resources::Materials
+namespace Engine::Applied::Render::Resources::Materials
 {
 
-constexpr uint32_t NO_TEXTURE = 0xFFFFFFFFu;
+constexpr uint32_t NO_TEXTURE              = 0xFFFFFFFFu;
 constexpr uint32_t MATERIAL_TEXTURES_COUNT = 14;
 
 enum class AlphaMode : uint32_t
 {
     Opaque = 0,
-    Mask = 1
+    Mask   = 1
 };
 
 struct MaterialTexture

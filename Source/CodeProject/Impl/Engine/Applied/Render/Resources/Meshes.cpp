@@ -1,4 +1,4 @@
-#include "X/Engine/Applied/Render/Scene/Resources/Meshes.hpp"
+#include "X/Engine/Applied/Render/Resources/Meshes.hpp"
 
 #include "X/Configs/Static.hpp"
 
@@ -17,19 +17,19 @@
 #include <utility>
 #include <vector>
 
-namespace Engine::Applied::Render::Scene::Resources::Meshes
+namespace Engine::Applied::Render::Resources::Meshes
 {
 
 struct Mesh::LoadData
 {
     std::mutex Mutex;
 
-    std::vector<Vertex> Vertices;
+    std::vector<Vertex>   Vertices;
     std::vector<uint32_t> Indices;
 
     std::vector<uint32_t> SortedIndices;
-    std::vector<Cluster> Clusters;
-    std::vector<Cluster> ClusterGroups;
+    std::vector<Cluster>  Clusters;
+    std::vector<Cluster>  ClusterGroups;
 
     glm::vec3 BoundsMin = glm::vec3(0.0f);
     glm::vec3 BoundsMax = glm::vec3(0.0f);
@@ -47,10 +47,10 @@ struct Mesh::LoadData
 namespace
 {
 
-constexpr uint32_t TRIANGLE_INDICES = 3;
+constexpr uint32_t TRIANGLE_INDICES  = 3;
 constexpr uint32_t CLUSTER_TRIANGLES = 128;
 constexpr std::size_t GROUP_CLUSTERS = 16;
-constexpr float MORTON_GRID = 1023.0f;
+constexpr float MORTON_GRID          = 1023.0f;
 
 template<class Type>
 std::size_t HashBytes(const std::vector<Type>& p_Data)

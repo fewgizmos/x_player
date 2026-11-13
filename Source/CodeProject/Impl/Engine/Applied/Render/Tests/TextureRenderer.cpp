@@ -7,9 +7,10 @@
 #include "X/Engine/Applied/Render/Resources/ResourceManager.hpp"
 #include "X/Engine/Applied/Render/Resources/Shaders.hpp"
 #include "X/Engine/Applied/Render/Resources/Textures.hpp"
-#include "X/Engine/Applied/Render/Scene/Resources/Meshes.hpp"
+#include "X/Engine/Applied/Render/Resources/Meshes.hpp"
 
 #include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
+
 #include "X/Engine/Base/Render/RenderingPool.hpp"
 #include "X/Engine/Base/Render/Vulkan/Commands.hpp"
 #include "X/Engine/Base/Render/Vulkan/Device.hpp"
@@ -34,13 +35,15 @@ namespace Engine::Applied::Render::Tests::TextureRenderer
 namespace
 {
 
-using Mesh = ::Engine::Applied::Render::Scene::Resources::Meshes::Mesh;
-using Vertex = ::Engine::Applied::Render::Scene::Resources::Meshes::Vertex;
-using Texture = ::Engine::Applied::Render::Resources::Textures::Texture;
-using MeshSnapshot = ::Engine::Applied::Render::Scene::Resources::Meshes::MeshSnapshot;
-using ShaderSnapshot = ::Engine::Applied::Render::Resources::Shaders::ShaderSnapshot;
-using TextureSnapshot = ::Engine::Applied::Render::Resources::Textures::TextureSnapshot;
-using MeshReference = ::Engine::Applied::Render::Resources::Ref<Mesh>;
+using Mesh             = ::Engine::Applied::Render::Resources::Meshes::Mesh;
+using Vertex           = ::Engine::Applied::Render::Resources::Meshes::Vertex;
+using Texture          = ::Engine::Applied::Render::Resources::Textures::Texture;
+
+using MeshSnapshot     = ::Engine::Applied::Render::Resources::Meshes::MeshSnapshot;
+using ShaderSnapshot   = ::Engine::Applied::Render::Resources::Shaders::ShaderSnapshot;
+using TextureSnapshot  = ::Engine::Applied::Render::Resources::Textures::TextureSnapshot;
+
+using MeshReference    = ::Engine::Applied::Render::Resources::Ref<Mesh>;
 using TextureReference = ::Engine::Applied::Render::Resources::Ref<Texture>;
 
 struct PushConstants
@@ -55,10 +58,10 @@ Engine::Applied::Render::Resources::Ref<
 
 std::unique_ptr<MeshReference> m_Mesh;
 
-std::unique_ptr<TextureReference> m_DefaultEngineLogo;
-std::shared_ptr<const MeshSnapshot> m_FrameMesh;
+std::unique_ptr<TextureReference>      m_DefaultEngineLogo;
+std::shared_ptr<const MeshSnapshot>    m_FrameMesh;
 std::shared_ptr<const TextureSnapshot> m_FrameTexture;
-std::shared_ptr<const ShaderSnapshot> m_FrameShader;
+std::shared_ptr<const ShaderSnapshot>  m_FrameShader;
 
 const ::Engine::Base::BootstrapManager::DeferredBootstrapRegistration::InitRegistrar
     RegisterInit("texture_test_renderer_init", Init, 30);
@@ -222,6 +225,7 @@ void Render()
     Disp.cmdBindPipeline(Frame.CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, Pipeline.Handle);
 
     const VkDeviceSize Offset = 0;
+
     Disp.cmdBindVertexBuffers(
         Frame.CommandBuffer,
         0,
@@ -229,14 +233,17 @@ void Render()
         &MeshValue->VertexBuffer.Handle,
         &Offset
     );
+
     Disp.cmdBindIndexBuffer(
         Frame.CommandBuffer,
         MeshValue->IndexBuffer.Handle,
         0,
         VK_INDEX_TYPE_UINT32
     );
+
     const VkDescriptorSet DescriptorSet =
         ::Engine::Applied::Render::Resources::Textures::GetBindlessSet();
+
     Disp.cmdBindDescriptorSets(
         Frame.CommandBuffer,
         VK_PIPELINE_BIND_POINT_GRAPHICS,

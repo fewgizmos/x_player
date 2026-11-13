@@ -6,14 +6,13 @@
 
 #include "X/Engine/Applied/Render/Resources/ResourceManager.hpp"
 #include "X/Engine/Applied/Render/Resources/Shaders.hpp"
-#include "X/Engine/Applied/Render/Scene/Resources/Meshes.hpp"
+#include "X/Engine/Applied/Render/Resources/Meshes.hpp"
 
 #include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
 #include "X/Engine/Base/Render/RenderingPool.hpp"
 #include "X/Engine/Base/Render/Vulkan/Commands.hpp"
 #include "X/Engine/Base/Render/Vulkan/Device.hpp"
 #include "X/Engine/Base/Render/Vulkan/Frame.hpp"
-#include "X/Engine/Base/Render/Vulkan/GpuResources.hpp"
 #include "X/Engine/Base/Render/Vulkan/Shader.hpp"
 
 #include <glm/ext/matrix_clip_space.hpp>
@@ -24,7 +23,6 @@
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan_core.h>
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -37,7 +35,7 @@ namespace Engine::Applied::Render::Tests::TriangleRenderer
 namespace
 {
 
-using MeshSnapshot = ::Engine::Applied::Render::Scene::Resources::Meshes::MeshSnapshot;
+using MeshSnapshot   = ::Engine::Applied::Render::Resources::Meshes::MeshSnapshot;
 using ShaderSnapshot = ::Engine::Applied::Render::Resources::Shaders::ShaderSnapshot;
 
 struct PushConstants
@@ -46,9 +44,11 @@ struct PushConstants
 };
 
 Engine::Applied::Render::Resources::Ref<Engine::Applied::Render::Resources::Shaders::Shader> m_Shader;
+
 std::unique_ptr<::Engine::Applied::Render::Resources::Ref<
-    ::Engine::Applied::Render::Scene::Resources::Meshes::Mesh>> m_Mesh;
-std::shared_ptr<const MeshSnapshot> m_FrameMesh;
+    ::Engine::Applied::Render::Resources::Meshes::Mesh>> m_Mesh;
+
+std::shared_ptr<const MeshSnapshot>   m_FrameMesh;
 std::shared_ptr<const ShaderSnapshot> m_FrameShader;
 
 const ::Engine::Base::BootstrapManager::DeferredBootstrapRegistration::InitRegistrar
@@ -69,11 +69,11 @@ void CreatePipeline()
     Info.PushConstantSize = sizeof(PushConstants);
     Info.PushConstantStages = VK_SHADER_STAGE_VERTEX_BIT;
     Info.VertexBindings = {
-        { 0, sizeof(::Engine::Applied::Render::Scene::Resources::Meshes::Vertex), VK_VERTEX_INPUT_RATE_VERTEX }
+        { 0, sizeof(::Engine::Applied::Render::Resources::Meshes::Vertex), VK_VERTEX_INPUT_RATE_VERTEX }
     };
     Info.VertexAttributes = {
-        { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(::Engine::Applied::Render::Scene::Resources::Meshes::Vertex, Position) },
-        { 1, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(::Engine::Applied::Render::Scene::Resources::Meshes::Vertex, Color) }
+        { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(::Engine::Applied::Render::Resources::Meshes::Vertex, Position) },
+        { 1, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(::Engine::Applied::Render::Resources::Meshes::Vertex, Color) }
     };
 
     ::Engine::Applied::Render::Resources::Shaders::ShaderCreateInfo ShaderInfo;
@@ -86,8 +86,8 @@ void CreatePipeline()
 
 void CreateMesh()
 {
-    using Mesh = ::Engine::Applied::Render::Scene::Resources::Meshes::Mesh;
-    using Vertex = ::Engine::Applied::Render::Scene::Resources::Meshes::Vertex;
+    using Mesh   = ::Engine::Applied::Render::Resources::Meshes::Mesh;
+    using Vertex = ::Engine::Applied::Render::Resources::Meshes::Vertex;
 
     std::vector<Vertex> Vertices = {
         { { -1.0f, -1.0f, 0.0f }, 0.0f, {}, 0.0f, {}, { 1.0f, 0.0f, 0.0f, 1.0f } },

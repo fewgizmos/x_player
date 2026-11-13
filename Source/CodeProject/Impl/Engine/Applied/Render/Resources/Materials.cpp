@@ -1,4 +1,4 @@
-#include "X/Engine/Applied/Render/Scene/Resources/Materials.hpp"
+#include "X/Engine/Applied/Render/Resources/Materials.hpp"
 
 #include "X/Configs/Static.hpp"
 
@@ -20,7 +20,6 @@
 #include <glm/vec4.hpp>
 
 #include <bit>
-#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -31,7 +30,7 @@
 #include <unordered_map>
 #include <utility>
 
-namespace Engine::Applied::Render::Scene::Resources::Materials
+namespace Engine::Applied::Render::Resources::Materials
 {
 
 struct Material::LoadData
