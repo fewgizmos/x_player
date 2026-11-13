@@ -4,7 +4,8 @@
 
 #include "X/Configs/Static.hpp"
 
-#include "X/Engine/Applied/Render/Resources/ResourceManager.hpp"
+#include "X/Engine/Util/Applied/ResourceManager.hpp"
+
 #include "X/Engine/Applied/Render/Resources/Shaders.hpp"
 #include "X/Engine/Applied/Render/Resources/Textures.hpp"
 #include "X/Engine/Applied/Render/Resources/Meshes.hpp"
@@ -43,8 +44,8 @@ using MeshSnapshot     = ::Engine::Applied::Render::Resources::Meshes::MeshSnaps
 using ShaderSnapshot   = ::Engine::Applied::Render::Resources::Shaders::ShaderSnapshot;
 using TextureSnapshot  = ::Engine::Applied::Render::Resources::Textures::TextureSnapshot;
 
-using MeshReference    = ::Engine::Applied::Render::Resources::Ref<Mesh>;
-using TextureReference = ::Engine::Applied::Render::Resources::Ref<Texture>;
+using MeshReference    = ::Engine::Util::Applied::ResourceRef<Mesh>;
+using TextureReference = ::Engine::Util::Applied::ResourceRef<Texture>;
 
 struct PushConstants
 {
@@ -53,7 +54,7 @@ struct PushConstants
     uint32_t SamplerIndex;
 };
 
-Engine::Applied::Render::Resources::Ref<
+Engine::Util::Applied::ResourceRef<
     Engine::Applied::Render::Resources::Shaders::Shader> m_Shader;
 
 std::unique_ptr<MeshReference> m_Mesh;
@@ -100,7 +101,7 @@ void CreatePipeline()
     ShaderInfo.VertexFile = "Tests/TextureTest.vert";
     ShaderInfo.FragmentFile = "Tests/TextureTest.frag";
     ShaderInfo.Graphics = std::move(Info);
-    m_Shader = ::Engine::Applied::Render::Resources::Ref<
+    m_Shader = ::Engine::Util::Applied::ResourceRef<
         ::Engine::Applied::Render::Resources::Shaders::Shader>(std::move(ShaderInfo));
 }
 
@@ -148,7 +149,7 @@ void Init()
 
     CreatePipeline();
     CreateMesh();
-    m_DefaultEngineLogo = std::make_unique<Engine::Applied::Render::Resources::Ref<
+    m_DefaultEngineLogo = std::make_unique<Engine::Util::Applied::ResourceRef<
         Engine::Applied::Render::Resources::Textures::Texture>>(
         "Resources/Images/DefaultEngineLogo.png",
         VK_FORMAT_R8G8B8A8_SRGB

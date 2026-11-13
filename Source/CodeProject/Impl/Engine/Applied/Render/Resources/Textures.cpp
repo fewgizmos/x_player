@@ -160,7 +160,7 @@ void Texture::BeginLoad()
     m_Index = UINT32_MAX;
 
     if (Format != VK_FORMAT_R8G8B8A8_SRGB && Format != VK_FORMAT_R8G8B8A8_UNORM) {
-        SetFailed("Unsupported decoded texture format; expected RGBA8 SRGB or UNORM");
+        SetFailed("unsupported decoded texture format; expected RGBA8 SRGB or UNORM");
         return;
     }
 
@@ -191,9 +191,9 @@ void Texture::BeginLoad()
 
 void Texture::Update()
 {
-    if (GetState() != ResourceState::LoadingCpu
-        && GetState() != ResourceState::QueuedGpu
-        && GetState() != ResourceState::Uploading) {
+    if (GetState() != ::Engine::Util::Applied::ResourceState::LoadingCpu
+        && GetState() != ::Engine::Util::Applied::ResourceState::QueuedGpu
+        && GetState() != ::Engine::Util::Applied::ResourceState::Uploading) {
 
         return;
     }
@@ -205,7 +205,7 @@ void Texture::Update()
         }
 
         if (!m_GpuTicket->Done.load(std::memory_order_acquire)) {
-            SetState(ResourceState::Uploading);
+            SetState(::Engine::Util::Applied::ResourceState::Uploading);
 
             return;
         }
@@ -233,7 +233,7 @@ void Texture::Update()
 
         if (m_DescriptorTicket) {
             if (!m_DescriptorTicket->Done.load(std::memory_order_acquire)) {
-                SetState(ResourceState::Uploading);
+                SetState(::Engine::Util::Applied::ResourceState::Uploading);
 
                 return;
             }
@@ -277,7 +277,7 @@ void Texture::Update()
             }
 
             ReleaseIndex(PreviousIndex);
-            SetState(ResourceState::Uploading);
+            SetState(::Engine::Util::Applied::ResourceState::Uploading);
 
             return;
         }
@@ -292,7 +292,7 @@ void Texture::Update()
             std::memory_order_release
         );
 
-        SetState(ResourceState::Ready);
+        SetState(::Engine::Util::Applied::ResourceState::Ready);
         return;
     }
 
@@ -336,7 +336,7 @@ void Texture::Update()
     m_GpuVersionChecksum = GetVersionChecksum();
     const uint64_t VersionChecksum = m_GpuVersionChecksum;
 
-    SetState(ResourceState::QueuedGpu);
+    SetState(::Engine::Util::Applied::ResourceState::QueuedGpu);
     m_GpuTicket = ::Engine::Base::Render::ResourceLoader::PushFrameJobVk(
         [Data, TextureFormat, Width, Height, MipLevels, VersionChecksum](VkCommandBuffer) {
             std::lock_guard<std::mutex> Lock(Data->Mutex);
@@ -388,11 +388,11 @@ void Texture::Unload()
         m_LoadData->UploadRejected = true;
     }
 
-    if (GetState() == ResourceState::Unloading) {
+    if (GetState() == ::Engine::Util::Applied::ResourceState::Unloading) {
         return;
     }
 
-    SetState(ResourceState::Unloading);
+    SetState(::Engine::Util::Applied::ResourceState::Unloading);
 
     if (m_Image.Handle != VK_NULL_HANDLE) {
         ::Engine::Base::Render::ResourceLoader::DestroyImage(m_Image);

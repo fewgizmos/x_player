@@ -1,6 +1,7 @@
 #pragma once
 
-#include "X/Engine/Applied/Render/Resources/ResourceManager.hpp"
+#include "X/Engine/Util/Applied/ResourceManager.hpp"
+
 #include "X/Engine/Base/Render/ResourceLoader.hpp"
 
 #include "X/Engine/Base/Render/Vulkan/GpuResources.hpp"
@@ -22,7 +23,7 @@ struct TextureSnapshot
     uint64_t VersionChecksum = 0;
 };
 
-class Texture final : public Resource
+class Texture final : public ::Engine::Util::Applied::Resource
 {
 public:
     struct LoadData;

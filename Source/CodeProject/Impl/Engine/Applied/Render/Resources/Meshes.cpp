@@ -218,9 +218,9 @@ void Mesh::BeginLoad()
 
 void Mesh::Update()
 {
-    if (GetState() != ::Engine::Applied::Render::Resources::ResourceState::LoadingCpu
-        && GetState() != ::Engine::Applied::Render::Resources::ResourceState::QueuedGpu
-        && GetState() != ::Engine::Applied::Render::Resources::ResourceState::Uploading) {
+    if (GetState() != ::Engine::Util::Applied::ResourceState::LoadingCpu
+        && GetState() != ::Engine::Util::Applied::ResourceState::QueuedGpu
+        && GetState() != ::Engine::Util::Applied::ResourceState::Uploading) {
 
         return;
     }
@@ -232,7 +232,7 @@ void Mesh::Update()
         }
 
         if (!m_GpuTicket->Done.load(std::memory_order_acquire)) {
-            SetState(::Engine::Applied::Render::Resources::ResourceState::Uploading);
+            SetState(::Engine::Util::Applied::ResourceState::Uploading);
 
             return;
         }
@@ -292,7 +292,7 @@ void Mesh::Update()
             ::Engine::Base::Render::ResourceLoader::DestroyBuffer(OldBuffer);
         }
 
-        SetState(::Engine::Applied::Render::Resources::ResourceState::Ready);
+        SetState(::Engine::Util::Applied::ResourceState::Ready);
         return;
     }
 
@@ -344,7 +344,7 @@ void Mesh::Update()
             m_Indices = Data->SortedIndices;
         }
 
-        SetState(::Engine::Applied::Render::Resources::ResourceState::QueuedGpu);
+        SetState(::Engine::Util::Applied::ResourceState::QueuedGpu);
         m_GpuTicket = ::Engine::Base::Render::ResourceLoader::PushFrameJobVk(
             [Data, VersionChecksum](VkCommandBuffer) {
                 std::lock_guard<std::mutex> Lock(Data->Mutex);
@@ -428,11 +428,11 @@ void Mesh::Unload()
         LoadDataState->UploadRejected = true;
     }
 
-    if (GetState() == ::Engine::Applied::Render::Resources::ResourceState::Unloading) {
+    if (GetState() == ::Engine::Util::Applied::ResourceState::Unloading) {
         return;
     }
 
-    SetState(::Engine::Applied::Render::Resources::ResourceState::Unloading);
+    SetState(::Engine::Util::Applied::ResourceState::Unloading);
 
     if (m_VertexBuffer.Handle != VK_NULL_HANDLE) {
         ::Engine::Base::Render::ResourceLoader::DestroyBuffer(m_VertexBuffer);

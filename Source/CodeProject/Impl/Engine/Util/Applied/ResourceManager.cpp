@@ -1,4 +1,4 @@
-#include "X/Engine/Applied/Render/Resources/ResourceManager.hpp"
+#include "X/Engine/Util/Applied/ResourceManager.hpp"
 
 #include "X/Configs/PreCompiled/Dynamic.hpp"
 #include "X/Configs/Static.hpp"
@@ -18,7 +18,7 @@
 #include <utility>
 #include <vector>
 
-namespace Engine::Applied::Render::Resources
+namespace Engine::Util::Applied
 {
 
 namespace

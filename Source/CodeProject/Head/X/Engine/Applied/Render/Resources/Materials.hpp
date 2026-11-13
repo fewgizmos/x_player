@@ -1,6 +1,7 @@
 #pragma once
 
-#include "X/Engine/Applied/Render/Resources/ResourceManager.hpp"
+#include "X/Engine/Util/Applied/ResourceManager.hpp"
+
 #include "X/Engine/Applied/Render/Resources/Shaders.hpp"
 #include "X/Engine/Applied/Render/Resources/Textures.hpp"
 
@@ -31,7 +32,7 @@ enum class AlphaMode : uint32_t
 
 struct MaterialTexture
 {
-    ::Engine::Applied::Render::Resources::Ref<
+    ::Engine::Util::Applied::ResourceRef<
         ::Engine::Applied::Render::Resources::Textures::Texture> Target;
 
     ::Engine::Base::Render::SamplerCreateInfo Sampler;
@@ -43,7 +44,7 @@ struct MaterialTexture
 
 struct MaterialCreateInfo
 {
-    ::Engine::Applied::Render::Resources::Ref<
+    ::Engine::Util::Applied::ResourceRef<
         ::Engine::Applied::Render::Resources::Shaders::Shader> TargetShader;
     VkDescriptorSet ExtraSet = VK_NULL_HANDLE;
 
@@ -172,7 +173,7 @@ struct MaterialBufferSnapshot
     uint64_t Version = 0;
 };
 
-class Material final : public ::Engine::Applied::Render::Resources::Resource
+class Material final : public ::Engine::Util::Applied::Resource
 {
 public:
     explicit Material(MaterialCreateInfo p_CreateInfo);
@@ -188,7 +189,7 @@ public:
     bool IsDoubleSided() const;
     bool CastsShadows() const;
     AlphaMode GetAlphaMode() const;
-    const ::Engine::Applied::Render::Resources::Ref<
+    const ::Engine::Util::Applied::ResourceRef<
         ::Engine::Applied::Render::Resources::Shaders::Shader>& GetShader() const;
     VkDescriptorSet GetExtraSet() const;
     void SetGpuTicket(std::shared_ptr<::Engine::Base::Render::ResourceLoader::ResourceJobTicket> p_Ticket);

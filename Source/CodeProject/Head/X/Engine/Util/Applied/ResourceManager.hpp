@@ -7,7 +7,7 @@
 #include <utility>
 #include <cstdint>
 
-namespace Engine::Applied::Render::Resources
+namespace Engine::Util::Applied
 {
 
 enum class ResourceState
@@ -64,26 +64,26 @@ void UpdateAll();
 void CleanExpired();
 
 template<class T>
-class Ref
+class ResourceRef
 {
-    static_assert(std::is_base_of_v<Resource, T>, "Ref<T> requires a Resource type");
+    static_assert(std::is_base_of_v<Resource, T>, "ResourceRef<T> requires a Resource type");
 
 public:
-    Ref() = default;
+    ResourceRef() = default;
 
     template<class... Arguments>
         requires std::is_constructible_v<T, Arguments...>
-    explicit Ref(Arguments&&... p_Arguments)
+    explicit ResourceRef(Arguments&&... p_Arguments)
         : m_Resource(std::dynamic_pointer_cast<T>(Acquire(
             std::make_unique<T>(std::forward<Arguments>(p_Arguments)...)
         )))
     {
     }
 
-    Ref(const Ref&) = default;
-    Ref(Ref&&) noexcept = default;
-    Ref& operator=(const Ref&) = default;
-    Ref& operator=(Ref&&) noexcept = default;
+    ResourceRef(const ResourceRef&) = default;
+    ResourceRef(ResourceRef&&) noexcept = default;
+    ResourceRef& operator=(const ResourceRef&) = default;
+    ResourceRef& operator=(ResourceRef&&) noexcept = default;
 
     T* Get() { return m_Resource.get(); }
     const T* Get() const { return m_Resource.get(); }

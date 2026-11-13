@@ -1,6 +1,6 @@
 #pragma once
 
-#include "X/Engine/Applied/Render/Resources/ResourceManager.hpp"
+#include "X/Engine/Util/Applied/ResourceManager.hpp"
 
 #include "X/Engine/Base/Render/Vulkan/Shader.hpp"
 #include "X/Engine/Base/Render/ResourceLoader.hpp"
@@ -38,7 +38,7 @@ struct ShaderCreateInfo
     RenderQueue Queue = RenderQueue::Opaque;
 };
 
-class Shader final : public Resource
+class Shader final : public ::Engine::Util::Applied::Resource
 {
 public:
     explicit Shader(ShaderCreateInfo p_CreateInfo);

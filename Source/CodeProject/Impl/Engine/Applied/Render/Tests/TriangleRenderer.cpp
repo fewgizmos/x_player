@@ -4,7 +4,8 @@
 
 #include "X/Configs/Static.hpp"
 
-#include "X/Engine/Applied/Render/Resources/ResourceManager.hpp"
+#include "X/Engine/Util/Applied/ResourceManager.hpp"
+
 #include "X/Engine/Applied/Render/Resources/Shaders.hpp"
 #include "X/Engine/Applied/Render/Resources/Meshes.hpp"
 
@@ -43,9 +44,9 @@ struct PushConstants
     glm::mat4 Projection;
 };
 
-Engine::Applied::Render::Resources::Ref<Engine::Applied::Render::Resources::Shaders::Shader> m_Shader;
+::Engine::Util::Applied::ResourceRef<Engine::Applied::Render::Resources::Shaders::Shader> m_Shader;
 
-std::unique_ptr<::Engine::Applied::Render::Resources::Ref<
+std::unique_ptr<::Engine::Util::Applied::ResourceRef<
     ::Engine::Applied::Render::Resources::Meshes::Mesh>> m_Mesh;
 
 std::shared_ptr<const MeshSnapshot>   m_FrameMesh;
@@ -80,7 +81,7 @@ void CreatePipeline()
     ShaderInfo.VertexFile = "Tests/TriangleTest.vert";
     ShaderInfo.FragmentFile = "Tests/TriangleTest.frag";
     ShaderInfo.Graphics = std::move(Info);
-    m_Shader = ::Engine::Applied::Render::Resources::Ref<
+    m_Shader = ::Engine::Util::Applied::ResourceRef<
         ::Engine::Applied::Render::Resources::Shaders::Shader>(std::move(ShaderInfo));
 }
 
@@ -95,7 +96,7 @@ void CreateMesh()
         { {  0.0f,  1.0f, 0.0f }, 0.0f, {}, 0.0f, {}, { 0.0f, 0.0f, 1.0f, 1.0f } }
     };
     std::vector<uint32_t> Indices = { 0, 1, 2 };
-    m_Mesh = std::make_unique<::Engine::Applied::Render::Resources::Ref<Mesh>>(
+    m_Mesh = std::make_unique<::Engine::Util::Applied::ResourceRef<Mesh>>(
         std::move(Vertices), std::move(Indices)
     );
 }

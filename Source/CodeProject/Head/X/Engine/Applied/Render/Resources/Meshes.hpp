@@ -1,6 +1,6 @@
 #pragma once
 
-#include "X/Engine/Applied/Render/Resources/ResourceManager.hpp"
+#include "X/Engine/Util/Applied/ResourceManager.hpp"
 
 #include "X/Engine/Base/Render/ResourceLoader.hpp"
 #include "X/Engine/Base/Render/Vulkan/GpuResources.hpp"
@@ -48,7 +48,7 @@ struct Cluster
     glm::vec3 BoundsMax = glm::vec3(0.0f);
 };
 
-class Mesh final : public ::Engine::Applied::Render::Resources::Resource
+class Mesh final : public ::Engine::Util::Applied::Resource
 {
 public:
     Mesh(std::vector<Vertex> p_Vertices, std::vector<uint32_t> p_Indices);

@@ -13,7 +13,6 @@
 
 #include <cstdint>
 #include <exception>
-#include <stdexcept>
 #include <mutex>
 #include <utility>
 #include <vector>
@@ -185,9 +184,9 @@ void Shader::BeginLoad()
 
 void Shader::Update()
 {
-    if (GetState() != ResourceState::LoadingCpu
-        && GetState() != ResourceState::QueuedGpu
-        && GetState() != ResourceState::Uploading) {
+    if (GetState() != ::Engine::Util::Applied::ResourceState::LoadingCpu
+        && GetState() != ::Engine::Util::Applied::ResourceState::QueuedGpu
+        && GetState() != ::Engine::Util::Applied::ResourceState::Uploading) {
         return;
     }
 
@@ -198,7 +197,7 @@ void Shader::Update()
         }
 
         if (!GpuTicket->Done.load(std::memory_order_acquire)) {
-            SetState(ResourceState::Uploading);
+            SetState(::Engine::Util::Applied::ResourceState::Uploading);
             return;
         }
 
@@ -232,7 +231,7 @@ void Shader::Update()
         DestroyPipelineAsync(OldGraphics);
         DestroyPipelineAsync(OldCompute);
 
-        SetState(ResourceState::Ready);
+        SetState(::Engine::Util::Applied::ResourceState::Ready);
         return;
     }
 
@@ -248,7 +247,7 @@ void Shader::Update()
     const std::shared_ptr<LoadData> Data = LoadState;
     const ShaderCreateInfo Info = CreateInfo;
     const uint64_t VersionChecksum = GetVersionChecksum();
-    SetState(ResourceState::QueuedGpu);
+    SetState(::Engine::Util::Applied::ResourceState::QueuedGpu);
     GpuTicket = ::Engine::Base::Render::ResourceLoader::PushFrameJobCallback(
         [Data, Info, VersionChecksum] {
             std::lock_guard<std::mutex> Lock(Data->Mutex);
@@ -295,11 +294,11 @@ void Shader::Unload()
         LoadState->VersionChecksum = GetVersionChecksum();
     }
 
-    if (GetState() == ResourceState::Unloading) {
+    if (GetState() == ::Engine::Util::Applied::ResourceState::Unloading) {
         return;
     }
 
-    SetState(ResourceState::Unloading);
+    SetState(::Engine::Util::Applied::ResourceState::Unloading);
     DestroyPipelineAsync(Graphics);
     DestroyPipelineAsync(Compute);
 }
