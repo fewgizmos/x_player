@@ -1,4 +1,4 @@
-#include "X/Engine/Applied/Render/UI/ImGuiScaler.hpp"
+#include "X/Engine/Applied/Render/UIRendering/ImGuiScaler.hpp"
 
 #include "X/Configs/Static.hpp"
 

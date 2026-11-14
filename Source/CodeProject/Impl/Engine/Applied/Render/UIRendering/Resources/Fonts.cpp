@@ -1,4 +1,4 @@
-#include "X/Engine/Applied/Render/UI/Resources/Fonts.hpp"
+#include "X/Engine/Applied/Render/UIRendering/Resources/Fonts.hpp"
 
 #include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
 
