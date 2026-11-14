@@ -90,8 +90,8 @@ struct MaterialCreateInfo
     MaterialTexture ClearcoatNormalTexture;
     MaterialTexture SheenColorTexture;
     MaterialTexture SheenRoughnessTexture;
-
     MaterialTexture HeightTexture;
+
     float HeightScale = 0.0f;
     float HeightWorld = 0.0f;
 };

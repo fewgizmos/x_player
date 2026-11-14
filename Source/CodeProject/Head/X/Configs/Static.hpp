@@ -2,6 +2,8 @@
 
 #include <vulkan/vulkan_core.h>
 
+#include <fastgltf/core.hpp>
+
 namespace Engine::Configs::Static
 {
 
@@ -43,6 +45,24 @@ inline constexpr VkFormat GBUFFER_NORMAL_FORMAT   = VK_FORMAT_R16G16B16A16_SFLOA
 inline constexpr VkFormat GBUFFER_VELOCITY_FORMAT = VK_FORMAT_R16G16_SFLOAT;
 
 inline constexpr VkFormat GTAO_FORMAT = VK_FORMAT_R32_SFLOAT;
+
+inline constexpr fastgltf::Extensions PARSER_EXTENSIONS =
+    fastgltf::Extensions::KHR_texture_transform
+    | fastgltf::Extensions::KHR_mesh_quantization
+    | fastgltf::Extensions::KHR_lights_punctual
+    | fastgltf::Extensions::KHR_materials_specular
+    | fastgltf::Extensions::KHR_materials_ior
+    | fastgltf::Extensions::KHR_materials_iridescence
+    | fastgltf::Extensions::KHR_materials_volume
+    | fastgltf::Extensions::KHR_materials_transmission
+    | fastgltf::Extensions::KHR_materials_clearcoat
+    | fastgltf::Extensions::KHR_materials_emissive_strength
+    | fastgltf::Extensions::KHR_materials_sheen
+    | fastgltf::Extensions::KHR_materials_unlit
+    | fastgltf::Extensions::KHR_materials_anisotropy
+    | fastgltf::Extensions::KHR_materials_diffuse_transmission
+    | fastgltf::Extensions::EXT_mesh_gpu_instancing
+    | fastgltf::Extensions::MSFT_packing_normalRoughnessMetallic;
 
 }
 

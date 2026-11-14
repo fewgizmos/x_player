@@ -3,6 +3,7 @@
 #include "X/Configs/Static.hpp"
 
 #include "X/Engine/Util/Base/Assert.hpp"
+#include "X/Engine/Util/File.hpp"
 
 #include "X/Engine/Applied/Render/Resources/Textures.hpp"
 #include "X/Engine/Applied/Render/Resources/Shaders.hpp"
@@ -63,15 +64,11 @@ void ValidateLayout()
     constexpr uint32_t DecorationArrayStride = 6;
     constexpr uint32_t DecorationOffset = 35;
 
-    const auto Spirv = ::Engine::Base::Render::Vk::Shader::CompileGlsl(
-        "#version 450\n"
-        "#extension GL_GOOGLE_include_directive : require\n"
-        "#include \"Util/Head/MaterialData.glsl\"\n"
-        "layout(local_size_x = 1) in;\n"
-        "layout(set = 0, binding = 0, std430) readonly buffer InputData { MaterialData Items[]; };\n"
-        "layout(set = 0, binding = 1, std430) buffer OutputData { float Value; };\n"
-        "void main() { Value = Items[gl_GlobalInvocationID.x].HeightWorld; }\n",
-        ::Engine::Base::Render::ShaderStage::Compute, "MaterialAbi", {}, false
+    const std::string ValidateShaderSource = ::Engine::Util::File::ReadRaw(
+        std::string(::Engine::Configs::Static::Graphics::SHADERS_DIR) + "Util/Materials/Validate.comp"
+    );
+    const std::vector<uint32_t> ValidateShader = ::Engine::Base::Render::Vk::Shader::CompileGlsl(
+        ValidateShaderSource, ::Engine::Base::Render::ShaderStage::Compute, "Util/Materials/Validate.comp", {}, false
     );
 
     const std::size_t Offsets[] = {
@@ -134,35 +131,48 @@ void ValidateLayout()
     std::unordered_map<uint32_t, uint32_t> ArrayElements;
     std::unordered_map<uint32_t, uint32_t> ArrayStrides;
     std::unordered_map<uint32_t, std::unordered_map<uint32_t, uint32_t>> MemberOffsets;
-    for (std::size_t Position = 5; Position < Spirv.size();) {
-        const uint32_t Count = Spirv[Position] >> 16;
-        const uint32_t Opcode = Spirv[Position] & 0xFFFF;
-        X_ASSERT(Count == 0 || Count > Spirv.size() - Position, "Invalid material SPIR-V instruction");
+
+    for (std::size_t Position = 5; Position < ValidateShader.size();) {
+        const uint32_t Count = ValidateShader[Position] >> 16;
+        const uint32_t Opcode = ValidateShader[Position] & 0xFFFF;
+
+        X_ASSERT(Count == 0 || Count > ValidateShader.size() - Position, "invalid material spir-v instruction");
+
         if (Opcode == OpTypeRuntimeArray && Count == 3) {
-            ArrayElements[Spirv[Position + 1]] = Spirv[Position + 2];
+            ArrayElements[ValidateShader[Position + 1]] = ValidateShader[Position + 2];
         }
-        if (Opcode == OpDecorate && Count == 4 && Spirv[Position + 2] == DecorationArrayStride) {
-            ArrayStrides[Spirv[Position + 1]] = Spirv[Position + 3];
+
+        if (Opcode == OpDecorate && Count == 4 && ValidateShader[Position + 2] == DecorationArrayStride) {
+            ArrayStrides[ValidateShader[Position + 1]] = ValidateShader[Position + 3];
         }
-        if (Opcode == OpMemberDecorate && Count == 5 && Spirv[Position + 3] == DecorationOffset) {
-            MemberOffsets[Spirv[Position + 1]][Spirv[Position + 2]] = Spirv[Position + 4];
+
+        if (Opcode == OpMemberDecorate && Count == 5 && ValidateShader[Position + 3] == DecorationOffset) {
+            MemberOffsets[ValidateShader[Position + 1]][ValidateShader[Position + 2]] = ValidateShader[Position + 4];
         }
+
         Position += Count;
     }
 
     bool Matched = false;
+
     for (const auto& [Array, Element] : ArrayElements) {
         const auto Members = MemberOffsets.find(Element);
+
         if (Members == MemberOffsets.end() || Members->second.size() != sizeof(Offsets) / sizeof(Offsets[0])) {
             continue;
         }
+
         X_ASSERT(ArrayStrides[Array] != sizeof(MaterialData), "MaterialData GPU array stride mismatch");
+
         for (uint32_t I = 0; I < sizeof(Offsets) / sizeof(Offsets[0]); ++I) {
             const auto Offset = Members->second.find(I);
+
             X_ASSERT(Offset == Members->second.end() || Offset->second != Offsets[I], "MaterialData GPU member offset mismatch");
         }
+
         Matched = true;
     }
+
     X_ASSERT(!Matched, "MaterialData layout was not found in SPIR-V");
 }
 
