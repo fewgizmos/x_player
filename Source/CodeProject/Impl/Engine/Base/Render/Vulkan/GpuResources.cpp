@@ -111,7 +111,28 @@ void FlushImageUpload(VkCommandBuffer p_Cmd, const PendingImageUpload& p_Upload)
         &Region
     );
 
-    GenerateMips(p_Cmd, p_Upload);
+    if (!Device::GetQueues().DedicatedTransfer) {
+        GenerateMips(p_Cmd, p_Upload);
+        return;
+    }
+
+    if (p_Upload.MipLevels == 1) {
+        TransitionMips(
+            p_Cmd,
+            p_Upload.Target,
+            0,
+            1,
+            p_Upload.ArrayLayers,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+            VK_ACCESS_2_TRANSFER_WRITE_BIT,
+            VK_PIPELINE_STAGE_2_NONE,
+            0
+        );
+        return;
+    }
+
 }
 
 void GenerateMips(VkCommandBuffer p_Cmd, const PendingImageUpload& p_Upload)
@@ -196,6 +217,7 @@ void GenerateMips(VkCommandBuffer p_Cmd, const PendingImageUpload& p_Upload)
         VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
         VK_ACCESS_2_SHADER_SAMPLED_READ_BIT
     );
+
 }
 
 }
@@ -251,6 +273,44 @@ void RecordImageUpload(
     Upload.ArrayLayers = p_Target.ArrayLayers;
 
     FlushImageUpload(p_Cmd, Upload);
+}
+
+void RecordImageUploadChunk(VkCommandBuffer Cmd, const Image& Target, const Buffer& Staging,
+    VkDeviceSize StagingOffset, uint32_t FirstRow, uint32_t RowCount,
+    bool FirstChunk, bool LastChunk)
+{
+    if (FirstChunk) {
+        TransitionMips(Cmd, Target.Handle, 0, 1, Target.ArrayLayers,
+            VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_PIPELINE_STAGE_2_NONE, 0, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
+            VK_ACCESS_2_TRANSFER_WRITE_BIT);
+    }
+    VkBufferImageCopy Region{};
+    Region.bufferOffset = StagingOffset;
+    Region.bufferRowLength = Target.Extent.width;
+    Region.bufferImageHeight = RowCount;
+    Region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    Region.imageSubresource.layerCount = Target.ArrayLayers;
+    Region.imageOffset.y = static_cast<int32_t>(FirstRow);
+    Region.imageExtent = { Target.Extent.width, RowCount, 1 };
+    Device::GetDisp().cmdCopyBufferToImage(Cmd, Staging.Handle, Target.Handle,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &Region);
+    if (LastChunk) {
+        TransitionMips(Cmd, Target.Handle, 0, 1, Target.ArrayLayers,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+            VK_PIPELINE_STAGE_2_NONE, 0);
+    }
+}
+
+void RecordImageMipGeneration(VkCommandBuffer p_Cmd, const Image& p_Target)
+{
+    PendingImageUpload Upload;
+    Upload.Target = p_Target.Handle;
+    Upload.Extent = p_Target.Extent;
+    Upload.MipLevels = p_Target.MipLevels;
+    Upload.ArrayLayers = p_Target.ArrayLayers;
+    GenerateMips(p_Cmd, Upload);
 }
 
 void RecordMipGeneration(VkCommandBuffer p_Cmd, const Image& p_Target)

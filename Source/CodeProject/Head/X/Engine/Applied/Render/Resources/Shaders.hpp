@@ -16,6 +16,7 @@ struct ShaderSnapshot
 {
     ::Engine::Base::Render::Pipeline Graphics;
     ::Engine::Base::Render::Pipeline Compute;
+
     uint64_t VersionChecksum = 0;
 };
 
@@ -41,13 +42,16 @@ struct ShaderCreateInfo
 class Shader final : public ::Engine::Util::Applied::Resource
 {
 public:
+    using CreateInfo = ShaderCreateInfo;
+
     explicit Shader(ShaderCreateInfo p_CreateInfo);
     ~Shader() override;
 
-    std::string GetTypeName() const override;
     void BeginLoad() override;
     void Update() override;
     void Unload() override;
+
+    std::string GetTypeName() const override;
 
     const ::Engine::Base::Render::Pipeline& GetGraphicsPipeline() const;
     const ::Engine::Base::Render::Pipeline& GetComputePipeline() const;
@@ -56,11 +60,13 @@ public:
 
 private:
     struct LoadData;
+
     std::shared_ptr<LoadData> LoadState;
-    ShaderCreateInfo CreateInfo;
+    ShaderCreateInfo m_CreateInfo;
 
     ::Engine::Base::Render::Pipeline Graphics;
     ::Engine::Base::Render::Pipeline Compute;
+
     std::shared_ptr<::Engine::Base::Render::ResourceLoader::ResourceJobTicket> GpuTicket;
     std::atomic<std::shared_ptr<const ShaderSnapshot>> Snapshot;
 };

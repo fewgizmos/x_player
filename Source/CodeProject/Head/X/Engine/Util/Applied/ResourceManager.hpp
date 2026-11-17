@@ -30,17 +30,18 @@ public:
     Resource(const Resource&) = delete;
     Resource& operator=(const Resource&) = delete;
 
-    const std::string& GetKey() const;
-    uint64_t GetVersionChecksum() const;
-    uint64_t AdvanceVersionChecksum();
-    virtual std::string GetTypeName() const = 0;
-    ResourceState GetState() const;
-    bool IsReady() const;
-    const std::string& GetFailureReason() const;
-
     virtual void BeginLoad() = 0;
     virtual void Update();
     virtual void Unload() = 0;
+
+    virtual std::string GetTypeName() const = 0;
+
+    const std::string& GetKey() const;
+    uint64_t GetVersionChecksum() const;
+    uint64_t AdvanceVersionChecksum();
+    ResourceState GetState() const;
+    bool IsReady() const;
+    const std::string& GetFailureReason() const;
     void SetState(ResourceState p_State);
     void SetFailed(std::string p_Reason);
     void SetRejected(std::string p_Reason);
@@ -58,32 +59,43 @@ private:
     std::atomic<bool> FailureReported = false;
 };
 
-std::shared_ptr<Resource> Acquire(std::unique_ptr<Resource> p_Resource);
+struct ResourceManageInfo
+{
+    bool UsingCache = true;
+};
+
+std::shared_ptr<Resource> Acquire(
+    std::unique_ptr<Resource> p_Resource,
+    ResourceManageInfo p_ManageInfo = {}
+);
 void UpdateAll();
 
 void CleanExpired();
 
 template<class T>
-class ResourceRef
+class ResourceHandle
 {
-    static_assert(std::is_base_of_v<Resource, T>, "ResourceRef<T> requires a Resource type");
+    static_assert(std::is_base_of_v<Resource, T>, "ResourceHandle<T> requires a Resource type");
 
 public:
-    ResourceRef() = default;
+    ResourceHandle() = default;
 
-    template<class... Arguments>
-        requires std::is_constructible_v<T, Arguments...>
-    explicit ResourceRef(Arguments&&... p_Arguments)
+    explicit ResourceHandle(typename T::CreateInfo p_CreateInfo)
+        : ResourceHandle(ResourceManageInfo{}, std::move(p_CreateInfo))
+    {
+    }
+
+    ResourceHandle(ResourceManageInfo p_ManageInfo, typename T::CreateInfo p_CreateInfo)
         : m_Resource(std::dynamic_pointer_cast<T>(Acquire(
-            std::make_unique<T>(std::forward<Arguments>(p_Arguments)...)
+            std::make_unique<T>(std::move(p_CreateInfo)), p_ManageInfo
         )))
     {
     }
 
-    ResourceRef(const ResourceRef&) = default;
-    ResourceRef(ResourceRef&&) noexcept = default;
-    ResourceRef& operator=(const ResourceRef&) = default;
-    ResourceRef& operator=(ResourceRef&&) noexcept = default;
+    ResourceHandle(const ResourceHandle&) = default;
+    ResourceHandle(ResourceHandle&&) noexcept = default;
+    ResourceHandle& operator=(const ResourceHandle&) = default;
+    ResourceHandle& operator=(ResourceHandle&&) noexcept = default;
 
     T* Get() { return m_Resource.get(); }
     const T* Get() const { return m_Resource.get(); }

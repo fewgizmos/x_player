@@ -8,6 +8,7 @@ PACKAGES=(
     pkg-config
     git
     python3
+    libpng-dev
 
     libvulkan-dev
     vulkan-validationlayers

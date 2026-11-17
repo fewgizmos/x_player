@@ -68,12 +68,12 @@ void Seal()
 {
     std::stable_sort(m_Entries.begin(), m_Entries.end(),
         [](const Entry& p_A, const Entry& B) {
-            return p_A.Order > B.Order;
+            return p_A.Order < B.Order;
         });
 
     std::stable_sort(m_Snapshots.begin(), m_Snapshots.end(),
         [](const SnapshotEntry& p_A, const SnapshotEntry& p_B) {
-            return p_A.Order > p_B.Order;
+            return p_A.Order < p_B.Order;
         });
 
     m_Sealed = true;

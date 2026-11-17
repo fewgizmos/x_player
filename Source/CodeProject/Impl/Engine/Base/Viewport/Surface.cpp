@@ -1,7 +1,7 @@
 #include "X/Engine/Base/Viewport/Surface.hpp"
 
-#include "X/Configs/PreCompiled/Dynamic.hpp"
-#include "X/Configs/Static.hpp"
+#include "X/Project/Configs/PreCompiled/Dynamic.hpp"
+#include "X/Project/Configs/Static.hpp"
 
 #include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
 #include "X/Engine/Base/JobSystem/DeferredTaskRegistration.hpp"

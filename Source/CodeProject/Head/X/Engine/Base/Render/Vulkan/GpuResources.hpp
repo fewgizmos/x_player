@@ -47,6 +47,10 @@ void RecordImageUpload(
     const Buffer& p_Staging,
     VkDeviceSize p_StagingOffset = 0
 );
+void RecordImageUploadChunk(VkCommandBuffer, const Image&, const Buffer&, VkDeviceSize,
+    uint32_t, uint32_t, bool, bool);
+
+void RecordImageMipGeneration(VkCommandBuffer p_Cmd, const Image& p_Target);
 void RecordMipGeneration(VkCommandBuffer p_Cmd, const Image& p_Target);
 
 }

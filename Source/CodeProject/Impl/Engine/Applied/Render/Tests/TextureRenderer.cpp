@@ -2,7 +2,7 @@
 
 #ifdef XP_DEV_FEATURES_ENABLED
 
-#include "X/Configs/Static.hpp"
+#include "X/Project/Configs/Static.hpp"
 
 #include "X/Engine/Util/Applied/ResourceManager.hpp"
 
@@ -44,8 +44,8 @@ using MeshSnapshot     = ::Engine::Applied::Render::Resources::Meshes::MeshSnaps
 using ShaderSnapshot   = ::Engine::Applied::Render::Resources::Shaders::ShaderSnapshot;
 using TextureSnapshot  = ::Engine::Applied::Render::Resources::Textures::TextureSnapshot;
 
-using MeshReference    = ::Engine::Util::Applied::ResourceRef<Mesh>;
-using TextureReference = ::Engine::Util::Applied::ResourceRef<Texture>;
+using MeshReference    = ::Engine::Util::Applied::ResourceHandle<Mesh>;
+using TextureReference = ::Engine::Util::Applied::ResourceHandle<Texture>;
 
 struct PushConstants
 {
@@ -54,7 +54,7 @@ struct PushConstants
     uint32_t SamplerIndex;
 };
 
-Engine::Util::Applied::ResourceRef<
+Engine::Util::Applied::ResourceHandle<
     Engine::Applied::Render::Resources::Shaders::Shader> m_Shader;
 
 std::unique_ptr<MeshReference> m_Mesh;
@@ -101,7 +101,7 @@ void CreatePipeline()
     ShaderInfo.VertexFile = "Tests/TextureTest.vert";
     ShaderInfo.FragmentFile = "Tests/TextureTest.frag";
     ShaderInfo.Graphics = std::move(Info);
-    m_Shader = ::Engine::Util::Applied::ResourceRef<
+    m_Shader = ::Engine::Util::Applied::ResourceHandle<
         ::Engine::Applied::Render::Resources::Shaders::Shader>(std::move(ShaderInfo));
 }
 
@@ -117,7 +117,9 @@ void CreateMesh()
     std::vector<uint32_t> Indices = { 0, 1, 2, 2, 3, 0 };
 
     m_Mesh = std::make_unique<MeshReference>(
-        std::move(Vertices), std::move(Indices)
+        ::Engine::Applied::Render::Resources::Meshes::MeshCreateInfo{
+            std::move(Vertices), std::move(Indices)
+        }
     );
 }
 
@@ -149,15 +151,17 @@ void Init()
 
     CreatePipeline();
     CreateMesh();
-    m_DefaultEngineLogo = std::make_unique<Engine::Util::Applied::ResourceRef<
+    m_DefaultEngineLogo = std::make_unique<Engine::Util::Applied::ResourceHandle<
         Engine::Applied::Render::Resources::Textures::Texture>>(
-        "Resources/Images/DefaultEngineLogo.png",
-        VK_FORMAT_R8G8B8A8_SRGB
+        Engine::Applied::Render::Resources::Textures::TextureCreateInfo{
+            "Resources/Images/DefaultEngineLogo.png",
+            VK_FORMAT_R8G8B8A8_SRGB
+        }
     );
 
-    ::Engine::Base::Render::RenderingPool::Register("texture_test", Render, 5);
+    ::Engine::Base::Render::RenderingPool::Register("texture_test", Render, 800);
     ::Engine::Base::Render::RenderingPool::RegisterSnapshot(
-        "texture_test_snapshot", CaptureFrameSnapshot, 5
+        "texture_test_snapshot", CaptureFrameSnapshot, 800
     );
 }
 

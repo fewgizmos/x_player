@@ -1,6 +1,6 @@
 #include "X/Engine/Util/Timer.hpp"
 
-#include "X/Configs/Static.hpp"
+#include "X/Project/Configs/Static.hpp"
 
 #include <algorithm>
 #include <chrono>

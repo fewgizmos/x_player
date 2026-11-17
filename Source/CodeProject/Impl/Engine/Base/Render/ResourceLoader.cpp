@@ -1,6 +1,6 @@
 #include "X/Engine/Base/Render/ResourceLoader.hpp"
 
-#include "X/Configs/Static.hpp"
+#include "X/Project/Configs/Static.hpp"
 
 #include "X/Engine/Util/Base/Assert.hpp"
 
@@ -41,10 +41,19 @@ struct AcquireBuffer
     VkDeviceSize Size = 0;
 };
 
+struct AcquireImage
+{
+    VkImage Handle = VK_NULL_HANDLE;
+    VkExtent3D Extent = {};
+    uint32_t MipLevels = 1;
+    uint32_t ArrayLayers = 1;
+};
+
 struct PendingAcquire
 {
     uint64_t TransferSubmitValue = 0;
     std::vector<AcquireBuffer> Buffers;
+    std::vector<AcquireImage> Images;
     std::vector<std::shared_ptr<ResourceJobTicket>> Tickets;
 };
 
@@ -97,6 +106,7 @@ struct Batch
 
     std::vector<StagingUse> Staging;
     std::vector<AcquireBuffer> Buffers;
+    std::vector<AcquireImage> Images;
 };
 
 struct PendingGpuJob
@@ -164,6 +174,11 @@ const ::Engine::Base::BootstrapManager::DeferredBootstrapRegistration::CleanRegi
     RegisterClean("resource_loader_cleanup", Cleanup, 61);
 
 void PollCompletedTimelines();
+void RecordAcquire(
+    VkCommandBuffer p_CommandBuffer,
+    const std::vector<AcquireBuffer>& p_Buffers,
+    const std::vector<AcquireImage>& p_Images
+);
 
 bool CanFitBudget(
     const GpuResourceOpsBudget& p_Usage,
@@ -602,6 +617,7 @@ void FinishBatch(Batch& p_Batch)
     p_Batch.Tickets.clear();
     p_Batch.Staging.clear();
     p_Batch.Buffers.clear();
+    p_Batch.Images.clear();
 
     p_Batch.Submitted = false;
     p_Batch.GraphicsSubmitted = false;
@@ -715,6 +731,7 @@ void SubmitTransfer(Batch& p_Batch, const vkb::DispatchTable& p_Disp)
         m_PendingAcquires.push_back({
             p_Batch.TransferSubmitValue,
             p_Batch.Buffers,
+            {},
             p_Batch.Tickets
         });
     }
@@ -789,6 +806,19 @@ void ExecuteBatch(
 
         BeginBatch(p_Batch);
         RecordJobs(p_Batch, p_Jobs, p_Tickets);
+        for (const AcquireImage& Image : p_Batch.Images) {
+            if (Image.MipLevels == 1) {
+                continue;
+            }
+            ::Engine::Base::Render::Vk::GpuResources::RecordImageMipGeneration(
+                p_Batch.GraphicsCommandBuffer,
+                ::Engine::Base::Render::Image{
+                    Image.Handle, VK_NULL_HANDLE, VK_NULL_HANDLE,
+                    Image.Extent, VK_FORMAT_UNDEFINED, Image.MipLevels, Image.ArrayLayers
+                }
+            );
+            p_Batch.GraphicsHasCommands = true;
+        }
         EndBatch(p_Batch);
         SubmitTransfer(p_Batch, Disp);
         SubmitGraphics(p_Batch, Disp);
@@ -856,13 +886,14 @@ void RecordReleaseBuffer(VkCommandBuffer p_CommandBuffer, const AcquireBuffer& p
 
 void RecordAcquire(
     VkCommandBuffer p_CommandBuffer,
-    const std::vector<AcquireBuffer>& p_Buffers
+    const std::vector<AcquireBuffer>& p_Buffers,
+    const std::vector<AcquireImage>& p_Images
 )
 {
     const ::Engine::Base::Render::QueueSet& Queues =
         ::Engine::Base::Render::Vk::Device::GetQueues();
     if (!Queues.DedicatedTransfer
-        || p_Buffers.empty()) {
+        || (p_Buffers.empty() && p_Images.empty())) {
 
         return;
     }
@@ -891,6 +922,33 @@ void RecordAcquire(
         p_CommandBuffer,
         &Dependency
     );
+
+    std::vector<VkImageMemoryBarrier2> Images;
+    Images.reserve(p_Images.size());
+    for (const AcquireImage& Source : p_Images) {
+        VkImageMemoryBarrier2 Barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
+        Barrier.srcStageMask = VK_PIPELINE_STAGE_2_NONE;
+        Barrier.srcAccessMask = 0;
+        Barrier.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+        Barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        Barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        Barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        Barrier.srcQueueFamilyIndex = Queues.TransferFamily;
+        Barrier.dstQueueFamilyIndex = Queues.GraphicsFamily;
+        Barrier.image = Source.Handle;
+        Barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        Barrier.subresourceRange.levelCount = Source.MipLevels;
+        Barrier.subresourceRange.layerCount = Source.ArrayLayers;
+        Images.push_back(Barrier);
+    }
+    if (!Images.empty()) {
+        VkDependencyInfo ImageDependency{ VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
+        ImageDependency.imageMemoryBarrierCount = static_cast<uint32_t>(Images.size());
+        ImageDependency.pImageMemoryBarriers = Images.data();
+        ::Engine::Base::Render::Vk::Device::GetDisp().cmdPipelineBarrier2(
+            p_CommandBuffer, &ImageDependency
+        );
+    }
 }
 
 }
@@ -1377,7 +1435,7 @@ void RecordPendingAcquires(VkCommandBuffer p_CommandBuffer)
 
     uint64_t TransferWaitValue = 0;
     for (const PendingAcquire& Acquire : Acquires) {
-        RecordAcquire(p_CommandBuffer, Acquire.Buffers);
+        RecordAcquire(p_CommandBuffer, Acquire.Buffers, Acquire.Images);
         TransferWaitValue = std::max(TransferWaitValue, Acquire.TransferSubmitValue);
 
         std::lock_guard<std::mutex> Lock(m_Mutex);
@@ -1426,15 +1484,6 @@ uint32_t GetCompletionWaits(CompletionWait* p_Waits, uint32_t p_Capacity)
     const uint64_t TransferWaitValue = m_FrameTransferWaitValue.load(std::memory_order_acquire);
     if (TransferWaitValue != 0) {
         AddWait(m_TransferTimeline, TransferWaitValue);
-    }
-
-    const uint64_t GraphicsValue = m_NextGraphicsValue.load(std::memory_order_acquire);
-    const uint64_t TransferValue = m_NextTransferValue.load(std::memory_order_acquire);
-
-    if (GraphicsValue != 0) {
-        AddWait(m_GraphicsTimeline, GraphicsValue);
-    } else if (TransferValue != 0) {
-        AddWait(m_TransferTimeline, TransferValue);
     }
 
     return Count;
@@ -1497,14 +1546,36 @@ void QueueImageUpload(const Image& p_Target, const void* p_Data, VkDeviceSize p_
     );
 
     ::Engine::Base::Render::Vk::GpuResources::RecordImageUpload(
-        m_ActiveBatch->GraphicsCommandBuffer,
+        m_ActiveBatch->CommandBuffer,
         p_Target,
         Staging,
         Use.Offset
     );
 
     m_ActiveBatch->Staging.push_back(Use);
-    m_ActiveBatch->GraphicsHasCommands = true;
+    if (::Engine::Base::Render::Vk::Device::GetQueues().DedicatedTransfer) {
+        m_ActiveBatch->Images.push_back({ p_Target.Handle, p_Target.Extent, p_Target.MipLevels, p_Target.ArrayLayers });
+    } else {
+        m_ActiveBatch->GraphicsHasCommands = true;
+    }
+}
+
+void QueueImageUploadChunk(const Image& Target, const void* Data, VkDeviceSize Size,
+    uint32_t FirstRow, uint32_t RowCount, bool FirstChunk, bool LastChunk)
+{
+    X_ASSERT(m_ActiveBatch == nullptr, "image upload must be recorded by a frame job");
+    const StagingUse Use = AllocateStaging(true, Size);
+    X_ASSERT(vmaCopyMemoryToAllocation(
+        ::Engine::Base::Render::Vk::GpuResources::GetAllocator(), Data,
+        Use.Block->Resource.Allocation, Use.Offset, Size
+    ) != VK_SUCCESS, "failed to upload staging chunk");
+    ::Engine::Base::Render::Vk::GpuResources::RecordImageUploadChunk(
+        m_ActiveBatch->CommandBuffer, Target, Use.Block->Resource, Use.Offset,
+        FirstRow, RowCount, FirstChunk, LastChunk);
+    m_ActiveBatch->Staging.push_back(Use);
+    if (!::Engine::Base::Render::Vk::Device::GetQueues().DedicatedTransfer) {
+        m_ActiveBatch->GraphicsHasCommands = true;
+    }
 }
 
 Buffer CreateBuffer(
@@ -1593,7 +1664,17 @@ Image CreateImage(
     ImageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
     ImageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
     ImageInfo.usage = p_Usage;
-    ImageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    uint32_t QueueFamilies[2] = {
+        ::Engine::Base::Render::Vk::Device::GetQueues().TransferFamily,
+        ::Engine::Base::Render::Vk::Device::GetQueues().GraphicsFamily
+    };
+    if (::Engine::Base::Render::Vk::Device::GetQueues().DedicatedTransfer) {
+        ImageInfo.sharingMode = VK_SHARING_MODE_CONCURRENT;
+        ImageInfo.queueFamilyIndexCount = 2;
+        ImageInfo.pQueueFamilyIndices = QueueFamilies;
+    } else {
+        ImageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    }
 
     VmaAllocationCreateInfo AllocationInfo{};
     AllocationInfo.usage = VMA_MEMORY_USAGE_AUTO;
@@ -1685,7 +1766,15 @@ VkImageView CreateImageView(
     ViewInfo.image = p_Target.Handle;
     ViewInfo.viewType = p_ViewType;
     ViewInfo.format = p_Target.Format;
-    ViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    ViewInfo.subresourceRange.aspectMask =
+        p_Target.Format == VK_FORMAT_D16_UNORM
+        || p_Target.Format == VK_FORMAT_X8_D24_UNORM_PACK32
+        || p_Target.Format == VK_FORMAT_D32_SFLOAT
+        || p_Target.Format == VK_FORMAT_D16_UNORM_S8_UINT
+        || p_Target.Format == VK_FORMAT_D24_UNORM_S8_UINT
+        || p_Target.Format == VK_FORMAT_D32_SFLOAT_S8_UINT
+        ? VK_IMAGE_ASPECT_DEPTH_BIT
+        : VK_IMAGE_ASPECT_COLOR_BIT;
     ViewInfo.subresourceRange.baseMipLevel = p_BaseMip;
     ViewInfo.subresourceRange.levelCount = p_MipCount;
     ViewInfo.subresourceRange.layerCount = p_Target.ArrayLayers;

@@ -1,7 +1,6 @@
 #include "X/Engine/Util/Applied/ResourceManager.hpp"
 
-#include "X/Configs/PreCompiled/Dynamic.hpp"
-#include "X/Configs/Static.hpp"
+#include "X/Project/Configs/Static.hpp"
 
 #include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
 
@@ -12,7 +11,6 @@
 #include "X/Engine/Base/Runtime/EngineThreadIDs.hpp"
 
 #include <exception>
-#include <iostream>
 #include <mutex>
 #include <unordered_map>
 #include <utility>
@@ -26,6 +24,7 @@ namespace
 
 std::mutex m_ResourcesMutex;
 std::unordered_map<std::string, std::weak_ptr<Resource>> m_Resources;
+std::vector<std::weak_ptr<Resource>> m_ManagedResources;
 
 struct RetiredResource
 {
@@ -67,13 +66,14 @@ void Cleanup()
     {
         std::lock_guard<std::mutex> Lock(m_ResourcesMutex);
 
-        for (const auto& [Key, Weak] : m_Resources) {
+        for (const std::weak_ptr<Resource>& Weak : m_ManagedResources) {
             if (const std::shared_ptr<Resource> ResourceValue = Weak.lock()) {
                 Active.push_back(ResourceValue);
             }
         }
 
         m_Resources.clear();
+        m_ManagedResources.clear();
     }
 
     for (const std::shared_ptr<Resource>& ResourceValue : Active) {
@@ -97,7 +97,7 @@ void Cleanup()
 
 void Init()
 {
-    ::Engine::Base::Render::RenderingPool::Register("resources_collect_retired", CollectRetired, 110);
+    ::Engine::Base::Render::RenderingPool::Register("resources_collect_retired", CollectRetired, 1000);
 }
 
 const ::Engine::Base::BootstrapManager::DeferredBootstrapRegistration::InitRegistrar
@@ -183,18 +183,20 @@ bool Resource::TryMarkFailureReported()
     return FailureReported.compare_exchange_strong(Expected, true);
 }
 
-std::shared_ptr<Resource> Acquire(std::unique_ptr<Resource> p_Resource)
+std::shared_ptr<Resource> Acquire(std::unique_ptr<Resource> p_Resource, ResourceManageInfo p_ManageInfo)
 {
     const std::string CacheKey = MakeCacheKey(*p_Resource);
 
     std::lock_guard<std::mutex> Lock(m_ResourcesMutex);
 
-    if (const auto Found = m_Resources.find(CacheKey); Found != m_Resources.end()) {
-        if (std::shared_ptr<Resource> Existing = Found->second.lock()) {
-            return Existing;
-        }
+    if (p_ManageInfo.UsingCache) {
+        if (const auto Found = m_Resources.find(CacheKey); Found != m_Resources.end()) {
+            if (std::shared_ptr<Resource> Existing = Found->second.lock()) {
+                return Existing;
+            }
 
-        m_Resources.erase(Found);
+            m_Resources.erase(Found);
+        }
     }
 
     std::shared_ptr<Resource> Shared(
@@ -204,7 +206,12 @@ std::shared_ptr<Resource> Acquire(std::unique_ptr<Resource> p_Resource)
             m_Retired.push_back({ p_Resource });
         }
     );
-    m_Resources.emplace(CacheKey, Shared);
+    m_ManagedResources.push_back(Shared);
+
+    if (p_ManageInfo.UsingCache) {
+        m_Resources.emplace(CacheKey, Shared);
+    }
+
     Shared->BeginLoad();
 
     return Shared;
@@ -217,12 +224,12 @@ void UpdateAll()
     {
         std::lock_guard<std::mutex> Lock(m_ResourcesMutex);
 
-        for (auto It = m_Resources.begin(); It != m_Resources.end();) {
-            if (std::shared_ptr<Resource> Resource = It->second.lock()) {
+        for (auto It = m_ManagedResources.begin(); It != m_ManagedResources.end();) {
+            if (std::shared_ptr<Resource> Resource = It->lock()) {
                 Active.push_back(std::move(Resource));
                 ++It;
             } else {
-                It = m_Resources.erase(It);
+                It = m_ManagedResources.erase(It);
             }
         }
     }
@@ -262,6 +269,14 @@ void CleanExpired()
     for (auto It = m_Resources.begin(); It != m_Resources.end();) {
         if (It->second.expired()) {
             It = m_Resources.erase(It);
+        } else {
+            ++It;
+        }
+    }
+
+    for (auto It = m_ManagedResources.begin(); It != m_ManagedResources.end();) {
+        if (It->expired()) {
+            It = m_ManagedResources.erase(It);
         } else {
             ++It;
         }

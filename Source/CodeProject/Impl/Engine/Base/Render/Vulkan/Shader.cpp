@@ -1,6 +1,6 @@
 #include "X/Engine/Base/Render/Vulkan/Shader.hpp"
 
-#include "X/Configs/Static.hpp"
+#include "X/Project/Configs/Static.hpp"
 
 #include "X/Engine/Base/Render/Vulkan/Device.hpp"
 

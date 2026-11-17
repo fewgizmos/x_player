@@ -2,7 +2,7 @@
 
 #ifdef XP_DEV_FEATURES_ENABLED
 
-#include "X/Configs/Static.hpp"
+#include "X/Project/Configs/Static.hpp"
 
 #include "X/Engine/Util/Applied/ResourceManager.hpp"
 
@@ -44,9 +44,9 @@ struct PushConstants
     glm::mat4 Projection;
 };
 
-::Engine::Util::Applied::ResourceRef<Engine::Applied::Render::Resources::Shaders::Shader> m_Shader;
+::Engine::Util::Applied::ResourceHandle<Engine::Applied::Render::Resources::Shaders::Shader> m_Shader;
 
-std::unique_ptr<::Engine::Util::Applied::ResourceRef<
+std::unique_ptr<::Engine::Util::Applied::ResourceHandle<
     ::Engine::Applied::Render::Resources::Meshes::Mesh>> m_Mesh;
 
 std::shared_ptr<const MeshSnapshot>   m_FrameMesh;
@@ -81,7 +81,7 @@ void CreatePipeline()
     ShaderInfo.VertexFile = "Tests/TriangleTest.vert";
     ShaderInfo.FragmentFile = "Tests/TriangleTest.frag";
     ShaderInfo.Graphics = std::move(Info);
-    m_Shader = ::Engine::Util::Applied::ResourceRef<
+    m_Shader = ::Engine::Util::Applied::ResourceHandle<
         ::Engine::Applied::Render::Resources::Shaders::Shader>(std::move(ShaderInfo));
 }
 
@@ -96,8 +96,10 @@ void CreateMesh()
         { {  0.0f,  1.0f, 0.0f }, 0.0f, {}, 0.0f, {}, { 0.0f, 0.0f, 1.0f, 1.0f } }
     };
     std::vector<uint32_t> Indices = { 0, 1, 2 };
-    m_Mesh = std::make_unique<::Engine::Util::Applied::ResourceRef<Mesh>>(
-        std::move(Vertices), std::move(Indices)
+    m_Mesh = std::make_unique<::Engine::Util::Applied::ResourceHandle<Mesh>>(
+        ::Engine::Applied::Render::Resources::Meshes::MeshCreateInfo{
+            std::move(Vertices), std::move(Indices)
+        }
     );
 }
 
@@ -123,9 +125,9 @@ void Init()
     CreatePipeline();
     CreateMesh();
 
-    ::Engine::Base::Render::RenderingPool::Register("triangle_test", Render, 10);
+    ::Engine::Base::Render::RenderingPool::Register("triangle_test", Render, 700);
     ::Engine::Base::Render::RenderingPool::RegisterSnapshot(
-        "triangle_test_snapshot", CaptureFrameSnapshot, 10
+        "triangle_test_snapshot", CaptureFrameSnapshot, 700
     );
 }
 

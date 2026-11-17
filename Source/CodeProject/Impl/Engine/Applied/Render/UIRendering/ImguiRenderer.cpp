@@ -3,7 +3,7 @@
 #include "X/Engine/Applied/Render/UIRendering/Resources/Fonts.hpp"
 #include "X/Engine/Applied/Render/UIRendering/ImGuiScaler.hpp"
 
-#include "X/Configs/Static.hpp"
+#include "X/Project/Configs/Static.hpp"
 
 #include "X/Engine/Util/Base/Assert.hpp"
 #include "X/Engine/Util/File.hpp"
@@ -31,6 +31,7 @@
 
 #include <cstdint>
 #include <mutex>
+#include <string>
 #include <vector>
 
 namespace Engine::Applied::Render::UI::ImguiRenderer
@@ -80,7 +81,9 @@ void UploadFontTexture()
 std::vector<uint32_t> CompileVertexShader()
 {
     return ::Engine::Base::Render::Vk::Shader::CompileGlsl(
-        ::Engine::Util::File::ReadRaw("Resources/Shaders/UI/ImGui.vert"),
+        ::Engine::Util::File::ReadRaw(
+            std::string(::Engine::Configs::Static::Graphics::SHADERS_DIR) + "UI/ImGui.vert"
+        ),
         ::Engine::Base::Render::ShaderStage::Vertex,
         "UI/ImGui.vert"
     );
@@ -123,11 +126,11 @@ void Init()
     Info.CustomShaderVertCreateInfo.codeSize = VertexShader.size() * sizeof(uint32_t);
     Info.CustomShaderVertCreateInfo.pCode = VertexShader.data();
 
-    X_ASSERT(!ImGui_ImplVulkan_Init(&Info), "Failed to initialize ImGui Vulkan backend");
+    X_ASSERT(!ImGui_ImplVulkan_Init(&Info), "failed to initialize ImGui Vulkan backend");
 
     ::Engine::Applied::Render::UI::ImGuiScaler::Init();
 
-    ::Engine::Base::Render::RenderingPool::Register("imgui", Render, 0);
+    ::Engine::Base::Render::RenderingPool::Register("imgui", Render, 1000);
 }
 
 void Cleanup()

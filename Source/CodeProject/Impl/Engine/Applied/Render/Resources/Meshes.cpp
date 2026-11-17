@@ -1,6 +1,6 @@
 #include "X/Engine/Applied/Render/Resources/Meshes.hpp"
 
-#include "X/Configs/Static.hpp"
+#include "X/Project/Configs/Static.hpp"
 
 #include "X/Engine/Base/JobSystem/JobManager.hpp"
 #include "X/Engine/Base/Render/ResourceLoader.hpp"
@@ -19,6 +19,21 @@
 
 namespace Engine::Applied::Render::Resources::Meshes
 {
+
+struct MeshMorphTarget::LoadData
+{
+    std::mutex Mutex;
+
+    std::vector<glm::vec3> PositionDeltas;
+    std::vector<glm::vec3> NormalDeltas;
+
+    ::Engine::Base::Render::Buffer PositionBuffer;
+    ::Engine::Base::Render::Buffer NormalBuffer;
+
+    std::string FailureReason;
+    bool Failed = false;
+    bool UploadRejected = false;
+};
 
 struct Mesh::LoadData
 {
@@ -89,10 +104,10 @@ uint32_t MortonCode(const glm::vec3& p_Point, const glm::vec3& p_Min, const glm:
 
 }
 
-Mesh::Mesh(std::vector<Vertex> p_Vertices, std::vector<uint32_t> p_Indices)
-    : Resource(std::to_string(HashBytes(p_Vertices)) + ":" + std::to_string(HashBytes(p_Indices)))
-    , m_Vertices(std::move(p_Vertices))
-    , m_Indices(std::move(p_Indices))
+Mesh::Mesh(CreateInfo p_CreateInfo)
+    : Resource(std::to_string(HashBytes(p_CreateInfo.Vertices)) + ":" + std::to_string(HashBytes(p_CreateInfo.Indices)))
+    , m_Vertices(std::move(p_CreateInfo.Vertices))
+    , m_Indices(std::move(p_CreateInfo.Indices))
     , m_VertexCount(static_cast<uint32_t>(m_Vertices.size()))
     , m_IndexCount(static_cast<uint32_t>(m_Indices.size()))
     , LoadDataState(std::make_shared<LoadData>())
@@ -100,6 +115,201 @@ Mesh::Mesh(std::vector<Vertex> p_Vertices, std::vector<uint32_t> p_Indices)
 }
 
 Mesh::~Mesh() = default;
+
+MeshSkeleton::MeshSkeleton(CreateInfo p_CreateInfo)
+    : Resource(std::to_string(p_CreateInfo.ParentIndices.size()) + ":"
+        + std::to_string(p_CreateInfo.InverseBindMatrices.size()))
+    , m_CreateInfo(std::move(p_CreateInfo))
+{
+}
+
+MeshSkeleton::~MeshSkeleton() = default;
+
+std::string MeshSkeleton::GetTypeName() const
+{
+    return "MeshSkeleton";
+}
+
+void MeshSkeleton::BeginLoad()
+{
+    SetState(::Engine::Util::Applied::ResourceState::Ready);
+}
+
+void MeshSkeleton::Unload()
+{
+    m_CreateInfo = {};
+    SetState(::Engine::Util::Applied::ResourceState::Unloading);
+}
+
+const MeshSkeleton::CreateInfo& MeshSkeleton::GetData() const
+{
+    return m_CreateInfo;
+}
+
+MeshMorphTarget::MeshMorphTarget(CreateInfo p_CreateInfo)
+    : Resource(p_CreateInfo.Name + ":" + std::to_string(p_CreateInfo.PositionDeltas.size()))
+    , m_CreateInfo(std::move(p_CreateInfo))
+    , m_LoadData(std::make_shared<LoadData>())
+{
+}
+
+MeshMorphTarget::~MeshMorphTarget() = default;
+
+std::string MeshMorphTarget::GetTypeName() const
+{
+    return "MeshMorphTarget";
+}
+
+void MeshMorphTarget::BeginLoad()
+{
+    AdvanceVersionChecksum();
+    m_GpuTicket.reset();
+    m_Snapshot.store(nullptr, std::memory_order_release);
+    m_LoadData = std::make_shared<LoadData>();
+
+    std::lock_guard<std::mutex> Lock(m_LoadData->Mutex);
+    m_LoadData->PositionDeltas = m_CreateInfo.PositionDeltas;
+    m_LoadData->NormalDeltas = m_CreateInfo.NormalDeltas;
+    SetState(::Engine::Util::Applied::ResourceState::LoadingCpu);
+}
+
+void MeshMorphTarget::Update()
+{
+    if (GetState() != ::Engine::Util::Applied::ResourceState::LoadingCpu
+        && GetState() != ::Engine::Util::Applied::ResourceState::QueuedGpu
+        && GetState() != ::Engine::Util::Applied::ResourceState::Uploading) {
+
+        return;
+    }
+
+    if (m_GpuTicket) {
+        if (!m_GpuTicket->Done.load(std::memory_order_acquire)) {
+            SetState(::Engine::Util::Applied::ResourceState::Uploading);
+
+            return;
+        }
+
+        if (m_GpuTicket->Rejected.load(std::memory_order_acquire)) {
+            SetRejected(m_GpuTicket->FailureReason);
+
+            return;
+        }
+
+        if (m_GpuTicket->Failed.load(std::memory_order_acquire)) {
+            SetFailed(m_GpuTicket->FailureReason);
+
+            return;
+        }
+
+        bool UploadRejected = false;
+        {
+            std::lock_guard<std::mutex> Lock(m_LoadData->Mutex);
+            UploadRejected = m_LoadData->UploadRejected;
+        }
+
+        if (UploadRejected) {
+            SetRejected("morph target GPU job is stale");
+
+            return;
+        }
+
+        std::shared_ptr<MeshMorphTargetSnapshot> Snapshot =
+            std::make_shared<MeshMorphTargetSnapshot>();
+        Snapshot->PositionBuffer = m_LoadData->PositionBuffer;
+        Snapshot->NormalBuffer = m_LoadData->NormalBuffer;
+        Snapshot->VertexCount = static_cast<uint32_t>(m_CreateInfo.PositionDeltas.size());
+        Snapshot->VersionChecksum = GetVersionChecksum();
+        m_Snapshot.store(
+            std::shared_ptr<const MeshMorphTargetSnapshot>(std::move(Snapshot)),
+            std::memory_order_release
+        );
+        SetState(::Engine::Util::Applied::ResourceState::Ready);
+
+        return;
+    }
+
+    const std::shared_ptr<LoadData> Data = m_LoadData;
+    const uint64_t VersionChecksum = GetVersionChecksum();
+    const VkDeviceSize PositionBytes = sizeof(glm::vec3) * Data->PositionDeltas.size();
+    const VkDeviceSize NormalBytes = sizeof(glm::vec3) * Data->NormalDeltas.size();
+
+    SetState(::Engine::Util::Applied::ResourceState::QueuedGpu);
+    m_GpuTicket = ::Engine::Base::Render::ResourceLoader::PushFrameJobVk(
+        [Data, VersionChecksum](VkCommandBuffer) {
+            if (VersionChecksum == 0) {
+                std::lock_guard<std::mutex> Lock(Data->Mutex);
+                Data->UploadRejected = true;
+
+                return;
+            }
+
+            try {
+                std::lock_guard<std::mutex> Lock(Data->Mutex);
+                if (!Data->PositionDeltas.empty()) {
+                    Data->PositionBuffer = ::Engine::Base::Render::ResourceLoader::CreateBuffer(
+                        sizeof(glm::vec3) * Data->PositionDeltas.size(),
+                        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
+                    );
+                    ::Engine::Base::Render::ResourceLoader::QueueBufferUpload(
+                        Data->PositionBuffer,
+                        Data->PositionDeltas.data(),
+                        Data->PositionBuffer.Size
+                    );
+                }
+
+                if (!Data->NormalDeltas.empty()) {
+                    Data->NormalBuffer = ::Engine::Base::Render::ResourceLoader::CreateBuffer(
+                        sizeof(glm::vec3) * Data->NormalDeltas.size(),
+                        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
+                    );
+                    ::Engine::Base::Render::ResourceLoader::QueueBufferUpload(
+                        Data->NormalBuffer,
+                        Data->NormalDeltas.data(),
+                        Data->NormalBuffer.Size
+                    );
+                }
+            }
+            catch (...) {
+                ::Engine::Base::Render::ResourceLoader::DestroyBuffer(Data->PositionBuffer);
+                ::Engine::Base::Render::ResourceLoader::DestroyBuffer(Data->NormalBuffer);
+                throw;
+            }
+        },
+        ::Engine::Configs::Static::ResourceLoader::GPU_OPS_NORMAL_ORDER,
+        {
+            PositionBytes + NormalBytes,
+            static_cast<uint32_t>((PositionBytes != 0) + (NormalBytes != 0)),
+            static_cast<uint32_t>((PositionBytes != 0) + (NormalBytes != 0)),
+            0,
+            0
+        }
+    );
+    m_GpuTicket->VersionChecksum = VersionChecksum;
+}
+
+void MeshMorphTarget::Unload()
+{
+    m_GpuTicket.reset();
+    m_Snapshot.store(nullptr, std::memory_order_release);
+
+    if (m_LoadData) {
+        ::Engine::Base::Render::ResourceLoader::DestroyBuffer(m_LoadData->PositionBuffer);
+        ::Engine::Base::Render::ResourceLoader::DestroyBuffer(m_LoadData->NormalBuffer);
+    }
+
+    m_CreateInfo = {};
+    SetState(::Engine::Util::Applied::ResourceState::Unloading);
+}
+
+const MeshMorphTarget::CreateInfo& MeshMorphTarget::GetData() const
+{
+    return m_CreateInfo;
+}
+
+std::shared_ptr<const MeshMorphTargetSnapshot> MeshMorphTarget::GetSnapshot() const
+{
+    return m_Snapshot.load(std::memory_order_acquire);
+}
 
 std::string Mesh::GetTypeName() const
 {

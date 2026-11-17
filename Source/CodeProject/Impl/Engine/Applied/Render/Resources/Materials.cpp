@@ -1,6 +1,6 @@
 #include "X/Engine/Applied/Render/Resources/Materials.hpp"
 
-#include "X/Configs/Static.hpp"
+#include "X/Project/Configs/Static.hpp"
 
 #include "X/Engine/Util/Base/Assert.hpp"
 #include "X/Engine/Util/File.hpp"
@@ -38,8 +38,11 @@ struct Material::LoadData
 {
     std::mutex Mutex;
     MaterialData Data = {};
+
     uint64_t VersionChecksum = 0;
+
     std::string FailureReason;
+
     bool Finished = false;
     bool Failed = false;
 };
@@ -432,8 +435,10 @@ bool TextureFailed(
     if (p_Texture.Target.GetState() == ::Engine::Util::Applied::ResourceState::Failed
         || p_Texture.Target.GetState() == ::Engine::Util::Applied::ResourceState::Rejected) {
         p_Reason = p_Texture.Target->GetKey() + ": " + p_Texture.Target->GetFailureReason();
+
         p_Rejected = p_Texture.Target.GetState()
             == ::Engine::Util::Applied::ResourceState::Rejected;
+
         return true;
     }
 
@@ -465,6 +470,7 @@ bool TexturesReady(
     };
 
     bool Ready = true;
+
     for (const MaterialTexture* Texture : Textures) {
         if (TextureFailed(*Texture, p_Reason, p_Rejected)) {
             return false;
@@ -483,14 +489,17 @@ void SetTexture(MaterialData& p_Data, uint32_t p_Slot, const MaterialTexture& p_
     if (!p_Source.Target) {
         p_TextureIndex = NO_TEXTURE;
         p_SamplerIndex = 0;
+
         return;
     }
 
     const std::shared_ptr<const ::Engine::Applied::Render::Resources::Textures::TextureSnapshot> Snapshot =
         p_Source.Target->GetSnapshot();
+
     if (!Snapshot) {
         p_TextureIndex = NO_TEXTURE;
         p_SamplerIndex = 0;
+
         return;
     }
 
@@ -505,7 +514,7 @@ void SetTexture(MaterialData& p_Data, uint32_t p_Slot, const MaterialTexture& p_
 
 Material::Material(MaterialCreateInfo p_CreateInfo)
     : Resource(MakeKey(p_CreateInfo))
-    , CreateInfo(std::move(p_CreateInfo))
+    , m_CreateInfo(std::move(p_CreateInfo))
     , LoadState(std::make_shared<LoadData>())
 {
 }
@@ -533,13 +542,15 @@ void Material::BeginLoad()
     m_GpuTicket.reset();
     Index = UINT32_MAX;
 
-    if (!CreateInfo.TargetShader) {
-        SetFailed("Material requires Shader Ref");
+    if (!m_CreateInfo.TargetShader) {
+        SetFailed("material requires Shader Ref");
+
         return;
     }
 
     const std::shared_ptr<LoadData> DataState = LoadState;
-    const MaterialCreateInfo Info = CreateInfo;
+    const MaterialCreateInfo Info = m_CreateInfo;
+
     DataState->VersionChecksum = GetVersionChecksum();
 
     ::Engine::Base::JobSystem::It::PushBackground(
@@ -550,10 +561,12 @@ void Material::BeginLoad()
                 ValidateAbi();
                 DataState->Data = BuildBaseData(Info);
             }
+
             catch (const std::exception& Error) {
                 DataState->FailureReason = Error.what();
                 DataState->Failed = true;
             }
+
             catch (...) {
                 DataState->FailureReason = "unknown material preparation failure";
                 DataState->Failed = true;
@@ -570,47 +583,58 @@ void Material::Update()
     if (GetState() != ::Engine::Util::Applied::ResourceState::LoadingCpu
         && GetState() != ::Engine::Util::Applied::ResourceState::QueuedGpu
         && GetState() != ::Engine::Util::Applied::ResourceState::Uploading) {
+
         return;
     }
 
     if (m_GpuTicket) {
         if (!m_GpuTicket->Done.load(std::memory_order_acquire)) {
             SetState(::Engine::Util::Applied::ResourceState::Uploading);
+
             return;
         }
 
         if (m_GpuTicket->Rejected.load(std::memory_order_acquire)) {
             SetRejected(m_GpuTicket->FailureReason);
+
             return;
         }
 
         if (m_GpuTicket->Failed.load(std::memory_order_acquire)) {
             SetFailed(m_GpuTicket->FailureReason);
+
             return;
         }
 
         SetState(::Engine::Util::Applied::ResourceState::Ready);
 
         const std::shared_ptr<MaterialSnapshot> Snapshot = std::make_shared<MaterialSnapshot>();
+
         Snapshot->Data = Data;
         Snapshot->Index = Index;
         Snapshot->VersionChecksum = GetVersionChecksum();
+
         m_Snapshot.store(
             std::shared_ptr<const MaterialSnapshot>(Snapshot),
             std::memory_order_release
         );
+
         return;
     }
 
-    if (CreateInfo.TargetShader.GetState() == ::Engine::Util::Applied::ResourceState::Failed) {
-        SetFailed("Shader dependency failed: " + CreateInfo.TargetShader->GetFailureReason());
+    if (m_CreateInfo.TargetShader.GetState() == ::Engine::Util::Applied::ResourceState::Failed) {
+        SetFailed("Shader dependency failed: " + m_CreateInfo.TargetShader->GetFailureReason());
+
         return;
     }
-    if (CreateInfo.TargetShader.GetState() == ::Engine::Util::Applied::ResourceState::Rejected) {
-        SetRejected("Shader dependency rejected: " + CreateInfo.TargetShader->GetFailureReason());
+
+    if (m_CreateInfo.TargetShader.GetState() == ::Engine::Util::Applied::ResourceState::Rejected) {
+        SetRejected("Shader dependency rejected: " + m_CreateInfo.TargetShader->GetFailureReason());
+
         return;
     }
-    if (!CreateInfo.TargetShader.IsReady()) {
+
+    if (!m_CreateInfo.TargetShader.IsReady()) {
         return;
     }
 
@@ -623,11 +647,13 @@ void Material::Update()
 
         if (LoadState->VersionChecksum != GetVersionChecksum()) {
             SetRejected("material CPU job version is stale");
+
             return;
         }
 
         if (LoadState->Failed) {
             SetFailed(LoadState->FailureReason);
+
             return;
         }
 
@@ -637,7 +663,7 @@ void Material::Update()
     std::string FailureReason;
     bool DependencyRejected = false;
 
-    if (!TexturesReady(CreateInfo, FailureReason, DependencyRejected)) {
+    if (!TexturesReady(m_CreateInfo, FailureReason, DependencyRejected)) {
         if (!FailureReason.empty()) {
             if (DependencyRejected) {
                 SetRejected("texture dependency rejected: " + FailureReason);
@@ -645,33 +671,34 @@ void Material::Update()
                 SetFailed("texture dependency failed: " + FailureReason);
             }
         }
+
         return;
     }
 
-    SetTexture(Data, 0, CreateInfo.BaseColorTexture, Data.BaseColorTexture, Data.BaseColorSampler);
-    SetTexture(Data, 1, CreateInfo.MetallicRoughnessTexture, Data.MetallicRoughnessTexture, Data.MetallicRoughnessSampler);
-    SetTexture(Data, 2, CreateInfo.NormalTexture, Data.NormalTexture, Data.NormalSampler);
-    SetTexture(Data, 3, CreateInfo.OcclusionTexture, Data.OcclusionTexture, Data.OcclusionSampler);
-    SetTexture(Data, 4, CreateInfo.EmissiveTexture, Data.EmissiveTexture, Data.EmissiveSampler);
-    SetTexture(Data, 5, CreateInfo.SpecularTexture, Data.SpecularTexture, Data.SpecularSampler);
-    SetTexture(Data, 6, CreateInfo.SpecularColorTexture, Data.SpecularColorTexture, Data.SpecularColorSampler);
-    SetTexture(Data, 7, CreateInfo.DiffuseTransmissionTexture, Data.DiffuseTransmissionTexture, Data.DiffuseTransmissionSampler);
-    SetTexture(Data, 8, CreateInfo.DiffuseTransmissionColorTexture, Data.DiffuseTransmissionColorTexture, Data.DiffuseTransmissionColorSampler);
-    SetTexture(Data, 9, CreateInfo.ClearcoatTexture, Data.ClearcoatTexture, Data.ClearcoatSampler);
-    SetTexture(Data, 10, CreateInfo.ClearcoatRoughnessTexture, Data.ClearcoatRoughnessTexture, Data.ClearcoatRoughnessSampler);
-    SetTexture(Data, 11, CreateInfo.ClearcoatNormalTexture, Data.ClearcoatNormalTexture, Data.ClearcoatNormalSampler);
-    SetTexture(Data, 12, CreateInfo.SheenColorTexture, Data.SheenColorTexture, Data.SheenColorSampler);
-    SetTexture(Data, 13, CreateInfo.SheenRoughnessTexture, Data.SheenRoughnessTexture, Data.SheenRoughnessSampler);
+    SetTexture(Data, 0, m_CreateInfo.BaseColorTexture, Data.BaseColorTexture, Data.BaseColorSampler);
+    SetTexture(Data, 1, m_CreateInfo.MetallicRoughnessTexture, Data.MetallicRoughnessTexture, Data.MetallicRoughnessSampler);
+    SetTexture(Data, 2, m_CreateInfo.NormalTexture, Data.NormalTexture, Data.NormalSampler);
+    SetTexture(Data, 3, m_CreateInfo.OcclusionTexture, Data.OcclusionTexture, Data.OcclusionSampler);
+    SetTexture(Data, 4, m_CreateInfo.EmissiveTexture, Data.EmissiveTexture, Data.EmissiveSampler);
+    SetTexture(Data, 5, m_CreateInfo.SpecularTexture, Data.SpecularTexture, Data.SpecularSampler);
+    SetTexture(Data, 6, m_CreateInfo.SpecularColorTexture, Data.SpecularColorTexture, Data.SpecularColorSampler);
+    SetTexture(Data, 7, m_CreateInfo.DiffuseTransmissionTexture, Data.DiffuseTransmissionTexture, Data.DiffuseTransmissionSampler);
+    SetTexture(Data, 8, m_CreateInfo.DiffuseTransmissionColorTexture, Data.DiffuseTransmissionColorTexture, Data.DiffuseTransmissionColorSampler);
+    SetTexture(Data, 9, m_CreateInfo.ClearcoatTexture, Data.ClearcoatTexture, Data.ClearcoatSampler);
+    SetTexture(Data, 10, m_CreateInfo.ClearcoatRoughnessTexture, Data.ClearcoatRoughnessTexture, Data.ClearcoatRoughnessSampler);
+    SetTexture(Data, 11, m_CreateInfo.ClearcoatNormalTexture, Data.ClearcoatNormalTexture, Data.ClearcoatNormalSampler);
+    SetTexture(Data, 12, m_CreateInfo.SheenColorTexture, Data.SheenColorTexture, Data.SheenColorSampler);
+    SetTexture(Data, 13, m_CreateInfo.SheenRoughnessTexture, Data.SheenRoughnessTexture, Data.SheenRoughnessSampler);
 
-    if (CreateInfo.HeightTexture.Target) {
+    if (m_CreateInfo.HeightTexture.Target) {
         const std::shared_ptr<const ::Engine::Applied::Render::Resources::Textures::TextureSnapshot> Snapshot =
-            CreateInfo.HeightTexture.Target->GetSnapshot();
+            m_CreateInfo.HeightTexture.Target->GetSnapshot();
         if (!Snapshot) {
             return;
         }
 
         Data.HeightTexture = Snapshot->Index;
-        Data.HeightSampler = ::Engine::Base::Render::Vk::Samplers::Make(CreateInfo.HeightTexture.Sampler);
+        Data.HeightSampler = ::Engine::Base::Render::Vk::Samplers::Make(m_CreateInfo.HeightTexture.Sampler);
         ::Engine::Applied::Render::Resources::Textures::SyncSamplers();
     }
 
@@ -721,21 +748,26 @@ void CaptureFrameSnapshot()
 }
 
 uint32_t Material::GetIndex() const { return Index; }
+
 const MaterialData& Material::GetData() const { return Data; }
-bool Material::IsDoubleSided() const { return CreateInfo.DoubleSided; }
-bool Material::CastsShadows() const { return CreateInfo.CastShadows; }
-AlphaMode Material::GetAlphaMode() const { return CreateInfo.Alpha; }
-const ::Engine::Util::Applied::ResourceRef<
-    ::Engine::Applied::Render::Resources::Shaders::Shader>& Material::GetShader() const { return CreateInfo.TargetShader; }
-VkDescriptorSet Material::GetExtraSet() const { return CreateInfo.ExtraSet; }
+
+bool Material::IsDoubleSided() const { return m_CreateInfo.DoubleSided; }
+bool Material::CastsShadows() const { return m_CreateInfo.CastShadows; }
+
+AlphaMode Material::GetAlphaMode() const { return m_CreateInfo.Alpha; }
+
+const ::Engine::Util::Applied::ResourceHandle<
+    ::Engine::Applied::Render::Resources::Shaders::Shader>& Material::GetShader() const { return m_CreateInfo.TargetShader; }
+
+VkDescriptorSet Material::GetExtraSet() const { return m_CreateInfo.ExtraSet; }
 
 void Init()
 {
-    ::Engine::Base::Render::RenderingPool::Register("scene_materials_flush", Flush, 100);
+    ::Engine::Base::Render::RenderingPool::Register("scene_materials_flush", Flush, 900);
     ::Engine::Base::Render::RenderingPool::RegisterSnapshot(
         "scene_materials_snapshot",
         CaptureFrameSnapshot,
-        100
+        900
     );
 
     for (uint32_t I = 0; I < ::Engine::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT; ++I) {
@@ -762,11 +794,13 @@ void Cleanup()
     }
 
     std::lock_guard<std::mutex> Lock(m_RegistryMutex);
+
     m_Data.clear();
     m_FreeIndices.clear();
     m_ErasedMaterials.clear();
     m_FrameBufferSnapshot.reset();
     m_Version = 0;
+
     for (auto& Version : m_BufferVersions) { Version = 0; }
 }
 
@@ -778,6 +812,7 @@ void Flush()
         if (It->FramesLeft > 0) {
             It->FramesLeft--;
             ++It;
+
             continue;
         }
 
@@ -792,11 +827,14 @@ void Flush()
         && m_BufferTickets[Frame]->Done.load(std::memory_order_acquire)
         && !m_BufferTickets[Frame]->Failed.load(std::memory_order_acquire)
         && !m_BufferTickets[Frame]->Rejected.load(std::memory_order_acquire)) {
+
         const std::shared_ptr<MaterialBufferSnapshot> Snapshot =
             std::make_shared<MaterialBufferSnapshot>();
+
         Snapshot->Buffer = m_Buffers[Frame];
         Snapshot->Address = m_Buffers[Frame].Address;
         Snapshot->Version = m_BufferVersions[Frame];
+
         m_BufferSnapshot.store(
             std::shared_ptr<const MaterialBufferSnapshot>(Snapshot),
             std::memory_order_release
@@ -815,6 +853,7 @@ void Flush()
         }
 
         m_PendingGpuMaterials.clear();
+
         return;
     }
 
@@ -824,6 +863,7 @@ void Flush()
         }
 
         m_PendingGpuMaterials.clear();
+
         return;
     }
 

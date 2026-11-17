@@ -1,6 +1,6 @@
 #include "X/Engine/Applied/Render/UIRendering/ImGuiScaler.hpp"
 
-#include "X/Configs/Static.hpp"
+#include "X/Project/Configs/Static.hpp"
 
 #include "X/Engine/Base/Viewport/Surface.hpp"
 
@@ -37,12 +37,16 @@ void Update()
 
     const float WidthScale = static_cast<float>(Extent.x)
         / static_cast<float>(::Engine::Configs::Static::Viewport::WINDOW_WIDTH);
+
     const float HeightScale = static_cast<float>(Extent.y)
         / static_cast<float>(::Engine::Configs::Static::Viewport::WINDOW_HEIGHT);
+
     SDL_Window* Window = ::Engine::Base::Viewport::Surface::GetNative();
     const SDL_DisplayID Display = SDL_GetDisplayForWindow(Window);
+
     const float WindowScale = SDL_GetWindowDisplayScale(Window);
     const float DisplayScale = SDL_GetDisplayContentScale(Display);
+
     int LogicalWidth = 0;
     int LogicalHeight = 0;
 
@@ -51,14 +55,18 @@ void Update()
     const float PixelScaleX = LogicalWidth > 0
         ? static_cast<float>(Extent.x) / static_cast<float>(LogicalWidth)
         : 1.0f;
+
     const float PixelScaleY = LogicalHeight > 0
         ? static_cast<float>(Extent.y) / static_cast<float>(LogicalHeight)
         : 1.0f;
+
     const float PixelScale = std::min(PixelScaleX, PixelScaleY);
+
     const float DpiScale = std::max(
         1.0f,
         std::max(WindowScale, std::max(DisplayScale, PixelScale))
     );
+
     const float Scale = std::max(1.0f, std::min(WidthScale, HeightScale) * DpiScale);
 
     if (Scale == m_LastScale) {

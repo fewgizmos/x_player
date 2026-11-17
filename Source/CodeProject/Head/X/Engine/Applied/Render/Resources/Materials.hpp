@@ -32,7 +32,7 @@ enum class AlphaMode : uint32_t
 
 struct MaterialTexture
 {
-    ::Engine::Util::Applied::ResourceRef<
+    ::Engine::Util::Applied::ResourceHandle<
         ::Engine::Applied::Render::Resources::Textures::Texture> Target;
 
     ::Engine::Base::Render::SamplerCreateInfo Sampler;
@@ -44,7 +44,7 @@ struct MaterialTexture
 
 struct MaterialCreateInfo
 {
-    ::Engine::Util::Applied::ResourceRef<
+    ::Engine::Util::Applied::ResourceHandle<
         ::Engine::Applied::Render::Resources::Shaders::Shader> TargetShader;
     VkDescriptorSet ExtraSet = VK_NULL_HANDLE;
 
@@ -176,20 +176,23 @@ struct MaterialBufferSnapshot
 class Material final : public ::Engine::Util::Applied::Resource
 {
 public:
+    using CreateInfo = MaterialCreateInfo;
+
     explicit Material(MaterialCreateInfo p_CreateInfo);
     ~Material() override;
 
-    std::string GetTypeName() const override;
     void BeginLoad() override;
     void Update() override;
     void Unload() override;
+
+    std::string GetTypeName() const override;
 
     uint32_t GetIndex() const;
     const MaterialData& GetData() const;
     bool IsDoubleSided() const;
     bool CastsShadows() const;
     AlphaMode GetAlphaMode() const;
-    const ::Engine::Util::Applied::ResourceRef<
+    const ::Engine::Util::Applied::ResourceHandle<
         ::Engine::Applied::Render::Resources::Shaders::Shader>& GetShader() const;
     VkDescriptorSet GetExtraSet() const;
     void SetGpuTicket(std::shared_ptr<::Engine::Base::Render::ResourceLoader::ResourceJobTicket> p_Ticket);
@@ -198,7 +201,7 @@ public:
 private:
     struct LoadData;
 
-    MaterialCreateInfo CreateInfo;
+    MaterialCreateInfo m_CreateInfo;
     MaterialData Data = {};
     uint32_t Index = UINT32_MAX;
     std::shared_ptr<LoadData> LoadState;

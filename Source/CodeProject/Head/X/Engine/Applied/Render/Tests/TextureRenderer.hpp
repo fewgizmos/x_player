@@ -1,6 +1,6 @@
 #pragma once
 
-#include "X/Configs/PreCompiled/Dynamic.hpp"
+#include "X/Project/Configs/PreCompiled/Dynamic.hpp"
 
 #ifdef XP_DEV_FEATURES_ENABLED
 

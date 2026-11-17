@@ -1,7 +1,7 @@
 #include "X/Engine/Base/Render/RenderManager.hpp"
 
-#include "X/Configs/Static.hpp"
-#include "X/Configs/PreCompiled/Dynamic.hpp"
+#include "X/Project/Configs/Static.hpp"
+#include "X/Project/Configs/PreCompiled/Dynamic.hpp"
 
 #include "X/Engine/Util/Base/Assert.hpp"
 

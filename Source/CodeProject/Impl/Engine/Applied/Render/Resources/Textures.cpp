@@ -1,6 +1,6 @@
 #include "X/Engine/Applied/Render/Resources/Textures.hpp"
 
-#include "X/Configs/Static.hpp"
+#include "X/Project/Configs/Static.hpp"
 
 #include "X/Engine/Util/Base/Assert.hpp"
 
@@ -16,16 +16,19 @@
 #include "X/Engine/Base/Runtime/EngineThreadIDs.hpp"
 
 #include <stb_image.h>
+#include <png.h>
 #include <vulkan/vulkan_core.h>
 
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
+#include <filesystem>
 #include <memory>
 #include <mutex>
 #include <utility>
 #include <vector>
+#include <cstdio>
 
 namespace Engine::Applied::Render::Resources::Textures
 {
@@ -48,6 +51,7 @@ struct Texture::LoadData
 
 namespace
 {
+
 
 VkDescriptorPool m_DescriptorPool = VK_NULL_HANDLE;
 VkDescriptorSetLayout m_SetLayout = VK_NULL_HANDLE;
@@ -83,6 +87,51 @@ const ::Engine::Base::JobSystem::DeferredTaskRegistration::Registrar
 
 void LoadTexture(const std::shared_ptr<Texture::LoadData>& p_Data, const std::string& p_Path)
 {
+    if (std::filesystem::path(p_Path).extension() == ".png"
+        || std::filesystem::path(p_Path).extension() == ".PNG") {
+        FILE* File = std::fopen(p_Path.c_str(), "rb");
+        if (File == nullptr) {
+            std::lock_guard<std::mutex> Lock(p_Data->Mutex);
+            p_Data->FailureReason = "failed to open PNG";
+            p_Data->Finished = true;
+            return;
+        }
+        png_structp Png = png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
+        png_infop Info = Png ? png_create_info_struct(Png) : nullptr;
+        if (!Png || !Info || setjmp(png_jmpbuf(Png))) {
+            if (Png) png_destroy_read_struct(&Png, &Info, nullptr);
+            std::fclose(File);
+            std::lock_guard<std::mutex> Lock(p_Data->Mutex);
+            p_Data->FailureReason = "PNG decode failed";
+            p_Data->Finished = true;
+            return;
+        }
+        png_init_io(Png, File);
+        png_read_info(Png, Info);
+        const png_uint_32 Width = png_get_image_width(Png, Info);
+        const png_uint_32 Height = png_get_image_height(Png, Info);
+        const int ColorType = png_get_color_type(Png, Info);
+        const int BitDepth = png_get_bit_depth(Png, Info);
+        if (BitDepth == 16) png_set_strip_16(Png);
+        if (ColorType == PNG_COLOR_TYPE_PALETTE) png_set_palette_to_rgb(Png);
+        if (ColorType == PNG_COLOR_TYPE_GRAY && BitDepth < 8) png_set_expand_gray_1_2_4_to_8(Png);
+        if (png_get_valid(Png, Info, PNG_INFO_tRNS)) png_set_tRNS_to_alpha(Png);
+        if (ColorType == PNG_COLOR_TYPE_RGB || ColorType == PNG_COLOR_TYPE_GRAY
+            || ColorType == PNG_COLOR_TYPE_PALETTE) png_set_add_alpha(Png, 0xFF, PNG_FILLER_AFTER);
+        png_read_update_info(Png, Info);
+        std::vector<std::byte> Pixels(static_cast<std::size_t>(Width) * Height * 4);
+        std::vector<png_bytep> Rows(Height);
+        for (png_uint_32 Y = 0; Y < Height; ++Y) Rows[Y] = reinterpret_cast<png_bytep>(Pixels.data()) + Y * Width * 4;
+        png_read_image(Png, Rows.data());
+        png_destroy_read_struct(&Png, &Info, nullptr);
+        std::fclose(File);
+        std::lock_guard<std::mutex> Lock(p_Data->Mutex);
+        p_Data->Pixels = std::move(Pixels);
+        p_Data->Width = Width;
+        p_Data->Height = Height;
+        p_Data->Finished = true;
+        return;
+    }
     int Width = 0;
     int Height = 0;
     int Channels = 0;
@@ -91,12 +140,15 @@ void LoadTexture(const std::shared_ptr<Texture::LoadData>& p_Data, const std::st
 
     if (Pixels == nullptr) {
         std::lock_guard<std::mutex> Lock(p_Data->Mutex);
-        p_Data->FailureReason = stbi_failure_reason() ? stbi_failure_reason() : "Image decoding failed";
+
+        p_Data->FailureReason = stbi_failure_reason() ? stbi_failure_reason() : "image decoding failed";
         p_Data->Finished = true;
+
         return;
     }
 
     std::unique_ptr<stbi_uc, decltype(&stbi_image_free)> Owner(Pixels, stbi_image_free);
+
     std::vector<std::byte> Data(
         reinterpret_cast<std::byte*>(Pixels),
         reinterpret_cast<std::byte*>(Pixels)
@@ -104,6 +156,7 @@ void LoadTexture(const std::shared_ptr<Texture::LoadData>& p_Data, const std::st
     );
 
     std::lock_guard<std::mutex> Lock(p_Data->Mutex);
+
     p_Data->Pixels = std::move(Data);
     p_Data->Width = static_cast<uint32_t>(Width);
     p_Data->Height = static_cast<uint32_t>(Height);
@@ -117,10 +170,12 @@ uint32_t TakeIndex()
     if (!m_FreeIndices.empty()) {
         const uint32_t Index = m_FreeIndices.back();
         m_FreeIndices.pop_back();
+
         return Index;
     }
 
     X_ASSERT(m_NextIndex >= ::Engine::Configs::Static::Graphics::MAX_TEXTURES, "textures limit exceeded");
+
     return m_NextIndex++;
 }
 
@@ -128,16 +183,17 @@ void ReleaseIndex(uint32_t p_Index)
 {
     if (p_Index != UINT32_MAX) {
         std::lock_guard<std::mutex> Lock(m_IndexMutex);
+
         m_ErasedIndices.push_back({ p_Index, ::Engine::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT });
     }
 }
 
 }
 
-Texture::Texture(std::string p_Path, VkFormat p_Format)
-    : Resource(std::to_string(static_cast<int>(p_Format)) + ":" + p_Path)
-    , Path(std::move(p_Path))
-    , Format(p_Format)
+Texture::Texture(CreateInfo p_CreateInfo)
+    : Resource(std::to_string(static_cast<int>(p_CreateInfo.Format)) + ":" + p_CreateInfo.Path)
+    , Path(std::move(p_CreateInfo.Path))
+    , Format(p_CreateInfo.Format)
     , m_LoadData(std::make_shared<LoadData>())
 {
 }
@@ -175,14 +231,17 @@ void Texture::BeginLoad()
             try {
                 LoadTexture(Data, TexturePath);
             }
+
             catch (const std::exception& Error) {
                 std::lock_guard<std::mutex> Lock(Data->Mutex);
                 Data->FailureReason = Error.what();
                 Data->Finished = true;
             }
+
             catch (...) {
                 std::lock_guard<std::mutex> Lock(Data->Mutex);
-                Data->FailureReason = "Unknown texture load failure";
+
+                Data->FailureReason = "unknown texture load failure";
                 Data->Finished = true;
             }
         }
@@ -201,6 +260,7 @@ void Texture::Update()
     if (m_GpuTicket) {
         if (GetVersionChecksum() != m_GpuVersionChecksum) {
             SetRejected("texture GPU job version is stale");
+
             return;
         }
 
@@ -209,6 +269,7 @@ void Texture::Update()
 
             return;
         }
+
         if (m_GpuTicket->Rejected.load(std::memory_order_acquire)) {
             SetRejected(m_GpuTicket->FailureReason);
 
@@ -223,11 +284,41 @@ void Texture::Update()
 
         if (UploadRejected) {
             SetRejected("texture upload version is stale");
+
             return;
         }
+
         if (m_GpuTicket->Failed.load(std::memory_order_acquire)) {
             SetFailed(m_GpuTicket->FailureReason);
 
+            return;
+        }
+
+        if (m_UploadRow < m_UploadHeight) {
+            const uint32_t FirstRow = m_UploadRow;
+            const uint32_t RowCount = std::min(m_UploadChunkRows, m_UploadHeight - FirstRow);
+            const bool LastChunk = FirstRow + RowCount == m_UploadHeight;
+            const std::shared_ptr<LoadData> Data = m_LoadData;
+            const uint64_t VersionChecksum = m_GpuVersionChecksum;
+            m_UploadRow += RowCount;
+            m_GpuTicket = ::Engine::Base::Render::ResourceLoader::PushFrameJobVk(
+                [Data, FirstRow, RowCount, LastChunk, VersionChecksum](VkCommandBuffer) {
+                    std::lock_guard<std::mutex> Lock(Data->Mutex);
+                    const VkDeviceSize RowBytes = static_cast<VkDeviceSize>(Data->Width) * 4;
+                    if (Data->VersionChecksum != VersionChecksum) {
+                        Data->UploadRejected = true;
+                        return;
+                    }
+                    ::Engine::Base::Render::ResourceLoader::QueueImageUploadChunk(
+                        Data->Image,
+                        Data->Pixels.data() + static_cast<std::size_t>(FirstRow) * RowBytes,
+                        RowBytes * RowCount, FirstRow, RowCount, FirstRow == 0, LastChunk
+                    );
+                },
+                ::Engine::Configs::Static::ResourceLoader::GPU_OPS_NORMAL_ORDER,
+                { static_cast<VkDeviceSize>(Data->Width) * 4 * RowCount, 1, 0, 0, 0 }
+            );
+            SetState(::Engine::Util::Applied::ResourceState::Uploading);
             return;
         }
 
@@ -254,6 +345,7 @@ void Texture::Update()
 
             const VkImageView ImageView = m_Image.View;
             const uint32_t TextureIndex = m_Index;
+
             m_DescriptorTicket =
                 ::Engine::Base::Render::ResourceLoader::PushFrameJobCallback(
                     [Set = m_Set, ImageView, TextureIndex] {
@@ -283,16 +375,19 @@ void Texture::Update()
         }
 
         const std::shared_ptr<TextureSnapshot> Snapshot = std::make_shared<TextureSnapshot>();
+
         Snapshot->Image = m_Image;
         Snapshot->Index = m_Index;
         Snapshot->Format = Format;
         Snapshot->VersionChecksum = m_GpuVersionChecksum;
+
         m_Snapshot.store(
             std::shared_ptr<const TextureSnapshot>(Snapshot),
             std::memory_order_release
         );
 
         SetState(::Engine::Util::Applied::ResourceState::Ready);
+
         return;
     }
 
@@ -308,7 +403,7 @@ void Texture::Update()
         }
 
         if (m_LoadData->Pixels.empty()) {
-            SetFailed("Failed to load image " + Path + ": " + m_LoadData->FailureReason);
+            SetFailed("failed to load image " + Path + ": " + m_LoadData->FailureReason);
 
             return;
         }
@@ -317,31 +412,41 @@ void Texture::Update()
         Height = m_LoadData->Height;
     }
 
-    uint32_t MipLevels = 1;
-    for (uint32_t Size = std::max(Width, Height); Size > 1; Size /= 2) {
-        ++MipLevels;
-    }
+    // Keep runtime uploads on the transfer queue. Generating a full mip chain
+    // for a 4K image requires graphics-queue blits and stalls frame rendering.
+    // The complete-resolution base level is retained and sampled directly.
+    constexpr uint32_t MipLevels = 1;
 
     VkFormatProperties Properties = {};
 
     vkGetPhysicalDeviceFormatProperties(::Engine::Base::Render::Vk::Device::GetPhysical().physical_device,
         Format, &Properties);
+
     const VkFormatFeatureFlags Required = VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT
         | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT
         | VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT;
+
     X_ASSERT((Properties.optimalTilingFeatures & Required) != Required, "Texture format does not support filtered mipmaps");
 
     const std::shared_ptr<LoadData> Data = m_LoadData;
     const VkFormat TextureFormat = Format;
+
     m_GpuVersionChecksum = GetVersionChecksum();
     const uint64_t VersionChecksum = m_GpuVersionChecksum;
+    m_UploadRow = 0;
+    m_UploadHeight = Height;
+    constexpr VkDeviceSize UploadChunkBytes = 1536 * 1024;
+    m_UploadChunkRows = std::max<uint32_t>(1,
+        static_cast<uint32_t>(UploadChunkBytes / (static_cast<VkDeviceSize>(Width) * 4)));
 
     SetState(::Engine::Util::Applied::ResourceState::QueuedGpu);
     m_GpuTicket = ::Engine::Base::Render::ResourceLoader::PushFrameJobVk(
         [Data, TextureFormat, Width, Height, MipLevels, VersionChecksum](VkCommandBuffer) {
             std::lock_guard<std::mutex> Lock(Data->Mutex);
+
             if (Data->VersionChecksum != VersionChecksum) {
                 Data->UploadRejected = true;
+
                 return;
             }
 
@@ -355,14 +460,12 @@ void Texture::Update()
                     VK_IMAGE_ASPECT_COLOR_BIT,
                     MipLevels
                 );
-                ::Engine::Base::Render::ResourceLoader::QueueImageUpload(
-                    Data->Image,
-                    Data->Pixels.data(),
-                    Data->Pixels.size()
-                );
+
             }
+
             catch (...) {
                 ::Engine::Base::Render::ResourceLoader::DestroyImage(Data->Image);
+
                 throw;
             }
         },
@@ -375,6 +478,7 @@ void Texture::Update()
             0
         }
     );
+
     m_GpuTicket->VersionChecksum = VersionChecksum;
 }
 
@@ -444,10 +548,13 @@ void Init()
     m_Set = ::Engine::Base::Render::Vk::Descriptors::AllocateSet(m_DescriptorPool, m_SetLayout);
 
     ::Engine::Base::Render::SamplerCreateInfo SamplerInfo;
+
     SamplerInfo.WrapU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     SamplerInfo.WrapV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     SamplerInfo.WrapW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+
     ::Engine::Base::Render::Vk::Samplers::Make(SamplerInfo);
+
     SyncSamplers();
 }
 

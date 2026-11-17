@@ -68,6 +68,7 @@ uint32_t GetCompletionWaits(CompletionWait* p_Waits, uint32_t p_Capacity);
 
 void QueueBufferUpload(const Buffer& p_Target, const void* p_Data, VkDeviceSize p_Size);
 void QueueImageUpload(const Image& p_Target, const void* p_Data, VkDeviceSize p_Size);
+void QueueImageUploadChunk(const Image&, const void*, VkDeviceSize, uint32_t, uint32_t, bool, bool);
 
 Buffer CreateBuffer(VkDeviceSize p_Size, VkBufferUsageFlags p_Usage, VmaAllocationCreateFlags p_Flags = 0);
 void DestroyBuffer(Buffer& p_Target);

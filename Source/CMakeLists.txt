@@ -1,8 +1,8 @@
 add_subdirectory(CodeThirdParty)
 
 configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/CodeProject/Head/X/Configs/Dynamic.hpp.in
-    ${CMAKE_CURRENT_SOURCE_DIR}/CodeProject/Head/X/Configs/PreCompiled/Dynamic.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/CodeProject/Head/X/Project/Configs/Dynamic.hpp.in
+    ${CMAKE_CURRENT_SOURCE_DIR}/CodeProject/Head/X/Project/Configs/PreCompiled/Dynamic.hpp
     @ONLY
 )
 
@@ -15,6 +15,7 @@ file(GLOB_RECURSE XP_HEADERS CONFIGURE_DEPENDS
 )
 
 find_package(Threads REQUIRED)
+find_package(PNG REQUIRED)
 
 add_executable(XProjectExecutable
     ${XP_SOURCES}
@@ -36,5 +37,6 @@ target_link_libraries(XProjectExecutable PRIVATE
     GPUOpen::VulkanMemoryAllocator
     vkbootstrap
     Threads::Threads
+    PNG::PNG
     ${CMAKE_DL_LIBS}
 )

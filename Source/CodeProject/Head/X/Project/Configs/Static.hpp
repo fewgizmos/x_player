@@ -4,10 +4,12 @@
 
 #include <fastgltf/core.hpp>
 
+#include <string>
+
 namespace Engine::Configs::Static
 {
 
-inline constexpr int MAX_FPS = 240;
+inline constexpr int MAX_FPS = 30;
 
 namespace Viewport 
 {
@@ -30,7 +32,8 @@ namespace Graphics
 
 inline constexpr unsigned char BACKGROUND_RGB[3] = {13, 17, 23};
 
-inline constexpr const char* SHADERS_DIR = "Resources/Shaders/";
+inline const std::string SHADERS_DIR = "Resources/Shaders/";
+inline const std::string GLTF_MODELS_DIR = "Resources/3D/";
 
 inline constexpr int MAX_FRAMES_IN_FLIGHT = 4;
 
@@ -45,7 +48,6 @@ inline constexpr VkFormat GBUFFER_NORMAL_FORMAT   = VK_FORMAT_R16G16B16A16_SFLOA
 inline constexpr VkFormat GBUFFER_VELOCITY_FORMAT = VK_FORMAT_R16G16_SFLOAT;
 
 inline constexpr VkFormat GTAO_FORMAT = VK_FORMAT_R32_SFLOAT;
-
 inline constexpr fastgltf::Extensions PARSER_EXTENSIONS =
     fastgltf::Extensions::KHR_texture_transform
     | fastgltf::Extensions::KHR_mesh_quantization
@@ -71,6 +73,9 @@ namespace Tests
 
 inline constexpr bool TRIANGLE_RENDERER_ENABLED = true;
 inline constexpr bool TEXTURE_RENDERER_ENABLED  = true;
+inline constexpr bool MODEL_RENDERER_ENABLED    = true;
+
+inline const std::string MODEL_RENDERER_PATH = Graphics::GLTF_MODELS_DIR + "Rock/Rock.gltf";
 
 }
 
@@ -92,8 +97,8 @@ inline constexpr VkDeviceSize IMAGE_STAGING_BLOCK_SIZE  = 128 * 1024 * 1024;
 inline constexpr VkDeviceSize GPU_UPLOAD_BYTES_PER_FRAME = 32 * 1024 * 1024;
 
 inline constexpr uint32_t GPU_COPY_COMMANDS_PER_FRAME      = 128;
-inline constexpr uint32_t GPU_RESOURCE_CREATES_PER_FRAME   = 32;
-inline constexpr uint32_t GPU_RESOURCE_DESTROYS_PER_FRAME  = 64;
+inline constexpr uint32_t GPU_RESOURCE_CREATES_PER_FRAME   = 16;
+inline constexpr uint32_t GPU_RESOURCE_DESTROYS_PER_FRAME  = 32;
 inline constexpr uint32_t GPU_DESCRIPTOR_UPDATES_PER_FRAME = 256;
 
 inline constexpr int GPU_OPS_CRITICAL_ORDER  = 1;
