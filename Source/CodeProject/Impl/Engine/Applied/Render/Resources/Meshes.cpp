@@ -213,16 +213,18 @@ void MeshMorphTarget::Update()
             return;
         }
 
-        std::shared_ptr<MeshMorphTargetSnapshot> Snapshot =
-            std::make_shared<MeshMorphTargetSnapshot>();
+        std::shared_ptr<MeshMorphTargetSnapshot> Snapshot = std::make_shared<MeshMorphTargetSnapshot>();
+
         Snapshot->PositionBuffer = m_LoadData->PositionBuffer;
         Snapshot->NormalBuffer = m_LoadData->NormalBuffer;
         Snapshot->VertexCount = static_cast<uint32_t>(m_CreateInfo.PositionDeltas.size());
         Snapshot->VersionChecksum = GetVersionChecksum();
+
         m_Snapshot.store(
             std::shared_ptr<const MeshMorphTargetSnapshot>(std::move(Snapshot)),
             std::memory_order_release
         );
+
         SetState(::Engine::Util::Applied::ResourceState::Ready);
 
         return;
@@ -245,11 +247,13 @@ void MeshMorphTarget::Update()
 
             try {
                 std::lock_guard<std::mutex> Lock(Data->Mutex);
+
                 if (!Data->PositionDeltas.empty()) {
                     Data->PositionBuffer = ::Engine::Base::Render::ResourceLoader::CreateBuffer(
                         sizeof(glm::vec3) * Data->PositionDeltas.size(),
                         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
                     );
+
                     ::Engine::Base::Render::ResourceLoader::QueueBufferUpload(
                         Data->PositionBuffer,
                         Data->PositionDeltas.data(),
@@ -262,6 +266,7 @@ void MeshMorphTarget::Update()
                         sizeof(glm::vec3) * Data->NormalDeltas.size(),
                         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
                     );
+
                     ::Engine::Base::Render::ResourceLoader::QueueBufferUpload(
                         Data->NormalBuffer,
                         Data->NormalDeltas.data(),
@@ -269,9 +274,11 @@ void MeshMorphTarget::Update()
                     );
                 }
             }
+
             catch (...) {
                 ::Engine::Base::Render::ResourceLoader::DestroyBuffer(Data->PositionBuffer);
                 ::Engine::Base::Render::ResourceLoader::DestroyBuffer(Data->NormalBuffer);
+
                 throw;
             }
         },
@@ -351,6 +358,7 @@ void Mesh::BeginLoad()
                         if (Index >= Data->Vertices.size()) {
                             Data->FailureReason = "mesh index is out of range";
                             Data->Failed = true;
+
                             break;
                         }
                     }
@@ -411,10 +419,12 @@ void Mesh::BeginLoad()
                     }
                 }
             }
+
             catch (const std::exception& Error) {
                 Data->FailureReason = Error.what();
                 Data->Failed = true;
             }
+
             catch (...) {
                 Data->FailureReason = "unknown mesh preparation failure";
                 Data->Failed = true;
@@ -446,6 +456,7 @@ void Mesh::Update()
 
             return;
         }
+
         if (m_GpuTicket->Rejected.load(std::memory_order_acquire)) {
             SetRejected(m_GpuTicket->FailureReason);
 
@@ -453,6 +464,7 @@ void Mesh::Update()
         }
 
         bool UploadRejected = false;
+
         {
             std::lock_guard<std::mutex> Lock(LoadDataState->Mutex);
             UploadRejected = LoadDataState->UploadRejected;
@@ -462,11 +474,13 @@ void Mesh::Update()
             SetRejected("mesh upload version is stale");
             return;
         }
+
         if (m_GpuTicket->Failed.load(std::memory_order_acquire)) {
             SetFailed(m_GpuTicket->FailureReason);
 
             return;
         }
+
         const ::Engine::Base::Render::Buffer PreviousVertexBuffer = m_VertexBuffer;
         const ::Engine::Base::Render::Buffer PreviousIndexBuffer = m_IndexBuffer;
 
@@ -480,6 +494,7 @@ void Mesh::Update()
         }
 
         const std::shared_ptr<MeshSnapshot> Snapshot = std::make_shared<MeshSnapshot>();
+
         Snapshot->VertexBuffer = m_VertexBuffer;
         Snapshot->IndexBuffer = m_IndexBuffer;
         Snapshot->VertexCount = m_VertexCount;
@@ -487,6 +502,7 @@ void Mesh::Update()
         Snapshot->BoundsMin = m_BoundsMin;
         Snapshot->BoundsMax = m_BoundsMax;
         Snapshot->VersionChecksum = m_GpuVersionChecksum;
+
         m_Snapshot.store(
             std::shared_ptr<const MeshSnapshot>(Snapshot),
             std::memory_order_release
@@ -503,6 +519,7 @@ void Mesh::Update()
         }
 
         SetState(::Engine::Util::Applied::ResourceState::Ready);
+
         return;
     }
 
@@ -550,6 +567,7 @@ void Mesh::Update()
 
         if (KEEP_CPU_DATA) {
             std::lock_guard<std::mutex> Lock(Data->Mutex);
+
             m_Vertices = Data->Vertices;
             m_Indices = Data->SortedIndices;
         }
@@ -558,6 +576,7 @@ void Mesh::Update()
         m_GpuTicket = ::Engine::Base::Render::ResourceLoader::PushFrameJobVk(
             [Data, VersionChecksum](VkCommandBuffer) {
                 std::lock_guard<std::mutex> Lock(Data->Mutex);
+
                 if (Data->VersionChecksum != VersionChecksum) {
                     Data->UploadRejected = true;
                     return;
@@ -586,9 +605,11 @@ void Mesh::Update()
                         Data->IndexBuffer.Size
                     );
                 }
+
                 catch (...) {
                     ::Engine::Base::Render::ResourceLoader::DestroyBuffer(Data->VertexBuffer);
                     ::Engine::Base::Render::ResourceLoader::DestroyBuffer(Data->IndexBuffer);
+
                     throw;
                 }
             },
@@ -602,8 +623,10 @@ void Mesh::Update()
                 0
             }
         );
+
         m_GpuTicket->VersionChecksum = VersionChecksum;
     }
+
     catch (const std::exception& Error) {
         if (m_VertexBuffer.Handle != VK_NULL_HANDLE) {
             ::Engine::Base::Render::ResourceLoader::DestroyBuffer(m_VertexBuffer);
@@ -615,6 +638,7 @@ void Mesh::Update()
 
         SetFailed(Error.what());
     }
+
     catch (...) {
         if (m_VertexBuffer.Handle != VK_NULL_HANDLE) {
             ::Engine::Base::Render::ResourceLoader::DestroyBuffer(m_VertexBuffer);
@@ -634,6 +658,7 @@ void Mesh::Unload()
 
     {
         std::lock_guard<std::mutex> Lock(LoadDataState->Mutex);
+
         LoadDataState->VersionChecksum = GetVersionChecksum();
         LoadDataState->UploadRejected = true;
     }

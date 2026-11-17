@@ -90,48 +90,72 @@ void LoadTexture(const std::shared_ptr<Texture::LoadData>& p_Data, const std::st
     if (std::filesystem::path(p_Path).extension() == ".png"
         || std::filesystem::path(p_Path).extension() == ".PNG") {
         FILE* File = std::fopen(p_Path.c_str(), "rb");
+
         if (File == nullptr) {
             std::lock_guard<std::mutex> Lock(p_Data->Mutex);
+
             p_Data->FailureReason = "failed to open PNG";
             p_Data->Finished = true;
+
             return;
         }
+
         png_structp Png = png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
         png_infop Info = Png ? png_create_info_struct(Png) : nullptr;
+
         if (!Png || !Info || setjmp(png_jmpbuf(Png))) {
             if (Png) png_destroy_read_struct(&Png, &Info, nullptr);
+
             std::fclose(File);
             std::lock_guard<std::mutex> Lock(p_Data->Mutex);
-            p_Data->FailureReason = "PNG decode failed";
+
+            p_Data->FailureReason = "png decode failed";
             p_Data->Finished = true;
+
             return;
+
         }
+
         png_init_io(Png, File);
         png_read_info(Png, Info);
+
         const png_uint_32 Width = png_get_image_width(Png, Info);
         const png_uint_32 Height = png_get_image_height(Png, Info);
+
         const int ColorType = png_get_color_type(Png, Info);
         const int BitDepth = png_get_bit_depth(Png, Info);
+
         if (BitDepth == 16) png_set_strip_16(Png);
         if (ColorType == PNG_COLOR_TYPE_PALETTE) png_set_palette_to_rgb(Png);
         if (ColorType == PNG_COLOR_TYPE_GRAY && BitDepth < 8) png_set_expand_gray_1_2_4_to_8(Png);
+
         if (png_get_valid(Png, Info, PNG_INFO_tRNS)) png_set_tRNS_to_alpha(Png);
+
         if (ColorType == PNG_COLOR_TYPE_RGB || ColorType == PNG_COLOR_TYPE_GRAY
             || ColorType == PNG_COLOR_TYPE_PALETTE) png_set_add_alpha(Png, 0xFF, PNG_FILLER_AFTER);
+
         png_read_update_info(Png, Info);
+
         std::vector<std::byte> Pixels(static_cast<std::size_t>(Width) * Height * 4);
         std::vector<png_bytep> Rows(Height);
+
         for (png_uint_32 Y = 0; Y < Height; ++Y) Rows[Y] = reinterpret_cast<png_bytep>(Pixels.data()) + Y * Width * 4;
+
         png_read_image(Png, Rows.data());
         png_destroy_read_struct(&Png, &Info, nullptr);
+
         std::fclose(File);
+
         std::lock_guard<std::mutex> Lock(p_Data->Mutex);
+
         p_Data->Pixels = std::move(Pixels);
         p_Data->Width = Width;
         p_Data->Height = Height;
         p_Data->Finished = true;
+
         return;
     }
+
     int Width = 0;
     int Height = 0;
     int Channels = 0;
@@ -297,18 +321,23 @@ void Texture::Update()
         if (m_UploadRow < m_UploadHeight) {
             const uint32_t FirstRow = m_UploadRow;
             const uint32_t RowCount = std::min(m_UploadChunkRows, m_UploadHeight - FirstRow);
+
             const bool LastChunk = FirstRow + RowCount == m_UploadHeight;
+
             const std::shared_ptr<LoadData> Data = m_LoadData;
             const uint64_t VersionChecksum = m_GpuVersionChecksum;
+
             m_UploadRow += RowCount;
             m_GpuTicket = ::Engine::Base::Render::ResourceLoader::PushFrameJobVk(
                 [Data, FirstRow, RowCount, LastChunk, VersionChecksum](VkCommandBuffer) {
                     std::lock_guard<std::mutex> Lock(Data->Mutex);
                     const VkDeviceSize RowBytes = static_cast<VkDeviceSize>(Data->Width) * 4;
+
                     if (Data->VersionChecksum != VersionChecksum) {
                         Data->UploadRejected = true;
                         return;
                     }
+
                     ::Engine::Base::Render::ResourceLoader::QueueImageUploadChunk(
                         Data->Image,
                         Data->Pixels.data() + static_cast<std::size_t>(FirstRow) * RowBytes,
@@ -318,7 +347,9 @@ void Texture::Update()
                 ::Engine::Configs::Static::ResourceLoader::GPU_OPS_NORMAL_ORDER,
                 { static_cast<VkDeviceSize>(Data->Width) * 4 * RowCount, 1, 0, 0, 0 }
             );
+
             SetState(::Engine::Util::Applied::ResourceState::Uploading);
+
             return;
         }
 
@@ -412,9 +443,6 @@ void Texture::Update()
         Height = m_LoadData->Height;
     }
 
-    // Keep runtime uploads on the transfer queue. Generating a full mip chain
-    // for a 4K image requires graphics-queue blits and stalls frame rendering.
-    // The complete-resolution base level is retained and sampled directly.
     constexpr uint32_t MipLevels = 1;
 
     VkFormatProperties Properties = {};
@@ -426,16 +454,19 @@ void Texture::Update()
         | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT
         | VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT;
 
-    X_ASSERT((Properties.optimalTilingFeatures & Required) != Required, "Texture format does not support filtered mipmaps");
+    X_ASSERT((Properties.optimalTilingFeatures & Required) != Required, "texture format does not support filtered mipmaps");
 
     const std::shared_ptr<LoadData> Data = m_LoadData;
     const VkFormat TextureFormat = Format;
 
     m_GpuVersionChecksum = GetVersionChecksum();
+
     const uint64_t VersionChecksum = m_GpuVersionChecksum;
     m_UploadRow = 0;
     m_UploadHeight = Height;
+
     constexpr VkDeviceSize UploadChunkBytes = 1536 * 1024;
+
     m_UploadChunkRows = std::max<uint32_t>(1,
         static_cast<uint32_t>(UploadChunkBytes / (static_cast<VkDeviceSize>(Width) * 4)));
 

@@ -51,6 +51,7 @@ std::vector<uint32_t> BuildTriangleIndices(const fastgltf::Asset& p_Asset, const
         });
     } else {
         const auto PositionAttribute = p_Primitive.findAttribute("POSITION");
+
         if (PositionAttribute == p_Primitive.attributes.end()) {
             throw std::runtime_error("model primitive has no POSITION attribute");
         }
@@ -83,6 +84,7 @@ std::vector<uint32_t> BuildTriangleIndices(const fastgltf::Asset& p_Asset, const
                 Result.insert(Result.end(), { Source[Index - 1], Source[Index - 2], Source[Index] });
             }
         }
+
         return Result;
     }
 
@@ -90,6 +92,7 @@ std::vector<uint32_t> BuildTriangleIndices(const fastgltf::Asset& p_Asset, const
         for (std::size_t Index = 2; Index < Source.size(); ++Index) {
             Result.insert(Result.end(), { Source[0], Source[Index - 1], Source[Index] });
         }
+
         return Result;
     }
 
@@ -109,17 +112,20 @@ void SetMaterialTexture(
     }
 
     const std::size_t TextureIndex = p_Info->textureIndex;
+
     if (TextureIndex >= p_Asset.textures.size()) {
         return;
     }
 
     const fastgltf::Texture& Texture = p_Asset.textures[TextureIndex];
+
     if (!Texture.imageIndex.has_value() || Texture.imageIndex.value() >= p_Asset.images.size()) {
         return;
     }
 
     const fastgltf::Image& Image = p_Asset.images[Texture.imageIndex.value()];
     const fastgltf::sources::URI* Source = std::get_if<fastgltf::sources::URI>(&Image.data);
+
     if (Source == nullptr) {
         return;
     }
@@ -140,10 +146,12 @@ void SetMaterialTexture(
             p_Info->transform->uvOffset[0],
             p_Info->transform->uvOffset[1]
         );
+
         p_Target.UvScale = glm::vec2(
             p_Info->transform->uvScale[0],
             p_Info->transform->uvScale[1]
         );
+
         p_Target.UvRotation = p_Info->transform->rotation;
     }
 
@@ -152,11 +160,13 @@ void SetMaterialTexture(
     }
 
     const fastgltf::Sampler& Sampler = p_Asset.samplers[Texture.samplerIndex.value()];
+
     if (Sampler.magFilter.has_value()) {
         p_Target.Sampler.MagFilter = Sampler.magFilter.value() == fastgltf::Filter::Nearest
             ? VK_FILTER_NEAREST
             : VK_FILTER_LINEAR;
     }
+
     if (Sampler.minFilter.has_value()) {
         p_Target.Sampler.MinFilter =
             Sampler.minFilter.value() == fastgltf::Filter::Nearest
@@ -164,6 +174,7 @@ void SetMaterialTexture(
             || Sampler.minFilter.value() == fastgltf::Filter::NearestMipMapLinear
             ? VK_FILTER_NEAREST
             : VK_FILTER_LINEAR;
+
         p_Target.Sampler.MipMode =
             Sampler.minFilter.value() == fastgltf::Filter::NearestMipMapNearest
             || Sampler.minFilter.value() == fastgltf::Filter::LinearMipMapNearest
@@ -191,11 +202,13 @@ void SetMaterialTexture(
 Meshes::MeshCreateInfo BuildMesh(const fastgltf::Asset& p_Asset, const fastgltf::Primitive& p_Primitive)
 {
     const auto PositionAttribute = p_Primitive.findAttribute("POSITION");
+
     if (PositionAttribute == p_Primitive.attributes.end()) {
         throw std::runtime_error("model primitive has no POSITION attribute");
     }
 
     const fastgltf::Accessor& Positions = p_Asset.accessors[PositionAttribute->accessorIndex];
+
     Meshes::MeshCreateInfo Result;
     Result.Vertices.resize(Positions.count);
 
@@ -216,6 +229,7 @@ Meshes::MeshCreateInfo BuildMesh(const fastgltf::Asset& p_Asset, const fastgltf:
     );
 
     const auto NormalAttribute = p_Primitive.findAttribute("NORMAL");
+
     if (NormalAttribute != p_Primitive.attributes.end()) {
         fastgltf::iterateAccessorWithIndex<glm::vec3>(p_Asset,
             p_Asset.accessors[NormalAttribute->accessorIndex],
@@ -226,6 +240,7 @@ Meshes::MeshCreateInfo BuildMesh(const fastgltf::Asset& p_Asset, const fastgltf:
     }
 
     const auto UvAttribute = p_Primitive.findAttribute("TEXCOORD_0");
+
     if (UvAttribute != p_Primitive.attributes.end()) {
         fastgltf::iterateAccessorWithIndex<glm::vec2>(p_Asset,
             p_Asset.accessors[UvAttribute->accessorIndex],
@@ -237,6 +252,7 @@ Meshes::MeshCreateInfo BuildMesh(const fastgltf::Asset& p_Asset, const fastgltf:
     }
 
     const auto TangentAttribute = p_Primitive.findAttribute("TANGENT");
+
     if (TangentAttribute != p_Primitive.attributes.end()) {
         fastgltf::iterateAccessorWithIndex<glm::vec4>(p_Asset,
             p_Asset.accessors[TangentAttribute->accessorIndex],
@@ -247,8 +263,10 @@ Meshes::MeshCreateInfo BuildMesh(const fastgltf::Asset& p_Asset, const fastgltf:
     }
 
     const auto ColorAttribute = p_Primitive.findAttribute("COLOR_0");
+
     if (ColorAttribute != p_Primitive.attributes.end()) {
         const fastgltf::Accessor& Colors = p_Asset.accessors[ColorAttribute->accessorIndex];
+
         if (Colors.type == fastgltf::AccessorType::Vec4) {
             fastgltf::iterateAccessorWithIndex<glm::vec4>(p_Asset, Colors,
                 [&Result](glm::vec4 p_Value, std::size_t p_Index) {
@@ -265,6 +283,7 @@ Meshes::MeshCreateInfo BuildMesh(const fastgltf::Asset& p_Asset, const fastgltf:
     }
 
     const auto JointsAttribute = p_Primitive.findAttribute("JOINTS_0");
+
     if (JointsAttribute != p_Primitive.attributes.end()) {
         fastgltf::iterateAccessorWithIndex<glm::uvec4>(
             p_Asset,
@@ -276,6 +295,7 @@ Meshes::MeshCreateInfo BuildMesh(const fastgltf::Asset& p_Asset, const fastgltf:
     }
 
     const auto WeightsAttribute = p_Primitive.findAttribute("WEIGHTS_0");
+
     if (WeightsAttribute != p_Primitive.attributes.end()) {
         fastgltf::iterateAccessorWithIndex<glm::vec4>(
             p_Asset,
@@ -302,12 +322,14 @@ Meshes::MeshSkeletonCreateInfo BuildSkeleton(
 
     for (std::size_t JointIndex = 0; JointIndex < p_Skin.joints.size(); ++JointIndex) {
         const std::size_t JointNode = p_Skin.joints[JointIndex];
+
         if (JointNode >= p_Asset.nodes.size()) {
             throw std::runtime_error("skin joint node index is out of range");
         }
 
         for (std::size_t ParentIndex = 0; ParentIndex < p_Skin.joints.size(); ++ParentIndex) {
             const std::size_t ParentNode = p_Skin.joints[ParentIndex];
+
             if (ParentNode >= p_Asset.nodes.size()) {
                 throw std::runtime_error("skin parent node index is out of range");
             }
@@ -359,6 +381,7 @@ std::string Model::GetTypeName() const
 void Model::BeginLoad()
 {
     AdvanceVersionChecksum();
+
     m_LoadData = std::make_shared<LoadData>();
     m_Parts.clear();
     m_Snapshot.reset();
@@ -372,8 +395,10 @@ void Model::BeginLoad()
         [Data, Info] {
             try {
                 const std::filesystem::path Path(Info.GltfPath);
+
                 fastgltf::Parser Parser(::Engine::Configs::Static::Graphics::PARSER_EXTENSIONS);
                 auto File = fastgltf::GltfDataBuffer::FromPath(Path);
+
                 if (File.error() != fastgltf::Error::None) {
                     throw std::runtime_error(
                         "failed to read gltf model: "
@@ -384,6 +409,7 @@ void Model::BeginLoad()
                 auto Loaded = Parser.loadGltf(
                     File.get(), Path.parent_path(), fastgltf::Options::LoadExternalBuffers
                 );
+
                 if (Loaded.error() != fastgltf::Error::None) {
                     throw std::runtime_error(
                         "failed to parse gltf model: "
@@ -393,6 +419,7 @@ void Model::BeginLoad()
 
                 const fastgltf::Asset& Asset = Loaded.get();
                 std::vector<::Engine::Util::Applied::ResourceHandle<Materials::Material>> MaterialHandles;
+
                 MaterialHandles.reserve(Asset.materials.size());
 
                 for (const fastgltf::Material& SourceMaterial : Asset.materials) {
@@ -428,18 +455,21 @@ void Model::BeginLoad()
                         Path,
                         MaterialInfo.MetallicRoughnessTexture
                     );
+
                     SetMaterialTexture(
                         Asset,
                         SourceMaterial.normalTexture,
                         Path,
                         MaterialInfo.NormalTexture
                     );
+
                     SetMaterialTexture(
                         Asset,
                         SourceMaterial.occlusionTexture,
                         Path,
                         MaterialInfo.OcclusionTexture
                     );
+
                     SetMaterialTexture(
                         Asset,
                         SourceMaterial.emissiveTexture,
@@ -461,6 +491,7 @@ void Model::BeginLoad()
 
                 if (MaterialHandles.empty()) {
                     Materials::MaterialCreateInfo DefaultMaterial;
+
                     DefaultMaterial.TargetShader = Info.Shader;
                     MaterialHandles.push_back(
                         ::Engine::Util::Applied::ResourceHandle<Materials::Material>(
@@ -472,13 +503,16 @@ void Model::BeginLoad()
                 std::vector<glm::mat4> NodeWorldTransforms(
                     Asset.nodes.size(), glm::mat4(1.0f)
                 );
+
                 std::vector<glm::mat4> MeshWorldTransforms(
                     Asset.meshes.size(), glm::mat4(1.0f)
                 );
+
                 std::vector<std::vector<glm::mat4>> MeshJointMatrices(Asset.meshes.size());
 
                 if (!Asset.scenes.empty()) {
                     std::function<void(std::size_t, const glm::mat4&)> BuildNodeTransforms;
+
                     BuildNodeTransforms = [&BuildNodeTransforms, &Asset, &NodeWorldTransforms](
                         std::size_t p_NodeIndex, const glm::mat4& p_ParentTransform
                     ) {
@@ -490,6 +524,7 @@ void Model::BeginLoad()
                         const glm::mat4 LocalTransform = glm::make_mat4(
                             fastgltf::getTransformMatrix(Node).data()
                         );
+
                         const glm::mat4 WorldTransform = p_ParentTransform * LocalTransform;
                         NodeWorldTransforms[p_NodeIndex] = WorldTransform;
 
@@ -499,6 +534,7 @@ void Model::BeginLoad()
                     };
 
                     const std::size_t SceneIndex = Asset.defaultScene.value_or(0);
+
                     if (SceneIndex >= Asset.scenes.size()) {
                         throw std::runtime_error("default scene index is out of range");
                     }
@@ -509,12 +545,14 @@ void Model::BeginLoad()
 
                     for (std::size_t NodeIndex = 0; NodeIndex < Asset.nodes.size(); ++NodeIndex) {
                         const fastgltf::Node& Node = Asset.nodes[NodeIndex];
+
                         if (!Node.meshIndex.has_value() || !Node.skinIndex.has_value()) {
                             continue;
                         }
 
                         const std::size_t MeshIndex = Node.meshIndex.value();
                         const std::size_t SkinIndex = Node.skinIndex.value();
+
                         if (MeshIndex >= Asset.meshes.size() || SkinIndex >= Asset.skins.size()) {
                             throw std::runtime_error("node mesh or skin index is out of range");
                         }
@@ -527,22 +565,25 @@ void Model::BeginLoad()
                             Asset,
                             Asset.skins[SkinIndex]
                         );
+
                         MeshWorldTransforms[MeshIndex] = NodeWorldTransforms[NodeIndex];
                         const glm::mat4 MeshInverse = glm::inverse(MeshWorldTransforms[MeshIndex]);
                         MeshJointMatrices[MeshIndex].resize(SkeletonInfo.InverseBindMatrices.size());
 
                         for (std::size_t JointIndex = 0;
                             JointIndex < Asset.skins[SkinIndex].joints.size();
+
                             ++JointIndex) {
-                            const std::size_t JointNode = Asset.skins[SkinIndex].joints[JointIndex];
-                            MeshJointMatrices[MeshIndex][JointIndex] = MeshInverse
-                                * NodeWorldTransforms[JointNode]
-                                * SkeletonInfo.InverseBindMatrices[JointIndex];
+                                const std::size_t JointNode = Asset.skins[SkinIndex].joints[JointIndex];
+                                MeshJointMatrices[MeshIndex][JointIndex] = MeshInverse
+                                    * NodeWorldTransforms[JointNode]
+                                    * SkeletonInfo.InverseBindMatrices[JointIndex];
                         }
                     }
                 }
 
                 std::vector<std::vector<std::size_t>> PartIndices(Asset.meshes.size());
+
                 for (std::size_t MeshIndex = 0; MeshIndex < Asset.meshes.size(); ++MeshIndex) {
                     const fastgltf::Mesh& SourceMesh = Asset.meshes[MeshIndex];
 
@@ -560,11 +601,13 @@ void Model::BeginLoad()
                             }
 
                             const auto& Target = Primitive.targets[TargetIndex];
+
                             for (const fastgltf::Attribute& Attribute : Target) {
                                 if (Attribute.name == "POSITION") {
                                     TargetInfo.PositionDeltas.resize(
                                         Asset.accessors[Attribute.accessorIndex].count
                                     );
+
                                     fastgltf::iterateAccessorWithIndex<glm::vec3>(
                                         Asset,
                                         Asset.accessors[Attribute.accessorIndex],
@@ -578,6 +621,7 @@ void Model::BeginLoad()
                                     TargetInfo.NormalDeltas.resize(
                                         Asset.accessors[Attribute.accessorIndex].count
                                     );
+
                                     fastgltf::iterateAccessorWithIndex<glm::vec3>(
                                         Asset,
                                         Asset.accessors[Attribute.accessorIndex],
@@ -632,11 +676,13 @@ void Model::BeginLoad()
                                 for (std::size_t Influence = 0; Influence < 4; ++Influence) {
                                     const uint32_t JointIndex = Vertex.Joints[Influence];
                                     const float Weight = Vertex.Weights[Influence];
+
                                     if (Weight <= 0.0f || JointIndex >= MeshJointMatrices[MeshIndex].size()) {
                                         continue;
                                     }
 
                                     const glm::mat4& JointMatrix = MeshJointMatrices[MeshIndex][JointIndex];
+
                                     Position += JointMatrix * glm::vec4(Vertex.Position, 1.0f) * Weight;
                                     Normal += glm::mat3(glm::transpose(glm::inverse(JointMatrix)))
                                         * Vertex.Normal * Weight;
@@ -645,6 +691,7 @@ void Model::BeginLoad()
 
                                 if (WeightSum > 0.0f) {
                                     Vertex.Position = glm::vec3(Position / WeightSum);
+
                                     if (glm::dot(Normal, Normal) > 0.0f) {
                                         Vertex.Normal = glm::normalize(Normal);
                                     }
@@ -686,12 +733,14 @@ void Model::BeginLoad()
 
                 if (!Asset.scenes.empty()) {
                     const std::size_t SceneIndex = Asset.defaultScene.value_or(0);
+
                     if (SceneIndex >= Asset.scenes.size()) {
                         throw std::runtime_error("default scene index is out of range");
                     }
 
                     const fastgltf::Scene& Scene = Asset.scenes[SceneIndex];
                     std::function<void(std::size_t, const glm::mat4&)> VisitNode;
+
                     VisitNode = [&VisitNode, &Asset, &PartIndices, Data](
                         std::size_t p_NodeIndex, const glm::mat4& p_ParentTransform
                     ) {
@@ -699,6 +748,7 @@ void Model::BeginLoad()
                         const glm::mat4 LocalTransform = glm::make_mat4(
                             fastgltf::getTransformMatrix(Node).data()
                         );
+
                         const glm::mat4 WorldTransform = p_ParentTransform * LocalTransform;
 
                         if (Node.meshIndex.has_value()) {
@@ -716,8 +766,8 @@ void Model::BeginLoad()
                                         Asset,
                                         Asset.skins[Node.skinIndex.value()]
                                     );
-                                    Data->Parts[PartIndex].BindPoseMatrices =
-                                        SkeletonInfo.InverseBindMatrices;
+
+                                    Data->Parts[PartIndex].BindPoseMatrices = SkeletonInfo.InverseBindMatrices;
                                     Data->Parts[PartIndex].Skeleton =
                                         ::Engine::Util::Applied::ResourceHandle<Meshes::MeshSkeleton>(
                                             std::move(SkeletonInfo)
@@ -736,10 +786,12 @@ void Model::BeginLoad()
                     }
                 }
             }
+
             catch (const std::exception& Error) {
                 Data->FailureReason = Error.what();
                 Data->Failed = true;
             }
+
             catch (...) {
                 Data->FailureReason = "unknown model loading failure";
                 Data->Failed = true;

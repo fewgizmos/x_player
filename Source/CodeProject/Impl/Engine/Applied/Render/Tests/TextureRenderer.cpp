@@ -132,8 +132,10 @@ void CaptureFrameSnapshot()
     if (m_Shader.IsReady()
         && m_Mesh
         && m_Mesh->IsReady()
+
         && m_DefaultEngineLogo
         && m_DefaultEngineLogo->IsReady()) {
+
         m_FrameMesh = (*m_Mesh)->GetSnapshot();
         m_FrameTexture = (*m_DefaultEngineLogo)->GetSnapshot();
         m_FrameShader = m_Shader->GetSnapshot();
@@ -151,6 +153,7 @@ void Init()
 
     CreatePipeline();
     CreateMesh();
+
     m_DefaultEngineLogo = std::make_unique<Engine::Util::Applied::ResourceHandle<
         Engine::Applied::Render::Resources::Textures::Texture>>(
         Engine::Applied::Render::Resources::Textures::TextureCreateInfo{
@@ -178,16 +181,16 @@ void Render()
     const std::shared_ptr<const MeshSnapshot>& MeshValue = m_FrameMesh;
     const std::shared_ptr<const TextureSnapshot>& TextureValue = m_FrameTexture;
     const std::shared_ptr<const ShaderSnapshot>& ShaderValue = m_FrameShader;
+
     if (!MeshValue || !TextureValue || !ShaderValue) {
         return;
     }
 
     const Engine::Base::Render::Pipeline& Pipeline = ShaderValue->Graphics;
 
-    const ::Engine::Base::Render::FrameData& Frame =
-        ::Engine::Base::Render::Vk::Frame::GetCurrentFrame();
-    const ::Engine::Base::Render::SwapchainImageData& Image =
-        ::Engine::Base::Render::Vk::Frame::GetCurrentImage();
+    const ::Engine::Base::Render::FrameData& Frame = ::Engine::Base::Render::Vk::Frame::GetCurrentFrame();
+    const ::Engine::Base::Render::SwapchainImageData& Image = ::Engine::Base::Render::Vk::Frame::GetCurrentImage();
+
     const vkb::Swapchain& Swapchain = ::Engine::Base::Render::Vk::Frame::GetSwapchain();
     const vkb::DispatchTable& Disp = ::Engine::Base::Render::Vk::Device::GetDisp();
 

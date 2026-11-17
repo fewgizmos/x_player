@@ -256,9 +256,11 @@ std::string MakeKey(const MaterialCreateInfo& p_CreateInfo)
     Add(p_CreateInfo.NormalScale);
     Add(p_CreateInfo.OcclusionStrength);
     Add(p_CreateInfo.AlphaCutoff);
+
     Key += ":" + std::to_string(static_cast<uint32_t>(p_CreateInfo.Alpha));
     Key += ":" + std::to_string(p_CreateInfo.DoubleSided);
     Key += ":" + std::to_string(p_CreateInfo.CastShadows);
+
     Add(p_CreateInfo.Ior);
     Add(p_CreateInfo.SpecularFactor);
     Add(p_CreateInfo.EmissiveStrength);
@@ -404,11 +406,13 @@ uint32_t TakeIndex()
     if (!m_FreeIndices.empty()) {
         const uint32_t Index = m_FreeIndices.back();
         m_FreeIndices.pop_back();
+
         return Index;
     }
 
     X_ASSERT(m_Data.size() >= ::Engine::Configs::Static::Graphics::MAX_MATERIALS, "materials limit exceeded");
     m_Data.push_back({});
+
     return static_cast<uint32_t>(m_Data.size() - 1);
 }
 
@@ -493,8 +497,7 @@ void SetTexture(MaterialData& p_Data, uint32_t p_Slot, const MaterialTexture& p_
         return;
     }
 
-    const std::shared_ptr<const ::Engine::Applied::Render::Resources::Textures::TextureSnapshot> Snapshot =
-        p_Source.Target->GetSnapshot();
+    const std::shared_ptr<const ::Engine::Applied::Render::Resources::Textures::TextureSnapshot> Snapshot = p_Source.Target->GetSnapshot();
 
     if (!Snapshot) {
         p_TextureIndex = NO_TEXTURE;

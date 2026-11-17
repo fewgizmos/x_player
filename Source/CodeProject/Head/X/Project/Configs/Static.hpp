@@ -9,7 +9,7 @@
 namespace Engine::Configs::Static
 {
 
-inline constexpr int MAX_FPS = 30;
+inline constexpr int MAX_FPS = 60;
 
 namespace Viewport 
 {
