@@ -242,6 +242,8 @@ void Shader::Update()
 
         Graphics = LoadState->Graphics;
         Compute = LoadState->ComputePipeline;
+        LoadState->Graphics = {};
+        LoadState->ComputePipeline = {};
 
         const std::shared_ptr<ShaderSnapshot> Published = std::make_shared<ShaderSnapshot>();
 
@@ -341,6 +343,12 @@ void Shader::Unload()
     SetState(::Engine::Util::Applied::ResourceState::Unloading);
     DestroyPipelineAsync(Graphics);
     DestroyPipelineAsync(Compute);
+
+    {
+        std::lock_guard<std::mutex> Lock(LoadState->Mutex);
+        DestroyPipelineAsync(LoadState->Graphics);
+        DestroyPipelineAsync(LoadState->ComputePipeline);
+    }
 }
 
 const ::Engine::Base::Render::Pipeline& Shader::GetGraphicsPipeline() const { return Graphics; }

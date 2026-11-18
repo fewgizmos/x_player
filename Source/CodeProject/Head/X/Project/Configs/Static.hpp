@@ -48,8 +48,9 @@ inline constexpr VkFormat GBUFFER_NORMAL_FORMAT   = VK_FORMAT_R16G16B16A16_SFLOA
 inline constexpr VkFormat GBUFFER_VELOCITY_FORMAT = VK_FORMAT_R16G16_SFLOAT;
 
 inline constexpr VkFormat GTAO_FORMAT = VK_FORMAT_R32_SFLOAT;
+
 inline constexpr fastgltf::Extensions PARSER_EXTENSIONS =
-    fastgltf::Extensions::KHR_texture_transform
+      fastgltf::Extensions::KHR_texture_transform
     | fastgltf::Extensions::KHR_mesh_quantization
     | fastgltf::Extensions::KHR_lights_punctual
     | fastgltf::Extensions::KHR_materials_specular
@@ -91,7 +92,7 @@ namespace ResourceLoader
 
 inline constexpr int BATCH_COUNT = Graphics::MAX_FRAMES_IN_FLIGHT;
 
-inline constexpr VkDeviceSize BUFFER_STAGING_BLOCK_SIZE = 64 * 1024 * 1024;
+inline constexpr VkDeviceSize BUFFER_STAGING_BLOCK_SIZE = 64  * 1024 * 1024;
 inline constexpr VkDeviceSize IMAGE_STAGING_BLOCK_SIZE  = 128 * 1024 * 1024;
 
 inline constexpr VkDeviceSize GPU_UPLOAD_BYTES_PER_FRAME = 32 * 1024 * 1024;

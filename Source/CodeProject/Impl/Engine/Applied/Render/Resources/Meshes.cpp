@@ -486,6 +486,8 @@ void Mesh::Update()
 
         m_VertexBuffer = LoadDataState->VertexBuffer;
         m_IndexBuffer = LoadDataState->IndexBuffer;
+        LoadDataState->VertexBuffer = {};
+        LoadDataState->IndexBuffer = {};
 
         if (!KEEP_CPU_DATA) {
             std::lock_guard<std::mutex> Lock(LoadDataState->Mutex);
@@ -675,6 +677,16 @@ void Mesh::Unload()
 
     if (m_IndexBuffer.Handle != VK_NULL_HANDLE) {
         ::Engine::Base::Render::ResourceLoader::DestroyBuffer(m_IndexBuffer);
+    }
+
+    {
+        std::lock_guard<std::mutex> Lock(LoadDataState->Mutex);
+        if (LoadDataState->VertexBuffer.Handle != VK_NULL_HANDLE) {
+            ::Engine::Base::Render::ResourceLoader::DestroyBuffer(LoadDataState->VertexBuffer);
+        }
+        if (LoadDataState->IndexBuffer.Handle != VK_NULL_HANDLE) {
+            ::Engine::Base::Render::ResourceLoader::DestroyBuffer(LoadDataState->IndexBuffer);
+        }
     }
 }
 

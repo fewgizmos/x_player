@@ -529,8 +529,18 @@ void Texture::Unload()
 
     SetState(::Engine::Util::Applied::ResourceState::Unloading);
 
-    if (m_Image.Handle != VK_NULL_HANDLE) {
+    const VkImage PublishedImage = m_Image.Handle;
+    if (PublishedImage != VK_NULL_HANDLE) {
         ::Engine::Base::Render::ResourceLoader::DestroyImage(m_Image);
+    }
+
+    {
+        std::lock_guard<std::mutex> Lock(m_LoadData->Mutex);
+        if (m_LoadData->Image.Handle != VK_NULL_HANDLE
+            && m_LoadData->Image.Handle != PublishedImage) {
+            ::Engine::Base::Render::ResourceLoader::DestroyImage(m_LoadData->Image);
+        }
+        m_LoadData->Image = {};
     }
 
     ReleaseIndex(m_Index);
