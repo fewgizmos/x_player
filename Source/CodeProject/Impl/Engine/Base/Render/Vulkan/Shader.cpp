@@ -39,17 +39,9 @@ ShaderStage GetStageFromFile(const std::string& p_FileName)
 {
     const std::string Extension = std::filesystem::path(p_FileName).extension().string();
 
-    if (Extension == ".vert") {
-        return ShaderStage::Vertex;
-    }
-
-    if (Extension == ".frag") {
-        return ShaderStage::Fragment;
-    }
-
-    if (Extension == ".comp") {
-        return ShaderStage::Compute;
-    }
+    if (Extension == ".vert") { return ShaderStage::Vertex;   }
+    if (Extension == ".frag") { return ShaderStage::Fragment; }
+    if (Extension == ".comp") { return ShaderStage::Compute;  }
 
     X_ASSERT(true, "unknown shader extension: " + p_FileName);
 
@@ -67,9 +59,7 @@ std::string ResolveInclude(const std::string& p_RequestedSource, const std::stri
             return Candidate.generic_string();
         }
 
-        if (Directory.empty()) {
-            return p_RequestedSource;
-        }
+        if (Directory.empty()) { return p_RequestedSource; }
 
         Directory = Directory.parent_path();
     }
@@ -133,7 +123,7 @@ private:
 std::vector<uint32_t> CompileGlsl(const std::string& p_Source, ShaderStage p_Stage, const std::string& p_Name,
     const std::vector<std::string>& p_Defines, bool p_Optimize)
 {
-    shaderc::Compiler Compiler;
+    shaderc::Compiler       Compiler;
     shaderc::CompileOptions Options;
 
     for (const std::string& Define : p_Defines) {
@@ -252,6 +242,7 @@ Pipeline CreateGraphicsPipeline(const std::vector<uint32_t>& p_Vertex, const std
     }
     catch (...) {
         DestroyModule(VertModule);
+
         throw;
     }
 
@@ -366,6 +357,7 @@ Pipeline CreateGraphicsPipeline(const std::vector<uint32_t>& p_Vertex, const std
     if (Result != VK_SUCCESS) {
         DestroyModule(FragModule);
         DestroyModule(VertModule);
+
         X_ASSERT(true, "failed to create Pipeline layout");
     }
 
@@ -404,16 +396,18 @@ Pipeline CreateGraphicsPipeline(const std::vector<uint32_t>& p_Vertex, const std
     PipelineCreateInfo.subpass = 0;
     PipelineCreateInfo.basePipelineHandle = VK_NULL_HANDLE;
 
-    Result = Disp.createGraphicsPipelines(VK_NULL_HANDLE, 1, &PipelineCreateInfo, nullptr, &ResultPipeline.Handle);
+    Result = Disp.createGraphicsPipelines(
+        VK_NULL_HANDLE, 1, &PipelineCreateInfo,
+        nullptr, &ResultPipeline.Handle
+    );
 
-    if (FragModule != VK_NULL_HANDLE) {
-        DestroyModule(FragModule);
-    }
+    if (FragModule != VK_NULL_HANDLE) { DestroyModule(FragModule); }
 
     DestroyModule(VertModule);
 
     if (Result != VK_SUCCESS) {
         DestroyPipeline(ResultPipeline);
+
         X_ASSERT(true, "failed to create graphics Pipeline");
     }
 
@@ -468,12 +462,16 @@ Pipeline CreateComputePipeline(const std::vector<uint32_t>& p_Compute, const Com
     PipelineCreateInfo.stage = StageCreateInfo;
     PipelineCreateInfo.layout = ResultPipeline.Layout;
 
-    Result = Disp.createComputePipelines(VK_NULL_HANDLE, 1, &PipelineCreateInfo, nullptr, &ResultPipeline.Handle);
+    Result = Disp.createComputePipelines(
+        VK_NULL_HANDLE, 1, &PipelineCreateInfo, 
+        nullptr, &ResultPipeline.Handle
+    );
 
     DestroyModule(CompModule);
 
     if (Result != VK_SUCCESS) {
         DestroyPipeline(ResultPipeline);
+
         X_ASSERT(true, "failed to create compute Pipeline");
     }
 

@@ -113,6 +113,7 @@ void FlushImageUpload(VkCommandBuffer p_Cmd, const PendingImageUpload& p_Upload)
 
     if (!Device::GetQueues().DedicatedTransfer) {
         GenerateMips(p_Cmd, p_Upload);
+
         return;
     }
 
@@ -130,6 +131,7 @@ void FlushImageUpload(VkCommandBuffer p_Cmd, const PendingImageUpload& p_Upload)
             VK_PIPELINE_STAGE_2_NONE,
             0
         );
+
         return;
     }
 
@@ -293,8 +295,10 @@ void RecordImageUploadChunk(VkCommandBuffer Cmd, const Image& Target, const Buff
     Region.imageSubresource.layerCount = Target.ArrayLayers;
     Region.imageOffset.y = static_cast<int32_t>(FirstRow);
     Region.imageExtent = { Target.Extent.width, RowCount, 1 };
+
     Device::GetDisp().cmdCopyBufferToImage(Cmd, Staging.Handle, Target.Handle,
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &Region);
+
     if (LastChunk) {
         TransitionMips(Cmd, Target.Handle, 0, 1, Target.ArrayLayers,
             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
@@ -310,6 +314,7 @@ void RecordImageMipGeneration(VkCommandBuffer p_Cmd, const Image& p_Target)
     Upload.Extent = p_Target.Extent;
     Upload.MipLevels = p_Target.MipLevels;
     Upload.ArrayLayers = p_Target.ArrayLayers;
+
     GenerateMips(p_Cmd, Upload);
 }
 
@@ -317,8 +322,8 @@ void RecordMipGeneration(VkCommandBuffer p_Cmd, const Image& p_Target)
 {
     PendingImageUpload Upload;
 
-    Upload.Target       = p_Target.Handle;
-    Upload.Extent       = p_Target.Extent;
+    Upload.Target      = p_Target.Handle;
+    Upload.Extent      = p_Target.Extent;
     Upload.MipLevels   = p_Target.MipLevels;
     Upload.ArrayLayers = p_Target.ArrayLayers;
 

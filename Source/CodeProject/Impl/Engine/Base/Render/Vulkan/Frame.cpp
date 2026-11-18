@@ -74,8 +74,19 @@ void BuildSwapchain()
     auto SwapRet = SwapchainBuilder
         .set_old_swapchain(m_Swapchain.Handle)
         .set_desired_extent(static_cast<uint32_t>(Extent.x), static_cast<uint32_t>(Extent.y))
-        .set_desired_present_mode(VK_PRESENT_MODE_MAILBOX_KHR)
-        .add_fallback_present_mode(VK_PRESENT_MODE_FIFO_KHR)
+
+        .set_desired_present_mode(
+            ::Engine::Configs::Static::Graphics::VSYNC
+                ? VK_PRESENT_MODE_FIFO_KHR
+                : VK_PRESENT_MODE_IMMEDIATE_KHR
+        )
+
+        .add_fallback_present_mode(
+            ::Engine::Configs::Static::Graphics::VSYNC
+                ? VK_PRESENT_MODE_FIFO_KHR
+                : VK_PRESENT_MODE_FIFO_KHR
+        )
+
         .build();
 
     X_ASSERT(!SwapRet, SwapRet.error().message());
@@ -95,14 +106,14 @@ void CreateSwapchainImageData()
     m_Swapchain.Images.resize(m_Swapchain.Handle.image_count);
 
     for (uint32_t I = 0; I < m_Swapchain.Handle.image_count; I++) {
-        m_Swapchain.Images[I].Image = Images.value()[I];
+        m_Swapchain.Images[I].Image     = Images.value()[I];
         m_Swapchain.Images[I].ImageView = ImageViews.value()[I];
     }
 
     for (uint32_t I = 0; I < m_Swapchain.Handle.image_count; I++) {
         SwapchainImageData& ImageData = m_Swapchain.Images[I];
 
-        ImageData.Image      = Images.value()[I];
+        ImageData.Image     = Images.value()[I];
         ImageData.ImageView = ImageViews.value()[I];
 
         ImageData.SemaphoreFinished = MakeSemaphore();

@@ -28,20 +28,14 @@ void CleanAll()
 
         m_Deletors.pop_back();
 
-        try {
-        Callback();
-        }
+        try { Callback(); }
 
         catch (...) {
-            if (!Failure) {
-                Failure = std::current_exception();
-            }
+            if (!Failure) { Failure = std::current_exception(); }
         }
     }
 
-    if (Failure) {
-        std::rethrow_exception(Failure);
-    }
+    if (Failure) { std::rethrow_exception(Failure); }
 }
 
 }

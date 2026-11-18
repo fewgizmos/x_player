@@ -1,5 +1,6 @@
 #include "X/Engine/Util/Applied/ResourceManager.hpp"
 
+#include "X/Project/Configs/PreCompiled/Dynamic.hpp"
 #include "X/Project/Configs/Static.hpp"
 
 #include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
@@ -11,6 +12,7 @@
 #include "X/Engine/Base/Runtime/EngineThreadIDs.hpp"
 
 #include <exception>
+#include <iostream>
 #include <mutex>
 #include <unordered_map>
 #include <utility>

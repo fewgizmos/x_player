@@ -9,7 +9,7 @@
 namespace Engine::Configs::Static
 {
 
-inline constexpr int MAX_FPS = 60;
+inline constexpr int MAX_FPS = 80;
 
 namespace Viewport 
 {
@@ -36,6 +36,8 @@ inline const std::string SHADERS_DIR = "Resources/Shaders/";
 inline const std::string GLTF_MODELS_DIR = "Resources/3D/";
 
 inline constexpr int MAX_FRAMES_IN_FLIGHT = 4;
+
+inline constexpr bool VSYNC = true;
 
 inline constexpr uint32_t MAX_SAMPLERS  = 64;
 inline constexpr uint32_t MAX_TEXTURES  = 4096;
@@ -72,9 +74,7 @@ inline constexpr fastgltf::Extensions PARSER_EXTENSIONS =
 namespace Tests
 {
 
-inline constexpr bool TRIANGLE_RENDERER_ENABLED = true;
-inline constexpr bool TEXTURE_RENDERER_ENABLED  = true;
-inline constexpr bool MODEL_RENDERER_ENABLED    = true;
+inline constexpr bool MODEL_RENDERER_ENABLED = true;
 
 inline const std::string MODEL_RENDERER_PATH = Graphics::GLTF_MODELS_DIR + "Rock/Rock.gltf";
 

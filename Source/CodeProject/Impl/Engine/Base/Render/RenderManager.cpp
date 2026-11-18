@@ -43,11 +43,15 @@ namespace
 vkb::Instance m_Instance;
 
 uint32_t m_FrameCounter = 0;
+
 std::atomic<bool> m_AcquirePending = false;
 std::atomic<bool> m_AcquireReady = false;
+
 std::atomic<VkResult> m_AcquireResult = VK_NOT_READY;
 std::atomic<uint32_t> m_AcquireImageIndex = 0;
+
 VkSemaphore m_AcquireSemaphore = VK_NULL_HANDLE;
+
 bool m_AcquireSemaphoreSignaled = false;
 
 const BootstrapManager::DeferredBootstrapRegistration::InitRegistrar
@@ -93,8 +97,8 @@ void ClearBackground(VkCommandBuffer p_Cmd)
 
     VkRenderingInfo Info{VK_STRUCTURE_TYPE_RENDERING_INFO};
 
-    Info.renderArea.extent     = Vk::Frame::GetSwapchain().extent;
-    Info.layerCount            = 1;
+    Info.renderArea.extent    = Vk::Frame::GetSwapchain().extent;
+    Info.layerCount           = 1;
     Info.colorAttachmentCount = 1;
     Info.pColorAttachments    = &Attachment;
 
@@ -201,6 +205,7 @@ void RenderFrame()
     auto& Frame = Vk::Frame::GetCurrentFrame();
 
     const VkResult FrameStatus = Vk::Device::GetFenceStatus(Frame.FenceInflight);
+
     if (FrameStatus == VK_NOT_READY) {
         return;
     }
@@ -220,6 +225,7 @@ void RenderFrame()
     if (!m_AcquirePending.load(std::memory_order_acquire)
         && !m_AcquireReady.load(std::memory_order_acquire)) {
         m_AcquirePending.store(true, std::memory_order_release);
+
         const VkSemaphore AcquireSemaphore = Frame.SemaphoreAvailable;
 
         Vk::Device::AcquireNextImageAsync(
@@ -230,10 +236,12 @@ void RenderFrame()
             [AcquireSemaphore](VkResult p_Result, uint32_t p_ImageIndex) {
                 m_AcquireImageIndex.store(p_ImageIndex, std::memory_order_relaxed);
                 m_AcquireResult.store(p_Result, std::memory_order_release);
+
                 if (p_Result == VK_SUCCESS || p_Result == VK_SUBOPTIMAL_KHR) {
                     m_AcquireSemaphore = AcquireSemaphore;
                     m_AcquireSemaphoreSignaled = true;
                 }
+
                 m_AcquireReady.store(true, std::memory_order_release);
                 m_AcquirePending.store(false, std::memory_order_release);
             }
@@ -242,25 +250,23 @@ void RenderFrame()
         return;
     }
 
-    if (!m_AcquireReady.load(std::memory_order_acquire)) {
-        return;
-    }
+    if (!m_AcquireReady.load(std::memory_order_acquire)) { return; }
 
     const VkResult Result = m_AcquireResult.load(std::memory_order_acquire);
     Vk::Frame::GetImageIndex() = m_AcquireImageIndex.load(std::memory_order_relaxed);
     m_AcquireReady.store(false, std::memory_order_release);
 
-    if (Result == VK_NOT_READY || Result == VK_TIMEOUT) {
-        return;
-    }
+    if (Result == VK_NOT_READY || Result == VK_TIMEOUT) { return; }
 
     if (Result == VK_ERROR_OUT_OF_DATE_KHR) {
         RecreateSwapchain();
+
         return;
     }
 
     if (Result == VK_ERROR_SURFACE_LOST_KHR) {
         RecreateSwapchain();
+
         return;
     }
 
