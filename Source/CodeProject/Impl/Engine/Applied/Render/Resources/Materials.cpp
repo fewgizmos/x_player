@@ -68,7 +68,7 @@ void ValidateLayout()
     constexpr uint32_t DecorationOffset = 35;
 
     const std::string ValidateShaderSource = ::Engine::Util::File::ReadRaw(
-        std::string(::Engine::Configs::Static::Graphics::SHADERS_DIR) + "Util/Materials/Validate.comp"
+        std::string(::Engine::Configs::Static::Contents::SHADERS_DIR) + "Util/Materials/Validate.comp"
     );
     const std::vector<uint32_t> ValidateShader = ::Engine::Base::Render::Vk::Shader::CompileGlsl(
         ValidateShaderSource, ::Engine::Base::Render::ShaderStage::Compute, "Util/Materials/Validate.comp", {}, false

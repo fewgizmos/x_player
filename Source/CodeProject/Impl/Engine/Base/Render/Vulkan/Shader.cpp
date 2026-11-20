@@ -55,7 +55,7 @@ std::string ResolveInclude(const std::string& p_RequestedSource, const std::stri
     while (true) {
         const std::filesystem::path Candidate = (Directory / p_RequestedSource).lexically_normal();
 
-        if (std::filesystem::exists(std::filesystem::path(Configs::Static::Graphics::SHADERS_DIR) / Candidate)) {
+        if (std::filesystem::exists(std::filesystem::path(Configs::Static::Contents::SHADERS_DIR) / Candidate)) {
             return Candidate.generic_string();
         }
 
@@ -87,7 +87,7 @@ public:
 
         try {
             Data->Name    = ResolveInclude(p_RequestedSource, p_RequestingSource);
-            Data->Content = Util::File::ReadRaw(std::string(Configs::Static::Graphics::SHADERS_DIR) + Data->Name);
+            Data->Content = Util::File::ReadRaw(std::string(Configs::Static::Contents::SHADERS_DIR) + Data->Name);
         }
 
         catch (const std::exception& Error) {
@@ -198,7 +198,7 @@ void DestroyModule(VkShaderModule p_Module)
 
 VkShaderModule LoadModule(const std::string& p_FileName)
 {
-    const std::string Source = Util::File::ReadRaw(std::string(Configs::Static::Graphics::SHADERS_DIR) + p_FileName);
+    const std::string Source = Util::File::ReadRaw(std::string(Configs::Static::Contents::SHADERS_DIR) + p_FileName);
 
     return CreateModule(CompileGlsl(Source, GetStageFromFile(p_FileName), p_FileName));
 }
@@ -210,14 +210,14 @@ Pipeline CreateGraphicsPipeline(
 )
 {
     const std::vector<uint32_t> VertSpirv = CompileGlsl(
-        Util::File::ReadRaw(std::string(Configs::Static::Graphics::SHADERS_DIR) + p_VertFile),
+        Util::File::ReadRaw(std::string(Configs::Static::Contents::SHADERS_DIR) + p_VertFile),
         ShaderStage::Vertex,
         p_VertFile,
         p_CreateInfo.Defines
     );
 
     const std::vector<uint32_t> FragSpirv = p_FragFile.empty() ? std::vector<uint32_t>() : CompileGlsl(
-        Util::File::ReadRaw(std::string(Configs::Static::Graphics::SHADERS_DIR) + p_FragFile),
+        Util::File::ReadRaw(std::string(Configs::Static::Contents::SHADERS_DIR) + p_FragFile),
         ShaderStage::Fragment,
         p_FragFile,
         p_CreateInfo.Defines
@@ -416,7 +416,7 @@ Pipeline CreateGraphicsPipeline(const std::vector<uint32_t>& p_Vertex, const std
 
 Pipeline CreateComputePipeline(const std::string& p_CompFile, const ComputePipelineCreateInfo& p_CreateInfo)
 {
-    const std::string CompSource = Util::File::ReadRaw(std::string(Configs::Static::Graphics::SHADERS_DIR) + p_CompFile);
+    const std::string CompSource = Util::File::ReadRaw(std::string(Configs::Static::Contents::SHADERS_DIR) + p_CompFile);
 
     return CreateComputePipeline(CompileGlsl(CompSource, ShaderStage::Compute, p_CompFile, p_CreateInfo.Defines), p_CreateInfo);
 }

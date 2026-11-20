@@ -82,7 +82,7 @@ std::vector<uint32_t> CompileVertexShader()
 {
     return ::Engine::Base::Render::Vk::Shader::CompileGlsl(
         ::Engine::Util::File::ReadRaw(
-            std::string(::Engine::Configs::Static::Graphics::SHADERS_DIR) + "UI/ImGui.vert"
+            std::string(::Engine::Configs::Static::Contents::SHADERS_DIR) + "UI/ImGui.vert"
         ),
         ::Engine::Base::Render::ShaderStage::Vertex,
         "UI/ImGui.vert"

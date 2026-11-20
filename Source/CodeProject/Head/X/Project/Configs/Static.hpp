@@ -27,16 +27,23 @@ inline constexpr bool WINDOW_CURSOR_CAPTURED = false;
 
 }
 
+namespace Contents
+{
+
+inline const std::string BASE_CONTENT_DIR = "Resources/";
+
+inline const std::string SHADERS_DIR     = BASE_CONTENT_DIR + "Shaders/";
+inline const std::string GLTF_MODELS_DIR = BASE_CONTENT_DIR + "3D/";
+
+}
+
+
 namespace Graphics
 {
 
 inline constexpr unsigned char BACKGROUND_RGB[3] = {13, 17, 23};
 
-inline const std::string SHADERS_DIR = "Resources/Shaders/";
-inline const std::string GLTF_MODELS_DIR = "Resources/3D/";
-
 inline constexpr int MAX_FRAMES_IN_FLIGHT = 4;
-
 inline constexpr bool VSYNC = true;
 
 inline constexpr uint32_t MAX_SAMPLERS  = 64;
@@ -75,8 +82,7 @@ namespace Tests
 {
 
 inline constexpr bool MODEL_RENDERER_ENABLED = true;
-
-inline const std::string MODEL_RENDERER_PATH = Graphics::GLTF_MODELS_DIR + "Rock/Rock.gltf";
+inline const std::string MODEL_RENDERER_PATH = Contents::GLTF_MODELS_DIR + "Rock/Rock.gltf";
 
 }
 
