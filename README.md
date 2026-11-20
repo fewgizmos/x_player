@@ -1,9 +1,17 @@
-## `X-Player` Engine:
+## `X-Player` Engine::
 ### - is a experemental open-source C++20 multithreaded game engine built on Vulkan 1.3 and SDL3 with asynchronous glTF loading, bindless textures
 
 The current code includes a working model rendering demo.
 
-## How to build:
+| Development Stage |
+| :--- |
+| There’s a rock. It’s not an ordinary rock, but it’s not made of gold either; it’s loaded onto the GPU asynchronously via glTF, complete with textures and materials. It’s designed to simulate map streaming. Oh, and there’s also an ImGui rendere. |
+
+## Demo::
+
+![Screenshot-Demo-01](./Docs/X-Player/Assets/Screenshot-Demo-01.png)
+
+## How to build::
 
 ### Linux:
 
