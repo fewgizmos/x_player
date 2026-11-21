@@ -1,7 +1,5 @@
 #include "X/Engine/Applied/Render/UIRendering/ImGuiScaler.hpp"
 
-#include "X/Project/Configs/Static.hpp"
-
 #include "X/Engine/Base/Viewport/Surface.hpp"
 
 #include <SDL3/SDL_video.h>
@@ -16,6 +14,7 @@ namespace
 {
 
 ImGuiStyle m_BaseStyle;
+glm::ivec2 m_BaseExtent{0};
 float m_LastScale = -1.0f;
 
 }
@@ -23,7 +22,9 @@ float m_LastScale = -1.0f;
 void Init()
 {
     m_BaseStyle = ImGui::GetStyle();
+    m_BaseExtent = ::Engine::Base::Viewport::Surface::GetExtent();
     m_LastScale = -1.0f;
+
     Update();
 }
 
@@ -35,11 +36,15 @@ void Update()
         return;
     }
 
+    if (m_BaseExtent.x <= 0 || m_BaseExtent.y <= 0) {
+        m_BaseExtent = Extent;
+    }
+
     const float WidthScale = static_cast<float>(Extent.x)
-        / static_cast<float>(::Engine::Configs::Static::Viewport::WINDOW_WIDTH);
+        / static_cast<float>(m_BaseExtent.x);
 
     const float HeightScale = static_cast<float>(Extent.y)
-        / static_cast<float>(::Engine::Configs::Static::Viewport::WINDOW_HEIGHT);
+        / static_cast<float>(m_BaseExtent.y);
 
     SDL_Window* Window = ::Engine::Base::Viewport::Surface::GetNative();
     const SDL_DisplayID Display = SDL_GetDisplayForWindow(Window);

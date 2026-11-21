@@ -11,7 +11,7 @@ namespace Engine::Configs::Static
 
 inline constexpr int MAX_FPS = 80;
 
-namespace Viewport 
+namespace ViewportStartup 
 {
 
 inline constexpr int WINDOW_WIDTH  = 1920;
