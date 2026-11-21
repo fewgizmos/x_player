@@ -14,13 +14,13 @@ inline constexpr int MAX_FPS = 80;
 namespace ViewportStartup 
 {
 
-inline constexpr int WINDOW_WIDTH  = 1920;
-inline constexpr int WINDOW_HEIGHT = 1080;
+inline constexpr int WINDOW_WIDTH  = 1650;
+inline constexpr int WINDOW_HEIGHT = 1000;
 
-inline constexpr bool WINDOW_FULLSCREEN = true;
-inline constexpr bool WINDOW_RESIZABLE  = false;
+inline constexpr bool WINDOW_FULLSCREEN = false;
+inline constexpr bool WINDOW_RESIZABLE  = true;
 
-inline constexpr bool WINDOW_BORDERED = false;
+inline constexpr bool WINDOW_BORDERED = true;
 inline constexpr bool WINDOW_VISIBLE  = true;
 
 inline constexpr bool WINDOW_CURSOR_CAPTURED = false;

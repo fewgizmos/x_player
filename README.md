@@ -31,3 +31,9 @@ source ./Project/XEnv
 ```
 
 You can remove the -r (--run) argument to disable automatic execution after the build.
+
+## Source rules::
+
+| License |
+| :--- |
+| Apache License 2.0 |
