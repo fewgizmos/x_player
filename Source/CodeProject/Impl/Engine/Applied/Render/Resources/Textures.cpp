@@ -13,7 +13,7 @@
 #include "X/Engine/Base/Render/Vulkan/Device.hpp"
 #include "X/Engine/Base/Render/Vulkan/Samplers.hpp"
 
-#include "X/Engine/Base/Runtime/EngineThreadIDs.hpp"
+#include "X/Engine/Base/Runtime/BaseEngineThreadIDs.hpp"
 
 #include <stb_image.h>
 #include <png.h>

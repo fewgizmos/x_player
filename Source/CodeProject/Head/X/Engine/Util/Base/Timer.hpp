@@ -1,6 +1,6 @@
 #pragma once
 
-namespace Engine::Util::Timer
+namespace Engine::Util::Base::Timer
 {
 
 void NextFrame();

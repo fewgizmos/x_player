@@ -7,9 +7,13 @@ The current code includes a working model rendering demo.
 | :--- |
 | There’s a rock. It’s not an ordinary rock, but it’s not made of gold either; it’s loaded onto the GPU asynchronously via glTF, complete with textures and materials. It’s designed to simulate map streaming. Oh, and there’s also an ImGui rendere. |
 
+Full engine specification is available here: [Docs/X-Player/Specification.md](/Docs/X-Player/Specification.md)
+
 ## Demo::
 
-![Screenshot-Demo-01](./Docs/X-Player/Assets/Screenshot-Demo-01.png)
+![Screenshot-Demo-01](/Docs/X-Player/Assets/Screenshot-Demo-01.png)
+
+Demo screenshots gallery - [Docs/X-Player/ScreenshotsGallery.md](/Docs/X-Player/ScreenshotsGallery.md)
 
 ## How to build::
 

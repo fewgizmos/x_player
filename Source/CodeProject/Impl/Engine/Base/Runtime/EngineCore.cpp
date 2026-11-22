@@ -1,7 +1,7 @@
 #include "X/Engine/Base/Runtime/EngineCore.hpp"
-#include "X/Engine/Base/Runtime/EngineThreadIDs.hpp"
+#include "X/Engine/Base/Runtime/BaseEngineThreadIDs.hpp"
 
-#include "X/Engine/Util/Timer.hpp"
+#include "X/Engine/Util/Base/Timer.hpp"
 
 #include "X/Engine/Base/BootstrapManager/BootstrapManager.hpp"
 #include "X/Engine/Base/JobSystem/JobManager.hpp"
@@ -49,43 +49,39 @@ int Run()
     try {
         StartUp();
 
-        while (!WantsStop) {
-            TickFrame();
-        }
-    }
-    catch (...) {
-        Failure = std::current_exception();
+        while (!WantsStop) { HandleFrame(); }
     }
 
-    try {
-        CleanUp();
-    }
+    catch (...) { Failure = std::current_exception(); }
+
+    try { CleanUp(); }
+
     catch (...) {
         if (Failure) {
-            try {
-                throw;
-            }
+            try { throw; }
+
             catch (const std::exception& Error) {
-                std::cerr << "Cleanup failed: " << Error.what() << "\n";
+                std::cerr << "cleanup failed: " << Error.what() << "\n";
             }
+
             catch (...) {
-                std::cerr << "Cleanup failed: unknown exception\n";
+                std::cerr << "cleanup failed with unknown exception\n";
             }
-        } else {
-            Failure = std::current_exception();
-        }
+
+        } else { Failure = std::current_exception(); }
     }
 
     if (Failure) {
-        try {
-            std::rethrow_exception(Failure);
-        }
+        try { std::rethrow_exception(Failure); }
+
         catch (const std::exception& Error) {
             std::cerr << Error.what() << "\n";
         }
+
         catch (...) {
-            std::cerr << "Unknown engine exception\n";
+            std::cerr << "unknown engine exception\n";
         }
+
         return EXIT_FAILURE;
     }
 
@@ -101,9 +97,9 @@ void StartUp()
 
 void CleanUp() { BootstrapManager::It::CleanAll(); }
 
-void TickFrame()
+void HandleFrame()
 {
-    Util::Timer::NextFrame();
+    Util::Base::Timer::NextFrame();
 
     JobSystem::It::RunAll();
     JobSystem::It::WaitAll();

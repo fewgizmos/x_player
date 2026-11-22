@@ -5,7 +5,7 @@
 #include "X/Engine/Base/JobSystem/JobManager.hpp"
 #include "X/Engine/Base/Render/ResourceLoader.hpp"
 #include "X/Engine/Base/Render/Vulkan/GpuResources.hpp"
-#include "X/Engine/Base/Runtime/EngineThreadIDs.hpp"
+#include "X/Engine/Base/Runtime/BaseEngineThreadIDs.hpp"
 
 #include <glm/common.hpp>
 

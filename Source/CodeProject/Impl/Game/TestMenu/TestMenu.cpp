@@ -1,9 +1,9 @@
-#include "X/Engine/Util/Timer.hpp"
+#include "X/Engine/Util/Base/Timer.hpp"
 
 #include "X/Project/Configs/PreCompiled/Dynamic.hpp"
 
 #include "X/Engine/Base/JobSystem/DeferredTaskRegistration.hpp"
-#include "X/Engine/Base/Runtime/EngineThreadIDs.hpp"
+#include "X/Engine/Base/Runtime/BaseEngineThreadIDs.hpp"
 #include "X/Engine/Base/Platform/SDL3App.hpp"
 #include "X/Engine/Util/Applied/ResourceManager.hpp"
 
@@ -52,8 +52,8 @@ void Draw()
     ImGui::Begin("Test Menu", &m_IsMenuOpen);
 
     ImGui::Text("ImGui renderer is working.");
-    ImGui::Text("FPS: %.1f", Util::Timer::FPS);
-    ImGui::Text("Frame time: %.2f ms", Util::Timer::DeltaMs);
+    ImGui::Text("FPS: %.1f", Util::Base::Timer::FPS);
+    ImGui::Text("Frame time: %.2f ms", Util::Base::Timer::DeltaMs);
 #ifdef XP_DEV_FEATURES_ENABLED
     ImGui::Text(
         "Model: %s",

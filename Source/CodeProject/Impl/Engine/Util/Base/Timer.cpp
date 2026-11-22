@@ -1,4 +1,4 @@
-#include "X/Engine/Util/Timer.hpp"
+#include "X/Engine/Util/Base/Timer.hpp"
 
 #include "X/Project/Configs/Static.hpp"
 
@@ -6,7 +6,7 @@
 #include <chrono>
 #include <thread>
 
-namespace Engine::Util::Timer
+namespace Engine::Util::Base::Timer
 {
 
 namespace

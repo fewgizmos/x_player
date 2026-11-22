@@ -4,7 +4,7 @@
 
 #include "X/Engine/Base/Render/ArtifactsDeletor.hpp"
 #include "X/Engine/Base/JobSystem/JobManager.hpp"
-#include "X/Engine/Base/Runtime/EngineThreadIDs.hpp"
+#include "X/Engine/Base/Runtime/BaseEngineThreadIDs.hpp"
 #include "X/Engine/Base/Viewport/Surface.hpp"
 
 #include <SDL3/SDL_error.h>

@@ -3,7 +3,7 @@
 #include "X/Project/Configs/Static.hpp"
 
 #include "X/Engine/Base/JobSystem/JobManager.hpp"
-#include "X/Engine/Base/Runtime/EngineThreadIDs.hpp"
+#include "X/Engine/Base/Runtime/BaseEngineThreadIDs.hpp"
 
 #include <fastgltf/core.hpp>
 #include <fastgltf/glm_element_traits.hpp>

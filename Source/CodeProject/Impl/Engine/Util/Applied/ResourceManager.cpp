@@ -9,7 +9,7 @@
 
 #include "X/Engine/Base/Render/RenderingPool.hpp"
 
-#include "X/Engine/Base/Runtime/EngineThreadIDs.hpp"
+#include "X/Engine/Base/Runtime/BaseEngineThreadIDs.hpp"
 
 #include <exception>
 #include <iostream>

@@ -10,6 +10,6 @@ int Run();
 void StartUp();
 void CleanUp();
 
-void TickFrame();
+void HandleFrame();
 
 }
