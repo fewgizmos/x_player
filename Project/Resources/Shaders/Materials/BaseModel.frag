@@ -13,10 +13,14 @@ layout(push_constant) uniform PushConstants {
 
 layout(location = 0) in vec2 UV;
 
+layout(location = 1) in vec3 Normal;
+
 layout(location = 0) out vec4 OutColor;
 
 void main() {
-    OutColor = Push.TextureIndex == 0xFFFFFFFFu 
-        ? Push.BaseColor 
+    vec4 Albedo = Push.TextureIndex == 0xFFFFFFFFu
+        ? Push.BaseColor
         : SampleTexture(Push.TextureIndex, Push.SamplerIndex, UV) * Push.BaseColor;
+    float Diffuse = max(dot(normalize(Normal), normalize(vec3(-0.4, 0.35, -0.85))), 0.0);
+    OutColor = vec4(Albedo.rgb * (0.45 + 0.90 * Diffuse), Albedo.a);
 }

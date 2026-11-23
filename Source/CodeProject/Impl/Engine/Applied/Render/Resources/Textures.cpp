@@ -24,7 +24,9 @@
 #include <cstdint>
 #include <exception>
 #include <filesystem>
+#include <limits>
 #include <memory>
+#include <stdexcept>
 #include <mutex>
 #include <utility>
 #include <vector>
@@ -85,10 +87,14 @@ const ::Engine::Base::JobSystem::DeferredTaskRegistration::Registrar
         65
     );
 
-void LoadTexture(const std::shared_ptr<Texture::LoadData>& p_Data, const std::string& p_Path)
+void LoadTexture(
+    const std::shared_ptr<Texture::LoadData>& p_Data,
+    const std::string& p_Path,
+    const std::shared_ptr<const std::vector<std::byte>>& p_EncodedData
+)
 {
-    if (std::filesystem::path(p_Path).extension() == ".png"
-        || std::filesystem::path(p_Path).extension() == ".PNG") {
+    if (!p_EncodedData && (std::filesystem::path(p_Path).extension() == ".png"
+        || std::filesystem::path(p_Path).extension() == ".PNG")) {
         FILE* File = std::fopen(p_Path.c_str(), "rb");
 
         if (File == nullptr) {
@@ -160,7 +166,18 @@ void LoadTexture(const std::shared_ptr<Texture::LoadData>& p_Data, const std::st
     int Height = 0;
     int Channels = 0;
 
-    stbi_uc* Pixels = stbi_load(p_Path.c_str(), &Width, &Height, &Channels, 4);
+    stbi_uc* Pixels;
+    if (p_EncodedData) {
+        if (p_EncodedData->empty() || p_EncodedData->size() > std::numeric_limits<int>::max()) {
+            throw std::runtime_error("invalid embedded image size");
+        }
+        Pixels = stbi_load_from_memory(
+            reinterpret_cast<const stbi_uc*>(p_EncodedData->data()),
+            static_cast<int>(p_EncodedData->size()), &Width, &Height, &Channels, 4
+        );
+    } else {
+        Pixels = stbi_load(p_Path.c_str(), &Width, &Height, &Channels, 4);
+    }
 
     if (Pixels == nullptr) {
         std::lock_guard<std::mutex> Lock(p_Data->Mutex);
@@ -218,6 +235,7 @@ Texture::Texture(CreateInfo p_CreateInfo)
     : Resource(std::to_string(static_cast<int>(p_CreateInfo.Format)) + ":" + p_CreateInfo.Path)
     , Path(std::move(p_CreateInfo.Path))
     , Format(p_CreateInfo.Format)
+    , m_EncodedData(std::move(p_CreateInfo.EncodedData))
     , m_LoadData(std::make_shared<LoadData>())
 {
 }
@@ -251,9 +269,9 @@ void Texture::BeginLoad()
     ::Engine::Base::JobSystem::It::PushBackground(
         ::Engine::Base::Runtime::EngineThreadID::RenderResourceLoaderTh,
         "texture_load_" + TexturePath,
-        [Data, TexturePath] {
+        [Data, TexturePath, EncodedData = m_EncodedData] {
             try {
-                LoadTexture(Data, TexturePath);
+                LoadTexture(Data, TexturePath, EncodedData);
             }
 
             catch (const std::exception& Error) {

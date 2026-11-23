@@ -12,6 +12,13 @@ void Camera::Recalculate()
     InverseViewProjection = glm::inverse(ViewProjection);
 }
 
+void Camera::UpdatePerspectiveProjection()
+{
+    Projection = glm::perspectiveRH_ZO(Fov, Aspect, FarPlane, NearPlane);
+    Projection[1][1] *= -1.0f;
+    Recalculate();
+}
+
 Camera BuildPerspective(
     float p_Fov,
     float p_Aspect,
@@ -24,16 +31,9 @@ Camera BuildPerspective(
     Result.Aspect    = p_Aspect;
     Result.NearPlane = p_NearPlane;
 
-    Result.View       = glm::inverse(p_Local);
-    Result.Projection = glm::perspective(
-        Result.Fov,
-        Result.Aspect,
-        Result.NearPlane,
-        Result.FarPlane
-    );
-
+    Result.View     = glm::inverse(p_Local);
     Result.Position = glm::vec3(p_Local[3]);
-    Result.Recalculate();
+    Result.UpdatePerspectiveProjection();
 
     return Result;
 }
@@ -56,11 +56,12 @@ Camera BuildOrthographic(
     const float HalfWidth  = HalfHeight * p_Aspect;
 
     Result.View = glm::inverse(p_Local);
-    Result.Projection = glm::ortho(
+    Result.Projection = glm::orthoRH_ZO(
         -HalfWidth, HalfWidth,
         -HalfHeight, HalfHeight,
-        p_NearPlane, p_FarPlane
+        p_FarPlane, p_NearPlane
     );
+    Result.Projection[1][1] *= -1.0f;
 
     Result.Position = glm::vec3(p_Local[3]);
     Result.Recalculate();

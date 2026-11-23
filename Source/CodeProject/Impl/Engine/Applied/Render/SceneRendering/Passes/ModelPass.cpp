@@ -52,7 +52,7 @@ struct alignas(16) PushConstants
 const ::Engine::Base::BootstrapManager::DeferredBootstrapRegistration::InitRegistrar
     RegisterInit("scene_model_pass_init", Init, 30);
 
-bool ModelPartIsReady(const ModelPart& p_Part)
+bool ModelPartResourcesAreReady(const ModelPart& p_Part)
 {
     if (!p_Part.Mesh || !p_Part.Material || !p_Part.Mesh.IsReady() || !p_Part.Material.IsReady()) { return false; }
 
@@ -64,7 +64,7 @@ bool ModelPartIsReady(const ModelPart& p_Part)
         if (!MorphTarget || !MorphTarget.IsReady() || !MorphTarget->GetSnapshot()) { return false; }
     }
 
-    return static_cast<bool>(p_Part.Mesh->GetSnapshot()) && static_cast<bool>(p_Part.Material->GetSnapshot());
+    return true;
 }
 
 void DrawModel(
@@ -91,7 +91,7 @@ void DrawModel(
     );
 
     for (const ModelPart& Part : ModelSnapshot->Parts) {
-        if (!ModelPartIsReady(Part)) { continue; }
+        if (!ModelPartResourcesAreReady(Part)) { continue; }
 
         const std::shared_ptr<const MeshSnapshot> MeshValue = Part.Mesh->GetSnapshot();
         const std::shared_ptr<const MaterialSnapshot> MaterialValue = Part.Material->GetSnapshot();
@@ -186,7 +186,7 @@ void Render()
             *Entry.Target,
             Camera->View,
             Camera->Projection,
-            Entry.AppliedTransform.ToMatrix(),
+            Entry.AppliedTransform,
             Frame.CommandBuffer,
             Disp
         );

@@ -107,39 +107,33 @@ void SetMaterialTexture(
     Materials::MaterialTexture& p_Target
 )
 {
-    if (!p_Info.has_value()) {
-        return;
-    }
+    if (!p_Info.has_value()) { return; }
 
     const std::size_t TextureIndex = p_Info->textureIndex;
 
-    if (TextureIndex >= p_Asset.textures.size()) {
-        return;
-    }
+    if (TextureIndex >= p_Asset.textures.size()) { return; }
 
     const fastgltf::Texture& Texture = p_Asset.textures[TextureIndex];
 
-    if (!Texture.imageIndex.has_value() || Texture.imageIndex.value() >= p_Asset.images.size()) {
-        return;
-    }
+    if (!Texture.imageIndex.has_value() || Texture.imageIndex.value() >= p_Asset.images.size()) { return; }
 
     const fastgltf::Image& Image = p_Asset.images[Texture.imageIndex.value()];
-    const fastgltf::sources::URI* Source = std::get_if<fastgltf::sources::URI>(&Image.data);
+    Textures::TextureCreateInfo Info;
 
-    if (Source == nullptr) {
-        return;
-    }
+    if (const auto* Source = std::get_if<fastgltf::sources::URI>(&Image.data)) {
+        Info.Path = std::filesystem::absolute(p_ModelPath.parent_path() / Source->uri.fspath())
+            .lexically_normal().string();
 
-    const std::filesystem::path TexturePath =
-        std::filesystem::absolute(p_ModelPath.parent_path() / Source->uri.fspath()).lexically_normal();
+    } else if (const auto* View = std::get_if<fastgltf::sources::BufferView>(&Image.data)) {
+        const auto Bytes = fastgltf::DefaultBufferDataAdapter{}(p_Asset, View->bufferViewIndex);
+        Info.Path = std::filesystem::absolute(p_ModelPath).lexically_normal().string()
+            + "#image/" + std::to_string(Texture.imageIndex.value());
 
-    p_Target.Target = ::Engine::Util::Applied::ResourceHandle<
-        ::Engine::Applied::Render::Resources::Textures::Texture>(
-            ::Engine::Applied::Render::Resources::Textures::TextureCreateInfo{
-                TexturePath.string(),
-                VK_FORMAT_R8G8B8A8_SRGB
-            }
-        );
+        Info.EncodedData = std::make_shared<const std::vector<std::byte>>(Bytes.begin(), Bytes.end());
+
+    } else { return; }
+
+    p_Target.Target = ::Engine::Util::Applied::ResourceHandle<Textures::Texture>(std::move(Info));
 
     if (p_Info->transform) {
         p_Target.UvOffset = glm::vec2(

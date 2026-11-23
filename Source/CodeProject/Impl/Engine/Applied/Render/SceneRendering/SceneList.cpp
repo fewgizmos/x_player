@@ -28,7 +28,7 @@ void SetCamera(Camera& p_Camera)
     m_Camera = &p_Camera;
 }
 
-void PushModel(const Model& p_Model, const Transform& p_AppliedTransform)
+void PushModel(const Model& p_Model, const glm::mat4& p_AppliedTransform)
 {
     m_Models.push_back({ &p_Model, p_AppliedTransform });
 }

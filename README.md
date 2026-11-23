@@ -3,9 +3,13 @@
 
 The current code includes a working model rendering demo.
 
-| Development Stage |
-| :--- |
-| There’s a rock. It’s not an ordinary rock, but it’s not made of gold either; it’s loaded onto the GPU asynchronously via glTF, complete with textures and materials. It’s designed to simulate map streaming. Oh, and there’s also an ImGui rendere. |
+| Development Stage                                        |
+| :---                                                     |
+| Models, Textures & glTF Materials async loading;         |
+| ImGui Renderer with possibility of loading custom fonts; |
+| Scene Renderer (models);                                 |
+| Scene;                                                   |
+| Demo ImGui menu & scene;                                 |
 
 Full engine specification is available here: [Docs/X-Player/Specification.md](/Docs/X-Player/Specification.md)
 

@@ -8,9 +8,11 @@
 
 #include <vulkan/vulkan_core.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace Engine::Applied::Render::Resources::Textures
 {
@@ -20,6 +22,7 @@ struct TextureCreateInfo
     std::string Path;
 
     VkFormat Format = VK_FORMAT_R8G8B8A8_SRGB;
+    std::shared_ptr<const std::vector<std::byte>> EncodedData{};
 };
 
 struct TextureSnapshot
@@ -57,7 +60,9 @@ public:
 
 private:
     std::string Path;
+
     VkFormat Format;
+    std::shared_ptr<const std::vector<std::byte>> m_EncodedData;
 
     Engine::Base::Render::Image m_Image;
     uint32_t m_Index = UINT32_MAX;
@@ -71,6 +76,7 @@ private:
     uint32_t m_UploadRow = 0;
     uint32_t m_UploadChunkRows = 1;
     uint32_t m_UploadHeight = 0;
+
     std::atomic<std::shared_ptr<const TextureSnapshot>> m_Snapshot;
 };
 

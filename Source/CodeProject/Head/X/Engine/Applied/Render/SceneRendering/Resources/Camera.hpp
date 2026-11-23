@@ -22,6 +22,7 @@ struct Camera
     float OrthographicSize = 10.0f;
 
     void Recalculate();
+    void UpdatePerspectiveProjection();
 };
 
 Camera BuildPerspective(
