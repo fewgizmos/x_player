@@ -40,6 +40,8 @@ namespace Engine::Applied::Render::UI::ImguiRenderer
 namespace
 {
 
+constexpr VkFormat TargetFormat = VK_FORMAT_R8G8B8A8_SRGB;
+
 VkDescriptorPool m_DescriptorPool = VK_NULL_HANDLE;
 std::mutex m_FrameMutex;
 
@@ -116,8 +118,7 @@ void Init()
     Info.UseDynamicRendering = true;
     Info.PipelineInfoMain.PipelineRenderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
     Info.PipelineInfoMain.PipelineRenderingCreateInfo.colorAttachmentCount = 1;
-    Info.PipelineInfoMain.PipelineRenderingCreateInfo.pColorAttachmentFormats =
-        &::Engine::Base::Render::Vk::Frame::GetSwapchain().image_format;
+    Info.PipelineInfoMain.PipelineRenderingCreateInfo.pColorAttachmentFormats = &TargetFormat;
     Info.CheckVkResultFn = CheckVulkanResult;
 
     const std::vector<uint32_t> VertexShader = CompileVertexShader();
@@ -130,7 +131,8 @@ void Init()
 
     ::Engine::Applied::Render::UI::ImGuiScaler::Init();
 
-    ::Engine::Base::Render::RenderingPool::Register("imgui", Render, 1000);
+    ::Engine::Base::Render::RenderingPool::Register("imgui", Render, TargetFormat,
+        ::Engine::Base::Render::RenderingPool::WindowExtent, 800);
 }
 
 void Cleanup()
@@ -139,6 +141,7 @@ void Cleanup()
 
     ImGui_ImplVulkan_Shutdown();
     ImGui_ImplSDL3_Shutdown();
+
     ImGui::DestroyContext();
 }
 
@@ -163,7 +166,7 @@ void EndFrame()
     m_FrameMutex.unlock();
 }
 
-void Render()
+void Render(const ::Engine::Base::Render::RenderingPool::RenderTarget& p_Target)
 {
     std::lock_guard<std::mutex> Lock(m_FrameMutex);
 
@@ -174,18 +177,16 @@ void Render()
     }
 
     const auto& Frame = ::Engine::Base::Render::Vk::Frame::GetCurrentFrame();
-    const auto& Image = ::Engine::Base::Render::Vk::Frame::GetCurrentImage();
     const auto& Disp = ::Engine::Base::Render::Vk::Device::GetDisp();
-    const auto& Swapchain = ::Engine::Base::Render::Vk::Frame::GetSwapchain();
 
     VkRenderingAttachmentInfo Attachment{ VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
-    Attachment.imageView = Image.ImageView;
+    Attachment.imageView = p_Target.View;
     Attachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     Attachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
     Attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 
     VkRenderingInfo RenderingInfo{ VK_STRUCTURE_TYPE_RENDERING_INFO };
-    RenderingInfo.renderArea.extent = Swapchain.extent;
+    RenderingInfo.renderArea.extent = p_Target.Extent;
     RenderingInfo.layerCount = 1;
     RenderingInfo.colorAttachmentCount = 1;
     RenderingInfo.pColorAttachments = &Attachment;

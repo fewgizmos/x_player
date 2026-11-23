@@ -951,4 +951,10 @@ std::shared_ptr<const ModelSnapshot> Model::GetSnapshot() const
     return m_Snapshot;
 }
 
+const ::Engine::Util::Applied::ResourceHandle<
+    ::Engine::Applied::Render::Resources::Shaders::Shader>& Model::GetShader() const
+{
+    return m_CreateInfo.Shader;
+}
+
 }

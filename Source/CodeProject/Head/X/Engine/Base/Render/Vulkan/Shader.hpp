@@ -29,6 +29,7 @@ struct GraphicsPipelineCreateInfo
     bool DepthWrite = true;
     bool DepthClamp = false;
     bool AlphaBlend = false;
+    VkBlendFactor SrcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
 
     float DepthBiasConstant = 0.0f;
     float DepthBiasSlope    = 0.0f;

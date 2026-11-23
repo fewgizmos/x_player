@@ -72,6 +72,7 @@ std::string MakeKey(const ShaderCreateInfo& p_Info)
     Append(Key, Graphics.DepthWrite);
     Append(Key, Graphics.DepthClamp);
     Append(Key, Graphics.AlphaBlend);
+    Append(Key, Graphics.SrcColorBlendFactor);
     Append(Key, Graphics.DepthBiasConstant);
     Append(Key, Graphics.DepthBiasSlope);
     Append(Key, Graphics.SetLayouts.size());
@@ -149,7 +150,7 @@ void DestroyPipelineAsync(::Engine::Base::Render::Pipeline& p_Target)
         [Target] {
             ::Engine::Base::Render::Vk::Shader::DestroyPipeline(Target);
         },
-        ::Engine::Configs::Static::ResourceLoader::GPU_OPS_HIGH_ORDER
+        100
     );
 }
 
@@ -320,7 +321,7 @@ void Shader::Update()
                 throw;
             }
         },
-        ::Engine::Configs::Static::ResourceLoader::GPU_OPS_HIGH_ORDER,
+        100,
         { 0, 0, 1, 0, 0 }
     );
 

@@ -15,7 +15,9 @@
 
 #include "X/Engine/Base/Render/Vulkan/Commands.hpp"
 #include "X/Engine/Base/Render/Vulkan/Device.hpp"
+#include "X/Engine/Base/Render/Vulkan/Descriptors.hpp"
 #include "X/Engine/Base/Render/Vulkan/Frame.hpp"
+#include "X/Engine/Base/Render/Vulkan/Shader.hpp"
 #include "X/Engine/Base/Render/Vulkan/GpuResources.hpp"
 #include "X/Engine/Base/Render/Vulkan/Samplers.hpp"
 
@@ -66,8 +68,52 @@ const BootstrapManager::DeferredBootstrapRegistration::CleanRegistrar
 const JobSystem::DeferredTaskRegistration::Registrar
     RegisterFrame(::Engine::Base::Runtime::EngineThreadID::RenderTh, "render_frame", RenderFrame, 50);
 
-void ClearBackground(VkCommandBuffer p_Cmd)
+VkDescriptorSetLayout m_LayerLayout = VK_NULL_HANDLE;
+VkDescriptorPool m_LayerPool = VK_NULL_HANDLE;
+std::vector<VkDescriptorSet> m_LayerSets;
+Pipeline m_CompositePipeline;
+VkSampler m_LayerSampler = VK_NULL_HANDLE;
+
+void CreateCompositePipeline()
 {
+    GraphicsPipelineCreateInfo Info;
+    Info.ColorFormats = {Vk::Frame::GetSwapchain().image_format};
+    Info.DepthWrite = false;
+    Info.CullMode = VK_CULL_MODE_NONE;
+    Info.AlphaBlend = true;
+    Info.SrcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+    Info.SetLayouts = {m_LayerLayout};
+    m_CompositePipeline = Vk::Shader::CreateGraphicsPipeline(
+        "Rendering/Composite.vert", "Rendering/Composite.frag", Info);
+}
+
+void ReleaseLayerSets()
+{
+    if (m_LayerPool != VK_NULL_HANDLE) {
+        Vk::Descriptors::DestroyPool(m_LayerPool);
+        m_LayerPool = VK_NULL_HANDLE;
+    }
+    m_LayerSets.clear();
+}
+
+void BindLayerImages(std::span<const RenderingPool::RenderTarget> p_Layers)
+{
+    if (p_Layers.empty() || m_LayerPool != VK_NULL_HANDLE) { return; }
+
+    const auto Count = static_cast<uint32_t>(p_Layers.size());
+    constexpr auto Type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    m_LayerPool = Vk::Descriptors::CreatePool(Count, {{Type, Count}});
+    for (const auto& Layer : p_Layers) {
+        VkDescriptorSet Set = Vk::Descriptors::AllocateSet(m_LayerPool, m_LayerLayout);
+        Vk::Descriptors::WriteImage(Set, 0, Type, Layer.View,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, m_LayerSampler);
+        m_LayerSets.push_back(Set);
+    }
+}
+
+void CompositeLayers(VkCommandBuffer p_Cmd, std::span<const RenderingPool::RenderTarget> p_Layers)
+{
+    BindLayerImages(p_Layers);
     const auto& Target = Vk::Frame::GetCurrentImage();
     const auto& Disp   = Vk::Device::GetDisp();
 
@@ -103,11 +149,18 @@ void ClearBackground(VkCommandBuffer p_Cmd)
     Info.pColorAttachments    = &Attachment;
 
     Disp.cmdBeginRendering(p_Cmd, &Info);
+    const VkExtent2D Extent = Info.renderArea.extent;
+    const VkViewport Viewport{0, 0, static_cast<float>(Extent.width),
+        static_cast<float>(Extent.height), 0, 1};
+    Disp.cmdSetViewport(p_Cmd, 0, 1, &Viewport);
+    Disp.cmdSetScissor(p_Cmd, 0, 1, &Info.renderArea);
+    Disp.cmdBindPipeline(p_Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_CompositePipeline.Handle);
+    for (VkDescriptorSet Set : m_LayerSets) {
+        Disp.cmdBindDescriptorSets(p_Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            m_CompositePipeline.Layout, 0, 1, &Set, 0, nullptr);
+        Disp.cmdDraw(p_Cmd, 3, 1, 0, 0);
+    }
     Disp.cmdEndRendering(p_Cmd);
-
-    Vk::Commands::MemoryBarrier(p_Cmd, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-        VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-        VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT);
 }
 
 void RecreateSwapchain()
@@ -119,7 +172,15 @@ void RecreateSwapchain()
         m_AcquireSemaphoreSignaled = false;
     }
 
-    Vk::Frame::RecreateSwapchain();
+    const VkFormat PreviousFormat = Vk::Frame::GetSwapchain().image_format;
+    Vk::Frame::RecreateSwapchain(); // Waits for all users of the old views.
+    ReleaseLayerSets();
+    RenderingPool::ResizeTargets(Vk::Frame::GetSwapchain().extent);
+    if (PreviousFormat != Vk::Frame::GetSwapchain().image_format) {
+        Vk::Shader::DestroyPipeline(m_CompositePipeline);
+        m_CompositePipeline = {};
+        CreateCompositePipeline();
+    }
     m_AcquirePending.store(false, std::memory_order_release);
     m_AcquireReady.store(false, std::memory_order_release);
     m_AcquireResult.store(VK_NOT_READY, std::memory_order_release);
@@ -169,6 +230,16 @@ void Init()
 
     Vk::Frame::CreateFrameData();
 
+    m_LayerLayout = Vk::Descriptors::CreateSetLayout({
+        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr}
+    });
+    VkSamplerCreateInfo Sampler{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+    Sampler.magFilter = Sampler.minFilter = VK_FILTER_LINEAR;
+    Sampler.addressModeU = Sampler.addressModeV = Sampler.addressModeW =
+        VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    X_ASSERT(Vk::Device::GetDisp().createSampler(&Sampler, nullptr, &m_LayerSampler) != VK_SUCCESS,
+        "Failed to create compositor sampler");
+    CreateCompositePipeline();
 }
 
 void WaitIdle()
@@ -189,9 +260,14 @@ const vkb::Instance& GetInstance()
 
 void Cleanup()
 {
-    RenderingPool::Clear();
-
     if (Vk::Device::GetDevice().device != VK_NULL_HANDLE) {
+        ReleaseLayerSets();
+        Vk::Shader::DestroyPipeline(m_CompositePipeline);
+        m_CompositePipeline = {};
+        Vk::Descriptors::DestroySetLayout(m_LayerLayout);
+        m_LayerLayout = VK_NULL_HANDLE;
+        Vk::Device::GetDisp().destroySampler(m_LayerSampler, nullptr);
+        m_LayerSampler = VK_NULL_HANDLE;
         Vk::Samplers::DestroyAll();
         Vk::Device::DestroyRenderCompletionSemaphore();
     }
@@ -284,9 +360,8 @@ void RenderFrame()
     RenderingPool::CaptureFrameSnapshot();
     ResourceLoader::RecordPendingAcquires(Frame.CommandBuffer);
 
-    ClearBackground(Frame.CommandBuffer);
-
-    RenderingPool::RenderAll();
+    const auto Layers = RenderingPool::RenderAll(Frame.CommandBuffer);
+    CompositeLayers(Frame.CommandBuffer, Layers);
 
     Vk::Commands::TransitionImage(Frame.CommandBuffer, Image.Image,
         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,

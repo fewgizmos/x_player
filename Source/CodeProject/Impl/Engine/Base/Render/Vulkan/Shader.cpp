@@ -318,7 +318,7 @@ Pipeline CreateGraphicsPipeline(const std::vector<uint32_t>& p_Vertex, const std
     VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 
     ColorBlendAttachment.blendEnable = p_CreateInfo.AlphaBlend ? VK_TRUE : VK_FALSE;
-    ColorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    ColorBlendAttachment.srcColorBlendFactor = p_CreateInfo.SrcColorBlendFactor;
     ColorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
     ColorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
     ColorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;

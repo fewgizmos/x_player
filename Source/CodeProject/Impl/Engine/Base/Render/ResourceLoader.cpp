@@ -234,7 +234,7 @@ int GetEffectiveOrder(int p_Order, uint32_t p_Age)
         static_cast<uint32_t>(::Engine::Configs::Static::ResourceLoader::GPU_OPS_MAX_AGING_BOOST)
     ));
 
-    return std::max(1, p_Order - Boost);
+    return p_Order + Boost;
 }
 
 bool IsBatchComplete(Batch& p_Batch)
@@ -1322,7 +1322,7 @@ void BeginFrame()
                     continue;
                 }
 
-                if ((!Found || EffectiveOrder < BestOrder
+                if ((!Found || EffectiveOrder > BestOrder
                         || (EffectiveOrder == BestOrder && Job.Sequence < BestSequence))) {
                     Found = true;
                     IsGpu = true;
@@ -1340,7 +1340,7 @@ void BeginFrame()
                     continue;
                 }
 
-                if ((!Found || EffectiveOrder < BestOrder
+                if ((!Found || EffectiveOrder > BestOrder
                         || (EffectiveOrder == BestOrder && Job.Sequence < BestSequence))) {
                     Found = true;
                     IsGpu = false;
@@ -1395,7 +1395,7 @@ void BeginFrame()
                     Ticket->Done.store(true, std::memory_order_release);
                 }
             },
-            -Job.Order
+            Job.Order
         );
     }
 

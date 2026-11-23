@@ -1,5 +1,7 @@
 #pragma once
 
+#include "X/Engine/Base/Render/RenderingPool.hpp"
+
 namespace Engine::Applied::Render::UI::ImguiRenderer
 {
 
@@ -8,6 +10,6 @@ void Cleanup();
 
 void BeginFrame();
 void EndFrame();
-void Render();
+void Render(const ::Engine::Base::Render::RenderingPool::RenderTarget& p_Target);
 
 }

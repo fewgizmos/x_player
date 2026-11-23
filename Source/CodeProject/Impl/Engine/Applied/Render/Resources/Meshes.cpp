@@ -1,7 +1,5 @@
 #include "X/Engine/Applied/Render/Resources/Meshes.hpp"
 
-#include "X/Project/Configs/Static.hpp"
-
 #include "X/Engine/Base/JobSystem/JobManager.hpp"
 #include "X/Engine/Base/Render/ResourceLoader.hpp"
 #include "X/Engine/Base/Render/Vulkan/GpuResources.hpp"
@@ -282,7 +280,7 @@ void MeshMorphTarget::Update()
                 throw;
             }
         },
-        ::Engine::Configs::Static::ResourceLoader::GPU_OPS_NORMAL_ORDER,
+        10,
         {
             PositionBytes + NormalBytes,
             static_cast<uint32_t>((PositionBytes != 0) + (NormalBytes != 0)),
@@ -615,7 +613,7 @@ void Mesh::Update()
                     throw;
                 }
             },
-            ::Engine::Configs::Static::ResourceLoader::GPU_OPS_NORMAL_ORDER,
+            10,
             {
                 sizeof(Vertex) * Data->Vertices.size()
                     + sizeof(uint32_t) * Data->SortedIndices.size(),

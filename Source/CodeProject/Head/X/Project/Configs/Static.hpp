@@ -9,7 +9,7 @@
 namespace Engine::Configs::Static
 {
 
-inline constexpr int MAX_FPS = 80;
+inline constexpr int TARGET_FPS = 144;
 
 namespace ViewportStartup 
 {
@@ -44,7 +44,7 @@ namespace Graphics
 inline constexpr unsigned char BACKGROUND_RGB[3] = {13, 17, 23};
 
 inline constexpr int MAX_FRAMES_IN_FLIGHT = 4;
-inline constexpr bool VSYNC = true;
+inline constexpr bool VSYNC               = true;
 
 inline constexpr uint32_t MAX_SAMPLERS  = 64;
 inline constexpr uint32_t MAX_TEXTURES  = 4096;
@@ -78,14 +78,6 @@ inline constexpr fastgltf::Extensions PARSER_EXTENSIONS =
 
 }
 
-namespace Tests
-{
-
-inline constexpr bool MODEL_RENDERER_ENABLED = true;
-inline const std::string MODEL_RENDERER_PATH = Contents::GLTF_MODELS_DIR + "Rock/Rock.gltf";
-
-}
-
 namespace Scene
 {
 
@@ -108,10 +100,6 @@ inline constexpr uint32_t GPU_RESOURCE_CREATES_PER_FRAME   = 16;
 inline constexpr uint32_t GPU_RESOURCE_DESTROYS_PER_FRAME  = 32;
 inline constexpr uint32_t GPU_DESCRIPTOR_UPDATES_PER_FRAME = 256;
 
-inline constexpr int GPU_OPS_CRITICAL_ORDER  = 1;
-inline constexpr int GPU_OPS_HIGH_ORDER      = 10;
-inline constexpr int GPU_OPS_NORMAL_ORDER    = 100;
-inline constexpr int GPU_OPS_LOW_ORDER       = 1000;
 inline constexpr int GPU_OPS_MAX_AGING_BOOST = 900;
 
 }

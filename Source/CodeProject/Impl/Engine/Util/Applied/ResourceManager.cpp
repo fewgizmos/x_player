@@ -99,7 +99,7 @@ void Cleanup()
 
 void Init()
 {
-    ::Engine::Base::Render::RenderingPool::Register("resources_collect_retired", CollectRetired, 1000);
+    ::Engine::Base::Render::RenderingPool::RegisterSnapshot("resources_collect_retired", CollectRetired, 1000);
 }
 
 const ::Engine::Base::BootstrapManager::DeferredBootstrapRegistration::InitRegistrar

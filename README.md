@@ -19,7 +19,7 @@ Demo screenshots gallery - [Docs/X-Player/ScreenshotsGallery.md](/Docs/X-Player/
 
 ### Linux:
 
-#### [0.] To begin working with the engine, you need to install all development dependencie:
+#### [0.] To begin working with the engine, you need to install all development dependencies:
 ```
 ./Scripts/Dev/XEnvPreparator.sh
 ```

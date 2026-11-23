@@ -344,7 +344,7 @@ void Texture::Update()
                         RowBytes * RowCount, FirstRow, RowCount, FirstRow == 0, LastChunk
                     );
                 },
-                ::Engine::Configs::Static::ResourceLoader::GPU_OPS_NORMAL_ORDER,
+                10,
                 { static_cast<VkDeviceSize>(Data->Width) * 4 * RowCount, 1, 0, 0, 0 }
             );
 
@@ -390,7 +390,7 @@ void Texture::Update()
                             TextureIndex
                         );
                     },
-                    ::Engine::Configs::Static::ResourceLoader::GPU_OPS_HIGH_ORDER,
+                    100,
                     { 0, 0, 0, 0, 1 }
                 );
 
@@ -500,7 +500,7 @@ void Texture::Update()
                 throw;
             }
         },
-        ::Engine::Configs::Static::ResourceLoader::GPU_OPS_NORMAL_ORDER,
+        10,
         {
             Data->Pixels.size(),
             1,

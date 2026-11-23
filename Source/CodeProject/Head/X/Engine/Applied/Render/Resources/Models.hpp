@@ -65,6 +65,8 @@ public:
 
     const std::vector<ModelPart>& GetParts() const;
     std::shared_ptr<const ModelSnapshot> GetSnapshot() const;
+    const ::Engine::Util::Applied::ResourceHandle<
+        ::Engine::Applied::Render::Resources::Shaders::Shader>& GetShader() const;
 
 private:
     CreateInfo m_CreateInfo;
