@@ -7,11 +7,9 @@ The current code includes a working model rendering demo.
 | Development Stage                                        |
 | :---                                                     |
 | Models, Textures & glTF Materials async loading;         |
-| ImGui Renderer with possibility of loading custom fonts; |
-| Scene Renderer (models);                                 |
 | Scene;                                                   |
 | Demo ImGui menu & scene;                                 |
-| Different building profiles;                             |
+| Free-flight playing camera;                              |
 
 Full engine specification is available here: [Docs/X-Player/Specification.md](/Docs/X-Player/Specification.md)
 
