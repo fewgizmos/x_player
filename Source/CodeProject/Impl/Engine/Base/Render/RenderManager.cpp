@@ -42,6 +42,9 @@ namespace Engine::Base::Render::It
 namespace
 {
 
+const std::string CompositorFragmentShaderPath = "Rendering/Service/Composite.frag";
+const std::string CompositorVertexShaderPath = "Rendering/Service/Composite.vert";
+
 vkb::Instance m_Instance;
 
 uint32_t m_FrameCounter = 0;
@@ -84,7 +87,7 @@ void CreateCompositePipeline()
     Info.SrcColorBlendFactor = VK_BLEND_FACTOR_ONE;
     Info.SetLayouts = {m_LayerLayout};
     m_CompositePipeline = Vk::Shader::CreateGraphicsPipeline(
-        "Rendering/Composite.vert", "Rendering/Composite.frag", Info);
+        CompositorVertexShaderPath, CompositorFragmentShaderPath, Info);
 }
 
 void ReleaseLayerSets()

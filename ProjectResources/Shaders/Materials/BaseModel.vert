@@ -24,6 +24,8 @@ void main()
         dot(Push.UvTransformRow0, vec4(aUvX, aUvY, 1.0, 1.0)),
         dot(Push.UvTransformRow1, vec4(aUvX, aUvY, 1.0, 1.0))
     );
+
     Normal = normalize(aNormal);
+
     gl_Position = Push.Projection * vec4(aPosition, 1.0);
 }

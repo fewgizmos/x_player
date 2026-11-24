@@ -40,6 +40,8 @@ namespace Engine::Applied::Render::UI::ImguiRenderer
 namespace
 {
 
+const std::string ImGuiShader = "UI/ImGui.vert";
+
 constexpr VkFormat TargetFormat = VK_FORMAT_R8G8B8A8_SRGB;
 
 VkDescriptorPool m_DescriptorPool = VK_NULL_HANDLE;
@@ -64,7 +66,7 @@ const ::Engine::Base::JobSystem::DeferredTaskRegistration::Registrar
 
 void CheckVulkanResult(VkResult p_Result)
 {
-    X_ASSERT(p_Result != VK_SUCCESS, "ImGui Vulkan backend failed");
+    X_ASSERT(p_Result != VK_SUCCESS, "ImGui vulkan backend failed");
 }
 
 void UploadFontTexture()
@@ -84,10 +86,10 @@ std::vector<uint32_t> CompileVertexShader()
 {
     return ::Engine::Base::Render::Vk::Shader::CompileGlsl(
         ::Engine::Util::File::ReadRaw(
-            std::string(::Engine::Configs::Static::Contents::SHADERS_DIR) + "UI/ImGui.vert"
+            std::string(::Engine::Configs::Static::Contents::SHADERS_DIR) + ImGuiShader
         ),
         ::Engine::Base::Render::ShaderStage::Vertex,
-        "UI/ImGui.vert"
+        ImGuiShader
     );
 }
 
@@ -103,7 +105,10 @@ void Init()
 
     ImGui::StyleColorsDark();
 
-    ImGui_ImplSDL3_InitForVulkan(::Engine::Base::Viewport::Surface::GetNative());
+    X_ASSERT(
+        !ImGui_ImplSDL3_InitForVulkan(::Engine::Base::Viewport::Surface::GetNative()),
+        "failed to initialize ImGui SDL3 backend"
+    );
 
     ImGui_ImplVulkan_InitInfo Info = {};
     Info.ApiVersion = VK_API_VERSION_1_3;
@@ -139,8 +144,16 @@ void Cleanup()
 {
     ::Engine::Applied::Render::UI::Resources::Fonts::Cleanup();
 
-    ImGui_ImplVulkan_Shutdown();
-    ImGui_ImplSDL3_Shutdown();
+    if (ImGui::GetCurrentContext() == nullptr) { return; }
+
+    const ImGuiIO& Io = ImGui::GetIO();
+    if (Io.BackendRendererUserData != nullptr) {
+        ImGui_ImplVulkan_Shutdown();
+    }
+
+    if (Io.BackendPlatformUserData != nullptr) {
+        ImGui_ImplSDL3_Shutdown();
+    }
 
     ImGui::DestroyContext();
 }

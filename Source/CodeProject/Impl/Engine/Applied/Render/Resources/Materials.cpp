@@ -50,6 +50,8 @@ struct Material::LoadData
 namespace
 {
 
+const std::string ValidatorShaderPath = "Materials/Service/MaterialValidator.comp";
+
 static_assert(std::is_standard_layout_v<MaterialData>);
 static_assert(sizeof(MaterialData) == 704);
 static_assert(alignof(MaterialData) == alignof(glm::vec4));
@@ -68,10 +70,10 @@ void ValidateLayout()
     constexpr uint32_t DecorationOffset = 35;
 
     const std::string ValidateShaderSource = ::Engine::Util::File::ReadRaw(
-        std::string(::Engine::Configs::Static::Contents::SHADERS_DIR) + "Util/Materials/Validate.comp"
+        std::string(::Engine::Configs::Static::Contents::SHADERS_DIR) + ValidatorShaderPath
     );
     const std::vector<uint32_t> ValidateShader = ::Engine::Base::Render::Vk::Shader::CompileGlsl(
-        ValidateShaderSource, ::Engine::Base::Render::ShaderStage::Compute, "Util/Materials/Validate.comp", {}, false
+        ValidateShaderSource, ::Engine::Base::Render::ShaderStage::Compute, ValidatorShaderPath, {}, false
     );
 
     const std::size_t Offsets[] = {
@@ -546,7 +548,7 @@ void Material::BeginLoad()
     Index = UINT32_MAX;
 
     if (!m_CreateInfo.TargetShader) {
-        SetFailed("material requires Shader Ref");
+        SetFailed("material requires shader resource via handler");
 
         return;
     }
