@@ -2,12 +2,12 @@
 
 #include "X/Project/Configs/Static.hpp"
 
-#include "X/Engine/Util/Base/Assert.hpp"
-
 #include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
 
 #include "X/Engine/Applied/Render/SceneRendering/SceneList.hpp"
 #include "X/Engine/Applied/Render/SceneRendering/SceneRenderPassPool.hpp"
+
+#include "X/Engine/Base/Render/Vulkan/GpuResources.hpp"
 
 #include "X/Engine/Applied/Render/Resources/Materials.hpp"
 #include "X/Engine/Applied/Render/Resources/Meshes.hpp"
@@ -76,12 +76,16 @@ struct Draw
     std::shared_ptr<const ShaderSnapshot> Shader;
     std::shared_ptr<const MeshSnapshot> Mesh;
     std::shared_ptr<const MaterialSnapshot> Material;
+
     Instance Data;
+
     AlphaMode Alpha;
+
     bool DoubleSided;
     bool Mirrored;
     bool DynamicFaces;
     bool Instanced;
+
     float Depth;
 
     auto GetBatchKey() const
@@ -199,31 +203,23 @@ VkBuffer UploadInstances(const std::vector<Draw>& p_Draws)
     const VkDeviceSize Bytes = p_Draws.size() * sizeof(Instance);
 
     if (Buffer.Size < Bytes) {
-        const RenderBase::Buffer Replacement = RenderBase::ResourceLoader::CreateBuffer(
+        const RenderBase::Buffer Replacement = RenderBase::ResourceLoader::CreateMappedBuffer(
             std::max(Bytes, Buffer.Size * 2),
-            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT
+            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
         );
 
         RenderBase::ResourceLoader::DestroyBuffer(Buffer);
         Buffer = Replacement;
     }
 
-    const VmaAllocator Allocator = RenderBase::Vk::GpuResources::GetAllocator();
-    VmaAllocationInfo Info{};
-    vmaGetAllocationInfo(Allocator, Buffer.Allocation, &Info);
-    auto* Destination = static_cast<unsigned char*>(Info.pMappedData);
-
-    X_ASSERT(!Destination, "instance buffer is not mapped");
+    uint8_t* Destination = RenderBase::Vk::GpuResources::GetMappedData(Buffer);
 
     for (const auto& Entry : p_Draws) {
         std::memcpy(Destination, &Entry.Data, sizeof(Instance));
         Destination += sizeof(Instance);
     }
 
-    X_ASSERT(vmaFlushAllocation(Allocator, Buffer.Allocation, 0, Bytes) != VK_SUCCESS,
-        "failed to flush instances"
-    );
+    RenderBase::Vk::GpuResources::FlushMappedBuffer(Buffer, 0, Bytes);
 
     return Buffer.Handle;
 }
@@ -309,6 +305,7 @@ void Render()
 
         const auto& Material = Entry.Material->Data;
         glm::mat4 Transform = Scene->ActiveCamera->ViewProjection;
+
         if (!Entry.Instanced) { Transform *= Entry.Data.World; }
 
         const PushConstants Constants{
@@ -329,6 +326,7 @@ void Render()
             sizeof(Constants),
             &Constants
         );
+
         Disp.cmdDrawIndexed(
             Cmd,
             Entry.Mesh->IndexCount,

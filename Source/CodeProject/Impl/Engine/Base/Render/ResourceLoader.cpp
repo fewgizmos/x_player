@@ -125,7 +125,7 @@ struct PendingGpuJob
 
     int Order = 100;
 
-    uint32_t Age = 0;
+    uint32_t Age      = 0;
     uint64_t Sequence = 0;
 };
 
@@ -138,7 +138,7 @@ struct PendingCallbackJob
 
     int Order = 100;
 
-    uint32_t Age = 0;
+    uint32_t Age      = 0;
     uint64_t Sequence = 0;
 };
 
@@ -192,6 +192,7 @@ const ::Engine::Base::BootstrapManager::DeferredBootstrapRegistration::CleanRegi
     RegisterClean("resource_loader_cleanup", Cleanup, 61);
 
 void PollCompletedTimelines();
+
 void RecordAcquire(
     VkCommandBuffer p_CommandBuffer,
     const std::vector<AcquireBuffer>& p_Buffers,
@@ -289,7 +290,8 @@ VkSemaphore MakeTimelineSemaphore()
     VkSemaphore Result = VK_NULL_HANDLE;
 
     X_ASSERT(::Engine::Base::Render::Vk::Device::GetDisp().createSemaphore(&Info, nullptr, &Result) != VK_SUCCESS,
-        "failed to create resource loader semaphore");
+        "failed to create resource loader semaphore"
+    );
 
     return Result;
 }
@@ -376,9 +378,7 @@ bool IsResourceUseComplete(
             "failed to poll transfer destruction timeline"
         );
 
-        if (CompletedValue < p_TransferValue) {
-            return false;
-        }
+        if (CompletedValue < p_TransferValue) { return false; }
     }
 
     if (p_GraphicsValue != 0) {
@@ -434,11 +434,11 @@ void QueueDeferredBufferDestroy(
             }
 
             catch (const std::exception& Error) {
-                std::cerr << "Resource buffer destruction failed: " << Error.what() << "\n";
+                std::cerr << "resource buffer destruction failed: " << Error.what() << "\n";
             }
 
             catch (...) {
-                std::cerr << "Resource buffer destruction failed: unknown error\n";
+                std::cerr << "resource buffer destruction failed: unknown error\n";
             }
 
             m_PendingDestroyJobs.fetch_sub(1, std::memory_order_acq_rel);
@@ -475,11 +475,11 @@ void QueueDeferredImageDestroy(
             try { DestroyImageNow(p_Target); }
 
             catch (const std::exception& Error) {
-                std::cerr << "Resource image destruction failed: " << Error.what() << "\n";
+                std::cerr << "resource image destruction failed: " << Error.what() << "\n";
             }
 
             catch (...) {
-                std::cerr << "Resource image destruction failed: unknown error\n";
+                std::cerr << "resource image destruction failed: unknown error\n";
             }
 
             m_PendingDestroyJobs.fetch_sub(1, std::memory_order_acq_rel);
@@ -519,11 +519,11 @@ void QueueDeferredGpuCallback(
             try { Callback(); }
 
             catch (const std::exception& Error) {
-                std::cerr << "Deferred GPU callback failed: " << Error.what() << "\n";
+                std::cerr << "deferred gpu callback failed: " << Error.what() << "\n";
             }
 
             catch (...) {
-                std::cerr << "Deferred GPU callback failed: unknown error\n";
+                std::cerr << "deferred gpu callback failed: unknown error\n";
             }
         },
         -p_Order
@@ -637,10 +637,10 @@ void FinishBatch(Batch& p_Batch)
     p_Batch.Buffers.clear();
     p_Batch.Images.clear();
 
-    p_Batch.Submitted = false;
-    p_Batch.GraphicsSubmitted = false;
-    p_Batch.SubmissionFailed = false;
-    p_Batch.GraphicsHasCommands = false;
+    p_Batch.Submitted               = false;
+    p_Batch.GraphicsSubmitted       = false;
+    p_Batch.SubmissionFailed        = false;
+    p_Batch.GraphicsHasCommands     = false;
     p_Batch.WaitForRenderCompletion = false;
 
     p_Batch.TransferSubmitValue = 0;
@@ -1593,6 +1593,14 @@ void QueueImageUploadChunk(const Image& Target, const void* Data, VkDeviceSize S
     if (!::Engine::Base::Render::Vk::Device::GetQueues().DedicatedTransfer) {
         m_ActiveBatch->GraphicsHasCommands = true;
     }
+}
+
+Buffer CreateMappedBuffer(VkDeviceSize p_Size, VkBufferUsageFlags p_Usage)
+{
+    return CreateBuffer(
+        p_Size, p_Usage,
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT
+    );
 }
 
 Buffer CreateBuffer(

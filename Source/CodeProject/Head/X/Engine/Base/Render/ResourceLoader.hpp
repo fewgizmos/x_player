@@ -14,24 +14,26 @@ namespace Engine::Base::Render::ResourceLoader
 
 struct ResourceJobTicket
 {
-    std::atomic<bool> Done = false;
-    std::atomic<bool> Failed = false;
+    std::atomic<bool> Done     = false;
+    std::atomic<bool> Failed   = false;
     std::atomic<bool> Rejected = false;
+
     uint64_t VersionChecksum = 0;
+
     std::string FailureReason;
 };
 
 struct GpuResourceOpsBudget
 {
-    VkDeviceSize UploadBytes = 0;
-    uint32_t CopyCommands = 0;
-    uint32_t ResourceCreates = 0;
-    uint32_t ResourceDestroys = 0;
+    VkDeviceSize UploadBytes   = 0;
+    uint32_t CopyCommands      = 0;
+    uint32_t ResourceCreates   = 0;
+    uint32_t ResourceDestroys  = 0;
     uint32_t DescriptorUpdates = 0;
 };
 
 using Buffer = ::Engine::Base::Render::Buffer;
-using Image = ::Engine::Base::Render::Image;
+using Image  = ::Engine::Base::Render::Image;
 
 void Init();
 void Cleanup();
@@ -43,11 +45,13 @@ std::shared_ptr<ResourceJobTicket> PushFrameJobCallback(
     int p_Order = 100,
     GpuResourceOpsBudget p_Budget = {}
 );
+
 std::shared_ptr<ResourceJobTicket> PushFrameJobVk(
     std::function<void(VkCommandBuffer)> p_Callback,
     int p_Order = 100,
     GpuResourceOpsBudget p_Budget = {}
 );
+
 void PushDeferredGpuCallback(
     std::function<void()> p_Callback,
     int p_Order = 100
@@ -58,10 +62,11 @@ void AdvanceBudgetFrame();
 GpuResourceOpsBudget GetBudgetUsage();
 void RecordPendingAcquires(VkCommandBuffer p_CommandBuffer);
 void OnRenderSubmitted(uint64_t p_RenderCompletionValue);
+
 struct CompletionWait
 {
     VkSemaphore Semaphore = VK_NULL_HANDLE;
-    uint64_t Value = 0;
+    uint64_t Value        = 0;
 };
 
 uint32_t GetCompletionWaits(CompletionWait* p_Waits, uint32_t p_Capacity);
@@ -71,6 +76,7 @@ void QueueImageUpload(const Image& p_Target, const void* p_Data, VkDeviceSize p_
 void QueueImageUploadChunk(const Image&, const void*, VkDeviceSize, uint32_t, uint32_t, bool, bool);
 
 Buffer CreateBuffer(VkDeviceSize p_Size, VkBufferUsageFlags p_Usage, VmaAllocationCreateFlags p_Flags = 0);
+Buffer CreateMappedBuffer(VkDeviceSize p_Size, VkBufferUsageFlags p_Usage);
 void DestroyBuffer(Buffer& p_Target);
 
 Image CreateImage(
@@ -82,6 +88,7 @@ Image CreateImage(
     uint32_t p_ArrayLayers = 1,
     bool p_IsCube = false
 );
+
 void DestroyImage(Image& p_Target);
 
 VkImageView CreateImageView(
@@ -90,6 +97,7 @@ VkImageView CreateImageView(
     uint32_t p_BaseMip,
     uint32_t p_MipCount
 );
+
 void DestroyImageView(VkImageView p_View);
 
 }

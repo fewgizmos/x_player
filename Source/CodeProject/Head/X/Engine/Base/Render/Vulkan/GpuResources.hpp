@@ -41,14 +41,18 @@ void CreateAllocator(const vkb::Instance& p_Instance);
 
 VmaAllocator GetAllocator();
 
+uint8_t* GetMappedData(const Buffer& p_Buffer);
+void FlushMappedBuffer(const Buffer& p_Buffer, VkDeviceSize p_Offset, VkDeviceSize p_Size);
+
 void RecordImageUpload(
-    VkCommandBuffer p_Cmd,
-    const Image& p_Target,
-    const Buffer& p_Staging,
-    VkDeviceSize p_StagingOffset = 0
+    VkCommandBuffer p_Cmd, const Image& p_Target,
+    const Buffer& p_Staging, VkDeviceSize p_StagingOffset = 0
 );
-void RecordImageUploadChunk(VkCommandBuffer, const Image&, const Buffer&, VkDeviceSize,
-    uint32_t, uint32_t, bool, bool);
+
+void RecordImageUploadChunk(
+    VkCommandBuffer, const Image&, const Buffer&, VkDeviceSize,
+    uint32_t, uint32_t, bool, bool
+);
 
 void RecordImageMipGeneration(VkCommandBuffer p_Cmd, const Image& p_Target);
 void RecordMipGeneration(VkCommandBuffer p_Cmd, const Image& p_Target);

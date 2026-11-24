@@ -258,6 +258,23 @@ void CreateAllocator(const vkb::Instance& p_Instance)
 
 VmaAllocator GetAllocator() { return m_Allocator; }
 
+uint8_t* GetMappedData(const Buffer& p_Buffer)
+{
+    VmaAllocationInfo Info{};
+    vmaGetAllocationInfo(m_Allocator, p_Buffer.Allocation, &Info);
+    X_ASSERT(Info.pMappedData == nullptr, "buffer is not mapped");
+
+    return static_cast<uint8_t*>(Info.pMappedData);
+}
+
+void FlushMappedBuffer(const Buffer& p_Buffer, VkDeviceSize p_Offset, VkDeviceSize p_Size)
+{
+    X_ASSERT(
+        vmaFlushAllocation(m_Allocator, p_Buffer.Allocation, p_Offset, p_Size) != VK_SUCCESS,
+        "failed to flush mapped buffer"
+    );
+}
+
 void RecordImageUpload(
     VkCommandBuffer p_Cmd,
     const Image& p_Target,
@@ -267,12 +284,12 @@ void RecordImageUpload(
 {
     PendingImageUpload Upload;
 
-    Upload.Staging      = p_Staging;
+    Upload.Staging       = p_Staging;
     Upload.StagingOffset = p_StagingOffset;
-    Upload.Target       = p_Target.Handle;
-    Upload.Extent       = p_Target.Extent;
-    Upload.MipLevels   = p_Target.MipLevels;
-    Upload.ArrayLayers = p_Target.ArrayLayers;
+    Upload.Target        = p_Target.Handle;
+    Upload.Extent        = p_Target.Extent;
+    Upload.MipLevels     = p_Target.MipLevels;
+    Upload.ArrayLayers   = p_Target.ArrayLayers;
 
     FlushImageUpload(p_Cmd, Upload);
 }
@@ -310,9 +327,9 @@ void RecordImageUploadChunk(VkCommandBuffer Cmd, const Image& Target, const Buff
 void RecordImageMipGeneration(VkCommandBuffer p_Cmd, const Image& p_Target)
 {
     PendingImageUpload Upload;
-    Upload.Target = p_Target.Handle;
-    Upload.Extent = p_Target.Extent;
-    Upload.MipLevels = p_Target.MipLevels;
+    Upload.Target      = p_Target.Handle;
+    Upload.Extent      = p_Target.Extent;
+    Upload.MipLevels   = p_Target.MipLevels;
     Upload.ArrayLayers = p_Target.ArrayLayers;
 
     GenerateMips(p_Cmd, Upload);
