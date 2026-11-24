@@ -219,8 +219,8 @@ void Init()
 
     LightPoint FillLight;
     FillLight.Type      = LightType::Point;
-    FillLight.Color     = {0.52f, 0.72f, 1.0f};
-    FillLight.Intensity = 0.42f;
+    FillLight.Color     = {0.08f, 0.225f, 1.0f};
+    FillLight.Intensity = 0.85f;
     FillLight.Range     = 1.3f;
 
     LightPoint SkyLight;
@@ -230,7 +230,7 @@ void Init()
 
     m_LightEntities = {
         Scene::It::CreateEntity<LightEntity>(KeyLight,  glm::vec3(0.0f), glm::vec3(-42.0f, -23.0f, 0.0f)),
-        Scene::It::CreateEntity<LightEntity>(FillLight, glm::vec3(0.55f, 0.38f, 0.48f), glm::vec3(0.0f)),
+        Scene::It::CreateEntity<LightEntity>(FillLight, glm::vec3(0.47f, 0.32f, 0.57f), glm::vec3(0.0f)),
         Scene::It::CreateEntity<LightEntity>(SkyLight,  glm::vec3(0.0f), glm::vec3(0.0f))
     };
 

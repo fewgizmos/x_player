@@ -10,6 +10,7 @@
 | Scene;                                           |
 | Demo ImGui menu & scene;                         |
 | Free-flight playing camera;                      |
+| Scene light points;                              |
 
 ## Links
 
