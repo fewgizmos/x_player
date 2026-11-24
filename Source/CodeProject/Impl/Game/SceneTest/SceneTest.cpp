@@ -98,17 +98,28 @@ void Init()
     Pipeline.ColorFormats       = {VK_FORMAT_R8G8B8A8_SRGB};
     Pipeline.DepthFormat        = VK_FORMAT_D32_SFLOAT;
     Pipeline.DepthCompare       = VK_COMPARE_OP_GREATER;
-    Pipeline.CullMode           = VK_CULL_MODE_NONE;
+    Pipeline.DynamicFaces       = true;
     Pipeline.PushConstantSize   = 128;
     Pipeline.PushConstantStages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     Pipeline.SetLayouts         = {Resources::Textures::GetBindlessSetLayout()};
-    Pipeline.VertexBindings     = {{0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX}};
+    Pipeline.ModelInstanceTransforms = true;
+
+    Pipeline.VertexBindings = {
+        {0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX},
+        {1, 7 * sizeof(glm::vec4), VK_VERTEX_INPUT_RATE_INSTANCE}
+    };
     Pipeline.VertexAttributes   = {
         {0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, Position)},
         {1, 0, VK_FORMAT_R32_SFLOAT, offsetof(Vertex, UvX)},
         {2, 0, VK_FORMAT_R32_SFLOAT, offsetof(Vertex, UvY)},
         {3, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, Normal)}
     };
+
+    for (uint32_t I = 0; I < 7; ++I) {
+        Pipeline.VertexAttributes.push_back({
+            4 + I, 1, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<uint32_t>(I * sizeof(glm::vec4))
+        });
+    }
 
     const Util::Applied::ResourceHandle<Resources::Shaders::Shader> ModelShader(std::move(Shader));
     ModelInfo RockModel{Configs::Static::Contents::GLTF_MODELS_DIR + "Rock/Rock.gltf", ModelShader};

@@ -361,12 +361,17 @@ Pipeline CreateGraphicsPipeline(const std::vector<uint32_t>& p_Vertex, const std
         X_ASSERT(true, "failed to create Pipeline layout");
     }
 
-    const VkDynamicState DynamicStates[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+    const VkDynamicState DynamicStates[] = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR,
+        VK_DYNAMIC_STATE_CULL_MODE,
+        VK_DYNAMIC_STATE_FRONT_FACE
+    };
 
     VkPipelineDynamicStateCreateInfo DynamicCreateInfo = {};
 
     DynamicCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-    DynamicCreateInfo.dynamicStateCount = 2;
+    DynamicCreateInfo.dynamicStateCount = p_CreateInfo.DynamicFaces ? 4 : 2;
     DynamicCreateInfo.pDynamicStates = DynamicStates;
 
     VkPipelineRenderingCreateInfo RenderingCreateInfo = {};

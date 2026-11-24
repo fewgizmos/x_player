@@ -46,6 +46,10 @@ struct ModelPart
 struct ModelSnapshot
 {
     std::vector<ModelPart> Parts;
+
+    glm::vec3 BoundsCenter = glm::vec3(0.0f);
+    glm::vec3 BoundsExtent = glm::vec3(0.0f);
+
     uint64_t VersionChecksum = 0;
 };
 

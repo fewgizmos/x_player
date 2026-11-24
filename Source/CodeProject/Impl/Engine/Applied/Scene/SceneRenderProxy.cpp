@@ -19,15 +19,15 @@ namespace Engine::Applied::Scene::RenderProxy
 namespace
 {
 
+namespace SceneList = ::Engine::Applied::Render::SceneRendering::SceneList;
+
 using SceneVolume     = ::Engine::Applied::Scene::Volume::SceneVolume;
 using VolumeComponent = ::Engine::Applied::Scene::Volume::VolumeComponent;
 using CameraInstance  = ::Engine::Applied::Scene::Volume::SceneVolCameraInstance;
 using ModelInstance   = ::Engine::Applied::Scene::Volume::SceneVolModelInstance;
-using Camera          = ::Engine::Applied::Render::SceneRendering::Resources::Camera;
-using Model           = ::Engine::Applied::Render::Resources::Models::Model;
-using ModelEntry      = ::Engine::Applied::Render::SceneRendering::SceneList::ModelEntry;
 
-Camera m_FrameCamera;
+using Camera          = ::Engine::Applied::Render::SceneRendering::Resources::Camera;
+using ModelEntry      = ::Engine::Applied::Render::SceneRendering::SceneList::ModelEntry;
 
 const ::Engine::Base::JobSystem::DeferredTaskRegistration::Registrar RegisterTask(
     ::Engine::Base::Runtime::EngineThreadID::GameTh,
@@ -36,7 +36,7 @@ const ::Engine::Base::JobSystem::DeferredTaskRegistration::Registrar RegisterTas
     100
 );
 
-void CaptureCamera()
+void CaptureCamera(SceneList::Frame& p_Frame)
 {
     const ::Engine::Applied::Scene::SceneEntity* Player = ::Engine::Applied::Scene::It::GetPlayerEntity();
 
@@ -49,51 +49,44 @@ void CaptureCamera()
 
         if (CameraComponent == nullptr) { continue; }
 
-        m_FrameCamera = CameraComponent->GetCamera();
+        Camera FrameCamera = CameraComponent->GetCamera();
 
         ::Engine::Util::Applied::Scene::Transform::CameraApplier::ApplyLocal(
-            m_FrameCamera,
+            FrameCamera,
             CameraComponent->GetLocalTransform()
         );
         ::Engine::Util::Applied::Scene::Transform::CameraApplier::ApplyWorld(
-            m_FrameCamera,
+            FrameCamera,
             Volume.GetWorldTransform()
         );
 
-        ::Engine::Applied::Render::SceneRendering::SceneList::SetCamera(m_FrameCamera);
+        p_Frame.ActiveCamera = FrameCamera;
+
         return;
     }
 }
 
-void CaptureModels(const SceneVolume& p_Volume)
+void CaptureModels(SceneList::Frame& p_Frame, const SceneVolume& p_Volume)
 {
     for (const std::unique_ptr<VolumeComponent>& Component : p_Volume.GetComponents()) {
         const auto* ModelComponent = dynamic_cast<const ModelInstance*>(Component.get());
 
-        if (ModelComponent == nullptr || !ModelComponent->GetModel().IsReady()) {
-            continue;
-        }
-
-        const Model* ModelValue = ModelComponent->GetModel().Get();
-
-        if (ModelValue == nullptr) { continue; }
+        if (ModelComponent == nullptr || !ModelComponent->GetModel().IsReady()) { continue; }
 
         ModelEntry Entry;
-        Entry.Target = ModelValue;
+        Entry.Target = ModelComponent->GetModel();
 
         ::Engine::Util::Applied::Scene::Transform::ModelApplier::ApplyLocal(
             Entry,
             ModelComponent->GetLocalTransform()
         );
+
         ::Engine::Util::Applied::Scene::Transform::ModelApplier::ApplyWorld(
             Entry,
             p_Volume.GetWorldTransform()
         );
 
-        ::Engine::Applied::Render::SceneRendering::SceneList::PushModel(
-            *Entry.Target,
-            Entry.AppliedTransform
-        );
+        p_Frame.Models.push_back(std::move(Entry));
     }
 }
 
@@ -101,11 +94,11 @@ void CaptureModels(const SceneVolume& p_Volume)
 
 void CaptureFrame()
 {
-    const auto Lock = ::Engine::Applied::Render::SceneRendering::SceneList::LockFrame();
-    ::Engine::Applied::Render::SceneRendering::SceneList::Clear();
+    std::shared_ptr<SceneList::Frame> Frame = std::make_shared<SceneList::Frame>();
+
     ::Engine::Applied::Scene::It::ApplyPendingOperations();
 
-    CaptureCamera();
+    CaptureCamera(*Frame);
 
     for (const std::unique_ptr<::Engine::Applied::Scene::SceneEntity>& Entity
         : ::Engine::Applied::Scene::It::GetAllEntities()) {
@@ -115,10 +108,13 @@ void CaptureFrame()
         }
 
         CaptureModels(
+            *Frame,
             static_cast<const ::Engine::Applied::Scene::SceneEntity&>(*Entity)
                 .GetSceneVolume()
         );
     }
+
+    SceneList::PublishFrame(std::move(Frame));
 }
 
 }

@@ -27,7 +27,8 @@ constexpr uint32_t MATERIAL_TEXTURES_COUNT = 14;
 enum class AlphaMode : uint32_t
 {
     Opaque = 0,
-    Mask   = 1
+    Mask   = 1,
+    Blend  = 2
 };
 
 struct MaterialTexture

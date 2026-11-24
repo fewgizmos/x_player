@@ -26,6 +26,8 @@ struct GraphicsPipelineCreateInfo
     VkCullModeFlags CullMode = VK_CULL_MODE_BACK_BIT;
     VkFrontFace FrontFace    = VK_FRONT_FACE_CLOCKWISE;
 
+    bool ModelInstanceTransforms = false;
+    bool DynamicFaces = false;
     bool DepthWrite = true;
     bool DepthClamp = false;
     bool AlphaBlend = false;

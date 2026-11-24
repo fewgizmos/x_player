@@ -53,6 +53,7 @@ public:
 
     std::string GetTypeName() const override;
 
+    const CreateInfo& GetCreateInfo() const;
     const ::Engine::Base::Render::Pipeline& GetGraphicsPipeline() const;
     const ::Engine::Base::Render::Pipeline& GetComputePipeline() const;
     RenderQueue GetRenderQueue() const;

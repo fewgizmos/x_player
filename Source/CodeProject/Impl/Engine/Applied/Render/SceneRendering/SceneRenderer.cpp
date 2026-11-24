@@ -2,6 +2,7 @@
 
 #include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
 #include "X/Engine/Base/Render/RenderingPool.hpp"
+
 #include "X/Engine/Applied/Render/SceneRendering/SceneRenderPassPool.hpp"
 #include "X/Engine/Applied/Render/SceneRendering/SceneList.hpp"
 
@@ -41,9 +42,7 @@ void EnsureDepthTarget(const VkExtent2D& p_Extent)
         return;
     }
 
-    if (m_DepthView != VK_NULL_HANDLE) {
-        m_DepthView = VK_NULL_HANDLE;
-    }
+    if (m_DepthView != VK_NULL_HANDLE) { m_DepthView = VK_NULL_HANDLE; }
 
     if (m_DepthImage.Handle != VK_NULL_HANDLE) {
         ::Engine::Base::Render::ResourceLoader::DestroyImage(m_DepthImage);
@@ -71,9 +70,9 @@ void Init()
 
 void Cleanup()
 {
-    if (m_DepthView != VK_NULL_HANDLE) {
-        m_DepthView = VK_NULL_HANDLE;
-    }
+    SceneList::PublishFrame(nullptr);
+
+    if (m_DepthView != VK_NULL_HANDLE) { m_DepthView = VK_NULL_HANDLE; }
 
     if (m_DepthImage.Handle != VK_NULL_HANDLE) {
         ::Engine::Base::Render::ResourceLoader::DestroyImage(m_DepthImage);
@@ -140,10 +139,7 @@ void Render(const ::Engine::Base::Render::RenderingPool::RenderTarget& p_Target)
     Disp.cmdSetViewport(Frame.CommandBuffer, 0, 1, &Viewport);
     Disp.cmdSetScissor(Frame.CommandBuffer, 0, 1, &Scissor);
 
-    {
-        const auto Lock = SceneList::LockFrame();
-        SceneRenderPassPool::RenderAll();
-    }
+    SceneRenderPassPool::RenderAll();
 
     Disp.cmdEndRendering(Frame.CommandBuffer);
 }

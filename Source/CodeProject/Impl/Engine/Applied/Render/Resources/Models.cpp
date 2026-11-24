@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <functional>
+#include <limits>
 #include <mutex>
 #include <stdexcept>
 #include <utility>
@@ -471,9 +472,18 @@ void Model::BeginLoad()
                         MaterialInfo.EmissiveTexture
                     );
 
-                    MaterialInfo.Alpha = SourceMaterial.alphaMode == fastgltf::AlphaMode::Opaque
-                        ? Materials::AlphaMode::Opaque
-                        : Materials::AlphaMode::Mask;
+                    if (SourceMaterial.alphaMode == fastgltf::AlphaMode::Mask) {
+                        MaterialInfo.Alpha = Materials::AlphaMode::Mask;
+                    } else if (SourceMaterial.alphaMode == fastgltf::AlphaMode::Blend && Info.Shader) {
+                        MaterialInfo.Alpha = Materials::AlphaMode::Blend;
+                        Shaders::ShaderCreateInfo Variant = Info.Shader->GetCreateInfo();
+                        Variant.Graphics.AlphaBlend = true;
+                        Variant.Graphics.DepthWrite = false;
+                        Variant.Queue = Shaders::RenderQueue::Blended;
+
+                        MaterialInfo.TargetShader =
+                            ::Engine::Util::Applied::ResourceHandle<Shaders::Shader>(std::move(Variant));
+                    }
 
                     MaterialInfo.AlphaCutoff = SourceMaterial.alphaCutoff;
                     MaterialInfo.DoubleSided = SourceMaterial.doubleSided;
@@ -483,16 +493,7 @@ void Model::BeginLoad()
                     );
                 }
 
-                if (MaterialHandles.empty()) {
-                    Materials::MaterialCreateInfo DefaultMaterial;
-
-                    DefaultMaterial.TargetShader = Info.Shader;
-                    MaterialHandles.push_back(
-                        ::Engine::Util::Applied::ResourceHandle<Materials::Material>(
-                            std::move(DefaultMaterial)
-                        )
-                    );
-                }
+                ::Engine::Util::Applied::ResourceHandle<Materials::Material> DefaultMaterial;
 
                 std::vector<glm::mat4> NodeWorldTransforms(
                     Asset.nodes.size(), glm::mat4(1.0f)
@@ -707,7 +708,13 @@ void Model::BeginLoad()
                             && Primitive.materialIndex.value() < MaterialHandles.size()) {
                             Part.Material = MaterialHandles[Primitive.materialIndex.value()];
                         } else {
-                            Part.Material = MaterialHandles[0];
+                            if (!DefaultMaterial) {
+                                Materials::MaterialCreateInfo DefaultInfo;
+                                DefaultInfo.TargetShader = Info.Shader;
+                                DefaultMaterial =
+                                    ::Engine::Util::Applied::ResourceHandle<Materials::Material>(std::move(DefaultInfo));
+                            }
+                            Part.Material = DefaultMaterial;
                         }
 
                         for (Meshes::MeshMorphTargetCreateInfo& TargetInfo : MorphInfos) {
@@ -919,6 +926,30 @@ void Model::Update()
 
     std::shared_ptr<ModelSnapshot> Snapshot = std::make_shared<ModelSnapshot>();
     Snapshot->Parts = m_Parts;
+
+    if (!m_Parts.empty()) {
+        glm::vec3 BoundsMin(std::numeric_limits<float>::max());
+        glm::vec3 BoundsMax(std::numeric_limits<float>::lowest());
+
+        for (const ModelPart& Part : m_Parts) {
+            const std::shared_ptr<const Meshes::MeshSnapshot> Mesh = Part.Mesh->GetSnapshot();
+            const glm::vec3 Center = (Mesh->BoundsMin + Mesh->BoundsMax) * 0.5f;
+            const glm::vec3 Extent = (Mesh->BoundsMax - Mesh->BoundsMin) * 0.5f;
+            const glm::mat4& World = Part.PrivateTransform;
+
+            const glm::vec3 PartCenter(World * glm::vec4(Center, 1.0f));
+            const glm::vec3 PartExtent = glm::abs(glm::vec3(World[0])) * Extent.x
+                + glm::abs(glm::vec3(World[1])) * Extent.y
+                + glm::abs(glm::vec3(World[2])) * Extent.z;
+
+            BoundsMin = glm::min(BoundsMin, PartCenter - PartExtent);
+            BoundsMax = glm::max(BoundsMax, PartCenter + PartExtent);
+        }
+
+        Snapshot->BoundsCenter = (BoundsMin + BoundsMax) * 0.5f;
+        Snapshot->BoundsExtent = (BoundsMax - BoundsMin) * 0.5f;
+    }
+
     Snapshot->VersionChecksum = GetVersionChecksum();
 
     m_Snapshot = std::move(Snapshot);

@@ -68,6 +68,8 @@ std::string MakeKey(const ShaderCreateInfo& p_Info)
     Append(Key, Graphics.DepthFormat);
     Append(Key, Graphics.DepthCompare);
     Append(Key, Graphics.CullMode);
+    Append(Key, Graphics.DynamicFaces);
+    Append(Key, Graphics.ModelInstanceTransforms);
     Append(Key, Graphics.FrontFace);
     Append(Key, Graphics.DepthWrite);
     Append(Key, Graphics.DepthClamp);
@@ -352,6 +354,7 @@ void Shader::Unload()
     }
 }
 
+const Shader::CreateInfo& Shader::GetCreateInfo() const { return m_CreateInfo; }
 const ::Engine::Base::Render::Pipeline& Shader::GetGraphicsPipeline() const { return Graphics; }
 const ::Engine::Base::Render::Pipeline& Shader::GetComputePipeline() const { return Compute; }
 RenderQueue Shader::GetRenderQueue() const { return m_CreateInfo.Queue; }

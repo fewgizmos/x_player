@@ -1,46 +1,26 @@
 #include "X/Engine/Applied/Render/SceneRendering/SceneList.hpp"
 
+#include <atomic>
+#include <utility>
+
 namespace Engine::Applied::Render::SceneRendering::SceneList
 {
 
 namespace
 {
 
-std::mutex m_FrameMutex;
-Camera* m_Camera = nullptr;
-std::vector<ModelEntry> m_Models;
+std::atomic<std::shared_ptr<const Frame>> m_PublishedFrame;
 
 }
 
-std::unique_lock<std::mutex> LockFrame()
+void PublishFrame(std::shared_ptr<const Frame> p_Frame)
 {
-    return std::unique_lock(m_FrameMutex);
+    m_PublishedFrame.store(std::move(p_Frame), std::memory_order_release);
 }
 
-void Clear()
+std::shared_ptr<const Frame> Acquire()
 {
-    m_Camera = nullptr;
-    m_Models.clear();
-}
-
-void SetCamera(Camera& p_Camera)
-{
-    m_Camera = &p_Camera;
-}
-
-void PushModel(const Model& p_Model, const glm::mat4& p_AppliedTransform)
-{
-    m_Models.push_back({ &p_Model, p_AppliedTransform });
-}
-
-Camera* GetCamera()
-{
-    return m_Camera;
-}
-
-const std::vector<ModelEntry>& GetModels()
-{
-    return m_Models;
+    return m_PublishedFrame.load(std::memory_order_acquire);
 }
 
 }
