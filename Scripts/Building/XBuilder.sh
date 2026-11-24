@@ -42,18 +42,18 @@ for arg in "$@"; do
     esac
 done
 
-for env_var in X_BUILD_ID X_BUILD_TYPE X_TARGET_BIN_NAME; do
+for env_var in X_BUILD_ID X_PLATFORM_ID X_CMAKE_BUILD_TYPE X_ARTIFACT_NAME; do
     if [[ -z "${!env_var:-}" ]]; then
         echo "$env_var is not set in the environment" >&2
         exit 1
     fi
 done
 
-case "$X_BUILD_TYPE" in
+case "$X_CMAKE_BUILD_TYPE" in
     RELEASE) cmake_build_type="Release" ;;
     DEBUG)   cmake_build_type="Debug" ;;
     *)
-        echo "X_BUILD_TYPE must be RELEASE or DEBUG, got: '$X_BUILD_TYPE'" >&2
+        echo "X_CMAKE_BUILD_TYPE must be RELEASE or DEBUG, got: '$X_CMAKE_BUILD_TYPE'" >&2
         exit 1
         ;;
 esac
@@ -63,15 +63,15 @@ cmake_build_dir=".CmakeBuild/$cmake_build_type"
 cmake -B "$cmake_build_dir" -S .
 cmake --build "$cmake_build_dir"
 
-out_dir="Build/$X_BUILD_ID/Linux/$cmake_build_type"
+out_dir="Build/$X_BUILD_ID/$X_PLATFORM_ID/$cmake_build_type"
 mkdir -p "$out_dir"
 
-cp "$cmake_build_dir/bin/XProjectExecutable" "$out_dir/$X_TARGET_BIN_NAME"
+cp "$cmake_build_dir/bin/XProjectExecutable" "$out_dir/$X_ARTIFACT_NAME"
 
-ln -sfn "$(realpath --relative-to="$out_dir" "$ROOT_DIR/Project/Resources")" "$out_dir/Resources"
+ln -sfn "$(realpath --relative-to="$out_dir" "$ROOT_DIR/ProjectResources")" "$out_dir/Resources"
 
-echo "Compiled Executable: '$out_dir/$X_TARGET_BIN_NAME'"
+echo "Compiled Executable: '$out_dir/$X_ARTIFACT_NAME'"
 
 if [[ "$run_after" -eq 1 ]]; then
-    (cd "$out_dir" && "./$X_TARGET_BIN_NAME")
+    (cd "$out_dir" && "./$X_ARTIFACT_NAME")
 fi

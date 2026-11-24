@@ -202,7 +202,7 @@ void Init()
         .enable_extensions(Count, Extensions)
         .require_api_version(1, 3, 0);
 
-#ifdef XP_DEV_FEATURES_ENABLED
+#ifdef X_DEV_MODE
     Builder.use_default_debug_messenger().request_validation_layers();
 #endif
 

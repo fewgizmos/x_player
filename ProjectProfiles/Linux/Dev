@@ -1,0 +1,17 @@
+# project
+export X_PROJECT_NAME="XGame"
+
+# build
+export X_ARTIFACT_NAME="dev-x-game-demo"
+
+export X_BUILD_ID="Dev"
+export X_CMAKE_BUILD_TYPE="RELEASE"
+
+export X_PLATFORM_ID="LINUX"
+
+# viewport settings
+export X_VIEWPORT_WINDOW_NAME="demo"
+export X_VIEWPORT_WINDOW_LOGO_PATH="Resources/Images/DefaultEngineLogo.png"
+
+# dev
+export X_DEV_MODE="ON"

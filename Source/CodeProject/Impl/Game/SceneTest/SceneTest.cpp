@@ -74,7 +74,9 @@ Clock::time_point m_Start;
 void SelectCamera()
 {
     const auto Seconds = std::chrono::duration_cast<std::chrono::seconds>(Clock::now() - m_Start);
+
     auto* Camera = m_Cameras[(Seconds.count() / 2) % m_Cameras.size()];
+
     const auto Extent = Base::Viewport::Surface::GetExtent();
 
     if (Extent.x > 0 && Extent.y > 0) {

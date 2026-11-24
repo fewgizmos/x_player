@@ -1,4 +1,5 @@
 ## `X-Player` Engine::
+
 ### - is a experemental open-source C++20 multithreaded game engine built on Vulkan 1.3 and SDL3 with asynchronous glTF loading, bindless textures
 
 The current code includes a working model rendering demo.
@@ -10,6 +11,7 @@ The current code includes a working model rendering demo.
 | Scene Renderer (models);                                 |
 | Scene;                                                   |
 | Demo ImGui menu & scene;                                 |
+| Different building profiles;                             |
 
 Full engine specification is available here: [Docs/X-Player/Specification.md](/Docs/X-Player/Specification.md)
 
@@ -21,16 +23,16 @@ Demo screenshots gallery - [Docs/X-Player/ScreenshotsGallery.md](/Docs/X-Player/
 
 ## How to build::
 
-### Linux:
+### Linux [in dev mode]:
 
 #### [0.] To begin working with the engine, you need to install all development dependencies:
 ```
 ./Scripts/Dev/XEnvPreparator.sh
 ```
 
-#### 1. Next, to perform a build, needs to activate the development env for the engine and the products built upon it:
+#### 1. Activate the Linux development profile in the current shell
 ```
-source ./Project/XEnv
+source ./ProjectProfiles/Linux/Dev
 ```
 
 #### 2. Building:
@@ -38,7 +40,7 @@ source ./Project/XEnv
 ./Scripts/Building/XBuilder.sh -r
 ```
 
-You can remove the -r (--run) argument to disable automatic execution after the build.
+Omit `-r` (`--run`) to build without launching. The Dev profile produces `Build/Dev/LINUX/Release/dev-x-game-demo`.
 
 ## Source rules::
 

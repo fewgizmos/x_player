@@ -247,7 +247,7 @@ void UpdateAll()
             Resource->SetFailed("Unknown resource update failure");
         }
 
-#ifdef XP_DEV_FEATURES_ENABLED
+#ifdef X_DEV_MODE
         if ((Resource->GetState() == ResourceState::Failed
                 || Resource->GetState() == ResourceState::Rejected)
             && Resource->TryMarkFailureReported()) {

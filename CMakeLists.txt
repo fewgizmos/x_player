@@ -2,23 +2,26 @@ cmake_minimum_required(VERSION 3.20)
 
 foreach(X_ENV_VAR
     X_PROJECT_NAME
-    X_TARGET_BIN_NAME
+    X_ARTIFACT_NAME
     X_BUILD_ID
-    X_BUILD_TYPE
-    X_WINDOW_NAME
-    X_WINDOW_LOGO_PATH
-    XP_DEV_FEATURES_ENABLED
-    XP_EXPERIMENTAL_FEATURES_ENABLED
+    X_CMAKE_BUILD_TYPE
+    X_VIEWPORT_WINDOW_NAME
+    X_VIEWPORT_WINDOW_LOGO_PATH
+    X_DEV_MODE
+    X_PLATFORM_ID
 )
+    if("$ENV{${X_ENV_VAR}}" STREQUAL "")
+        message(FATAL_ERROR "${X_ENV_VAR} is missing. Source a build profile from ProjectProfiles first.")
+    endif()
     set(${X_ENV_VAR} "$ENV{${X_ENV_VAR}}")
 endforeach()
 
-if(X_BUILD_TYPE STREQUAL "RELEASE")
+if(X_CMAKE_BUILD_TYPE STREQUAL "RELEASE")
     set(CMAKE_BUILD_TYPE Release)
-elseif(X_BUILD_TYPE STREQUAL "DEBUG")
+elseif(X_CMAKE_BUILD_TYPE STREQUAL "DEBUG")
     set(CMAKE_BUILD_TYPE Debug)
 else()
-    message(FATAL_ERROR "X_BUILD_TYPE must be RELEASE or DEBUG, got: '${X_BUILD_TYPE}'. Project/XEnv variables must be in the environment.")
+    message(FATAL_ERROR "X_CMAKE_BUILD_TYPE must be RELEASE or DEBUG, got: '${X_CMAKE_BUILD_TYPE}'.")
 endif()
 
 project(XPlayerProject LANGUAGES CXX)

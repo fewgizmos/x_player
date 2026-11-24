@@ -56,7 +56,7 @@ void ApplyWindowIcon()
     int LogoHeight   = 0;
     int LogoChannels = 0;
 
-    stbi_uc* LogoPixels = stbi_load(X_WINDOW_LOGO_PATH, &LogoWidth, &LogoHeight, &LogoChannels, 4);
+    stbi_uc* LogoPixels = stbi_load(X_VIEWPORT_WINDOW_LOGO_PATH, &LogoWidth, &LogoHeight, &LogoChannels, 4);
 
     SDL_Surface* LogoSurface = SDL_CreateSurfaceFrom(LogoWidth, LogoHeight, SDL_PIXELFORMAT_RGBA32, LogoPixels, LogoWidth * 4);
 
@@ -73,7 +73,7 @@ void SetupForVulkan()
 {
     Platform::SDL3WM::WindowCreateInfo CreateInfo;
 
-    CreateInfo.Title = X_WINDOW_NAME;
+    CreateInfo.Title = X_VIEWPORT_WINDOW_NAME;
 
     CreateInfo.Width  = Configs::Static::ViewportStartup::WINDOW_WIDTH;
     CreateInfo.Height = Configs::Static::ViewportStartup::WINDOW_HEIGHT;
