@@ -33,7 +33,7 @@ const ::Engine::Base::JobSystem::DeferredTaskRegistration::Registrar RegisterTas
     ::Engine::Base::Runtime::EngineThreadID::GameTh,
     "scene_render_proxy",
     CaptureFrame,
-    100
+    60
 );
 
 void CaptureCamera(SceneList::Frame& p_Frame)
