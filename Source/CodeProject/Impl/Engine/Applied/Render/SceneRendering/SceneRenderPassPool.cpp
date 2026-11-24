@@ -16,11 +16,14 @@ namespace
 struct Entry
 {
     std::string Name;
-    RenderPass Callback;
+    Phase       Stage;
+    RenderPass  Callback;
+
     int Order = 50;
 };
 
 std::vector<Entry> m_Entries;
+
 bool m_Sealed = false;
 
 const ::Engine::Base::BootstrapManager::DeferredBootstrapRegistration::InitRegistrar
@@ -28,7 +31,7 @@ const ::Engine::Base::BootstrapManager::DeferredBootstrapRegistration::InitRegis
 
 }
 
-void Register(std::string p_Name, RenderPass p_Callback, int p_Order)
+void Register(std::string p_Name, Phase p_Phase, RenderPass p_Callback, int p_Order)
 {
     X_ASSERT(m_Sealed, "scene render pass pool is already sealed");
     X_ASSERT(!p_Callback, "empty scene render pass callback: " + p_Name);
@@ -38,7 +41,7 @@ void Register(std::string p_Name, RenderPass p_Callback, int p_Order)
         }),
         "duplicate scene render pass: " + p_Name);
 
-    m_Entries.push_back({ std::move(p_Name), std::move(p_Callback), p_Order });
+    m_Entries.push_back({ std::move(p_Name), p_Phase, std::move(p_Callback), p_Order });
 }
 
 void Seal()
@@ -52,11 +55,13 @@ void Seal()
     m_Sealed = true;
 }
 
-void RenderAll()
+void RenderAll(Phase p_Phase, const SceneList::Frame& p_Frame)
 {
     X_ASSERT(!m_Sealed, "scene render pass pool must be sealed before rendering");
 
-    for (const Entry& EntryValue : m_Entries) { EntryValue.Callback(); }
+    for (const Entry& EntryValue : m_Entries) {
+        if (EntryValue.Stage == p_Phase) { EntryValue.Callback(p_Frame); }
+    }
 }
 
 void Clear()

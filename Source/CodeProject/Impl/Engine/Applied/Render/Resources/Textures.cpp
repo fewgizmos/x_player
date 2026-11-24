@@ -19,9 +19,12 @@
 #include <png.h>
 #include <vulkan/vulkan_core.h>
 
+#include <glm/gtc/packing.hpp>
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <exception>
 #include <filesystem>
 #include <limits>
@@ -87,12 +90,67 @@ const ::Engine::Base::JobSystem::DeferredTaskRegistration::Registrar
         65
     );
 
-void LoadTexture(
+VkDeviceSize GetPixelSize(VkFormat p_Format)
+{
+    return p_Format == VK_FORMAT_R16G16B16A16_SFLOAT ? 8 : 4;
+}
+
+void LoadFloatTexture(
     const std::shared_ptr<Texture::LoadData>& p_Data,
     const std::string& p_Path,
     const std::shared_ptr<const std::vector<std::byte>>& p_EncodedData
 )
 {
+    int Width = 0;
+    int Height = 0;
+    int Channels = 0;
+
+    float* Pixels = p_EncodedData
+        ? stbi_loadf_from_memory(reinterpret_cast<const stbi_uc*>(p_EncodedData->data()),
+            static_cast<int>(p_EncodedData->size()), &Width, &Height, &Channels, 4)
+        : stbi_loadf(p_Path.c_str(), &Width, &Height, &Channels, 4);
+
+    if (Pixels == nullptr) {
+        throw std::runtime_error(stbi_failure_reason() ? stbi_failure_reason() : "HDR image decoding failed");
+    }
+
+    std::unique_ptr<float, decltype(&stbi_image_free)> Owner(Pixels, stbi_image_free);
+    const std::size_t Count = static_cast<std::size_t>(Width) * Height;
+    std::vector<std::byte> Data(Count * 8);
+
+    for (std::size_t Index = 0; Index < Count; ++Index) {
+        const float* Pixel = Pixels + Index * 4;
+        const uint64_t Packed = glm::packHalf4x16(
+            glm::clamp(glm::vec4(Pixel[0], Pixel[1], Pixel[2], Pixel[3]), 0.0f, 65504.0f)
+        );
+
+        std::memcpy(Data.data() + Index * sizeof(Packed), &Packed, sizeof(Packed));
+    }
+
+    std::lock_guard<std::mutex> Lock(p_Data->Mutex);
+
+    p_Data->Pixels = std::move(Data);
+    p_Data->Width = static_cast<uint32_t>(Width);
+    p_Data->Height = static_cast<uint32_t>(Height);
+    p_Data->Finished = true;
+}
+
+void LoadTexture(
+    const std::shared_ptr<Texture::LoadData>& p_Data,
+    const std::string& p_Path,
+    const std::shared_ptr<const std::vector<std::byte>>& p_EncodedData,
+    VkFormat p_Format
+)
+{
+    if (p_EncodedData && (p_EncodedData->empty() || p_EncodedData->size() > std::numeric_limits<int>::max())) {
+        throw std::runtime_error("invalid embedded image size");
+    }
+
+    if (p_Format == VK_FORMAT_R16G16B16A16_SFLOAT) {
+        LoadFloatTexture(p_Data, p_Path, p_EncodedData);
+        return;
+    }
+
     if (!p_EncodedData && (std::filesystem::path(p_Path).extension() == ".png"
         || std::filesystem::path(p_Path).extension() == ".PNG")) {
         FILE* File = std::fopen(p_Path.c_str(), "rb");
@@ -100,7 +158,7 @@ void LoadTexture(
         if (File == nullptr) {
             std::lock_guard<std::mutex> Lock(p_Data->Mutex);
 
-            p_Data->FailureReason = "failed to open PNG";
+            p_Data->FailureReason = "failed to open png";
             p_Data->Finished = true;
 
             return;
@@ -168,9 +226,6 @@ void LoadTexture(
 
     stbi_uc* Pixels;
     if (p_EncodedData) {
-        if (p_EncodedData->empty() || p_EncodedData->size() > std::numeric_limits<int>::max()) {
-            throw std::runtime_error("invalid embedded image size");
-        }
         Pixels = stbi_load_from_memory(
             reinterpret_cast<const stbi_uc*>(p_EncodedData->data()),
             static_cast<int>(p_EncodedData->size()), &Width, &Height, &Channels, 4
@@ -257,8 +312,9 @@ void Texture::BeginLoad()
     m_GpuVersionChecksum = 0;
     m_Index = UINT32_MAX;
 
-    if (Format != VK_FORMAT_R8G8B8A8_SRGB && Format != VK_FORMAT_R8G8B8A8_UNORM) {
-        SetFailed("unsupported decoded texture format; expected RGBA8 SRGB or UNORM");
+    if (Format != VK_FORMAT_R8G8B8A8_SRGB && Format != VK_FORMAT_R8G8B8A8_UNORM
+        && Format != VK_FORMAT_R16G16B16A16_SFLOAT) {
+        SetFailed("unsupported decoded texture format");
         return;
     }
 
@@ -269,9 +325,9 @@ void Texture::BeginLoad()
     ::Engine::Base::JobSystem::It::PushBackground(
         ::Engine::Base::Runtime::EngineThreadID::RenderResourceLoaderTh,
         "texture_load_" + TexturePath,
-        [Data, TexturePath, EncodedData = m_EncodedData] {
+        [Data, TexturePath, EncodedData = m_EncodedData, TextureFormat = Format] {
             try {
-                LoadTexture(Data, TexturePath, EncodedData);
+                LoadTexture(Data, TexturePath, EncodedData, TextureFormat);
             }
 
             catch (const std::exception& Error) {
@@ -344,12 +400,12 @@ void Texture::Update()
 
             const std::shared_ptr<LoadData> Data = m_LoadData;
             const uint64_t VersionChecksum = m_GpuVersionChecksum;
+            const VkDeviceSize RowBytes = static_cast<VkDeviceSize>(Data->Width) * GetPixelSize(Format);
 
             m_UploadRow += RowCount;
             m_GpuTicket = ::Engine::Base::Render::ResourceLoader::PushFrameJobVk(
-                [Data, FirstRow, RowCount, LastChunk, VersionChecksum](VkCommandBuffer) {
+                [Data, FirstRow, RowCount, LastChunk, VersionChecksum, RowBytes](VkCommandBuffer) {
                     std::lock_guard<std::mutex> Lock(Data->Mutex);
-                    const VkDeviceSize RowBytes = static_cast<VkDeviceSize>(Data->Width) * 4;
 
                     if (Data->VersionChecksum != VersionChecksum) {
                         Data->UploadRejected = true;
@@ -363,7 +419,7 @@ void Texture::Update()
                     );
                 },
                 10,
-                { static_cast<VkDeviceSize>(Data->Width) * 4 * RowCount, 1, 0, 0, 0 }
+                { RowBytes * RowCount, 1, 0, 0, 0 }
             );
 
             SetState(::Engine::Util::Applied::ResourceState::Uploading);
@@ -486,7 +542,7 @@ void Texture::Update()
     constexpr VkDeviceSize UploadChunkBytes = 1536 * 1024;
 
     m_UploadChunkRows = std::max<uint32_t>(1,
-        static_cast<uint32_t>(UploadChunkBytes / (static_cast<VkDeviceSize>(Width) * 4)));
+        static_cast<uint32_t>(UploadChunkBytes / (static_cast<VkDeviceSize>(Width) * GetPixelSize(Format))));
 
     SetState(::Engine::Util::Applied::ResourceState::QueuedGpu);
     m_GpuTicket = ::Engine::Base::Render::ResourceLoader::PushFrameJobVk(
@@ -520,8 +576,8 @@ void Texture::Update()
         },
         10,
         {
-            Data->Pixels.size(),
-            1,
+            0,
+            0,
             1,
             0,
             0

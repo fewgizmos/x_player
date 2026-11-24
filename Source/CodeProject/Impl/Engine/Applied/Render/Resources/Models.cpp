@@ -29,6 +29,7 @@ struct Model::LoadData
     std::mutex Mutex;
 
     std::vector<ModelPart> Parts;
+    std::vector<PunctualLight> Lights;
     std::string FailureReason;
 
     bool Finished = false;
@@ -38,6 +39,47 @@ struct Model::LoadData
 namespace
 {
 
+std::string MakeKey(const ModelCreateInfo& p_Info)
+{
+    std::string Key = p_Info.GltfPath + ":";
+
+    if (p_Info.Shader) { Key += p_Info.Shader->GetKey(); }
+    if (p_Info.BlendedShader) { Key += ":" + p_Info.BlendedShader->GetKey(); }
+
+    return Key;
+}
+
+PunctualLight MakeLight(const fastgltf::Light& p_Light, const glm::mat4& p_Transform)
+{
+    PunctualLight Light;
+
+    switch (p_Light.type) {
+    case fastgltf::LightType::Point:       Light.Type = PunctualLight::Kind::Point;       break;
+    case fastgltf::LightType::Spot:        Light.Type = PunctualLight::Kind::Spot;        break;
+    case fastgltf::LightType::Directional: Light.Type = PunctualLight::Kind::Directional; break;
+    }
+
+    Light.Color          = glm::vec3(p_Light.color[0], p_Light.color[1], p_Light.color[2]);
+    Light.Intensity      = p_Light.intensity;
+    Light.Range          = p_Light.range.value_or(0.0f);
+    Light.InnerConeAngle = p_Light.innerConeAngle.value_or(Light.InnerConeAngle);
+    Light.OuterConeAngle = p_Light.outerConeAngle.value_or(Light.OuterConeAngle);
+    Light.NodeTransform  = p_Transform;
+
+    return Light;
+}
+
+::Engine::Util::Applied::ResourceHandle<Shaders::Shader> MakeBlendedShader(const ModelCreateInfo& p_Info)
+{
+    if (p_Info.BlendedShader) { return p_Info.BlendedShader; }
+
+    Shaders::ShaderCreateInfo Variant = p_Info.Shader->GetCreateInfo();
+    Variant.Graphics.AlphaBlend = true;
+    Variant.Graphics.DepthWrite = false;
+    Variant.Queue = Shaders::RenderQueue::Blended;
+
+    return ::Engine::Util::Applied::ResourceHandle<Shaders::Shader>(std::move(Variant));
+}
 
 std::vector<uint32_t> BuildTriangleIndices(const fastgltf::Asset& p_Asset, const fastgltf::Primitive& p_Primitive)
 {
@@ -57,8 +99,8 @@ std::vector<uint32_t> BuildTriangleIndices(const fastgltf::Asset& p_Asset, const
             throw std::runtime_error("model primitive has no POSITION attribute");
         }
 
-        const fastgltf::Accessor& Positions =
-            p_Asset.accessors[PositionAttribute->accessorIndex];
+        const fastgltf::Accessor& Positions = p_Asset.accessors[PositionAttribute->accessorIndex];
+
         Source.resize(Positions.count);
 
         for (std::size_t Index = 0; Index < Source.size(); ++Index) {
@@ -127,8 +169,8 @@ void SetMaterialTexture(
 
     } else if (const auto* View = std::get_if<fastgltf::sources::BufferView>(&Image.data)) {
         const auto Bytes = fastgltf::DefaultBufferDataAdapter{}(p_Asset, View->bufferViewIndex);
-        Info.Path = std::filesystem::absolute(p_ModelPath).lexically_normal().string()
-            + "#image/" + std::to_string(Texture.imageIndex.value());
+
+        Info.Path = std::filesystem::absolute(p_ModelPath).lexically_normal().string() + "#image/" + std::to_string(Texture.imageIndex.value());
 
         Info.EncodedData = std::make_shared<const std::vector<std::byte>>(Bytes.begin(), Bytes.end());
 
@@ -360,7 +402,7 @@ Meshes::MeshSkeletonCreateInfo BuildSkeleton(
 }
 
 Model::Model(CreateInfo p_CreateInfo)
-    : Resource(p_CreateInfo.GltfPath + ":" + (p_CreateInfo.Shader ? p_CreateInfo.Shader->GetKey() : std::string()))
+    : Resource(MakeKey(p_CreateInfo))
     , m_CreateInfo(std::move(p_CreateInfo))
     , m_LoadData(std::make_shared<LoadData>())
 {
@@ -379,7 +421,7 @@ void Model::BeginLoad()
 
     m_LoadData = std::make_shared<LoadData>();
     m_Parts.clear();
-    m_Snapshot.reset();
+    m_Snapshot.store(nullptr, std::memory_order_release);
 
     const std::shared_ptr<LoadData> Data = m_LoadData;
     const CreateInfo Info = m_CreateInfo;
@@ -476,13 +518,7 @@ void Model::BeginLoad()
                         MaterialInfo.Alpha = Materials::AlphaMode::Mask;
                     } else if (SourceMaterial.alphaMode == fastgltf::AlphaMode::Blend && Info.Shader) {
                         MaterialInfo.Alpha = Materials::AlphaMode::Blend;
-                        Shaders::ShaderCreateInfo Variant = Info.Shader->GetCreateInfo();
-                        Variant.Graphics.AlphaBlend = true;
-                        Variant.Graphics.DepthWrite = false;
-                        Variant.Queue = Shaders::RenderQueue::Blended;
-
-                        MaterialInfo.TargetShader =
-                            ::Engine::Util::Applied::ResourceHandle<Shaders::Shader>(std::move(Variant));
+                        MaterialInfo.TargetShader = MakeBlendedShader(Info);
                     }
 
                     MaterialInfo.AlphaCutoff = SourceMaterial.alphaCutoff;
@@ -752,6 +788,14 @@ void Model::BeginLoad()
 
                         const glm::mat4 WorldTransform = p_ParentTransform * LocalTransform;
 
+                        if (Node.lightIndex.has_value()) {
+                            if (Node.lightIndex.value() >= Asset.lights.size()) {
+                                throw std::runtime_error("node light index is out of range");
+                            }
+
+                            Data->Lights.push_back(MakeLight(Asset.lights[Node.lightIndex.value()], WorldTransform));
+                        }
+
                         if (Node.meshIndex.has_value()) {
                             if (Node.meshIndex.value() >= PartIndices.size()) {
                                 throw std::runtime_error("node mesh index is out of range");
@@ -824,19 +868,19 @@ void Model::Update()
         return;
     }
 
-    if (!m_CreateInfo.Shader) {
+    if (!m_LoadData->Parts.empty() && !m_CreateInfo.Shader) {
         SetFailed("model requires a shader resource");
 
         return;
     }
 
-    if (m_CreateInfo.Shader.GetState() == ::Engine::Util::Applied::ResourceState::Failed) {
+    if (m_CreateInfo.Shader && m_CreateInfo.Shader.GetState() == ::Engine::Util::Applied::ResourceState::Failed) {
         SetFailed("model shader dependency failed: " + m_CreateInfo.Shader->GetFailureReason());
 
         return;
     }
 
-    if (m_CreateInfo.Shader.GetState() == ::Engine::Util::Applied::ResourceState::Rejected) {
+    if (m_CreateInfo.Shader && m_CreateInfo.Shader.GetState() == ::Engine::Util::Applied::ResourceState::Rejected) {
         SetRejected("model shader dependency rejected: " + m_CreateInfo.Shader->GetFailureReason());
 
         return;
@@ -926,6 +970,7 @@ void Model::Update()
 
     std::shared_ptr<ModelSnapshot> Snapshot = std::make_shared<ModelSnapshot>();
     Snapshot->Parts = m_Parts;
+    Snapshot->Lights = std::move(m_LoadData->Lights);
 
     if (!m_Parts.empty()) {
         glm::vec3 BoundsMin(std::numeric_limits<float>::max());
@@ -952,14 +997,14 @@ void Model::Update()
 
     Snapshot->VersionChecksum = GetVersionChecksum();
 
-    m_Snapshot = std::move(Snapshot);
+    m_Snapshot.store(std::move(Snapshot), std::memory_order_release);
 
     SetState(::Engine::Util::Applied::ResourceState::Ready);
 }
 
 void Model::Unload()
 {
-    m_Snapshot.reset();
+    m_Snapshot.store(nullptr, std::memory_order_release);
     m_Parts.clear();
     m_LoadData.reset();
 
@@ -973,7 +1018,7 @@ const std::vector<ModelPart>& Model::GetParts() const
 
 std::shared_ptr<const ModelSnapshot> Model::GetSnapshot() const
 {
-    return m_Snapshot;
+    return m_Snapshot.load(std::memory_order_acquire);
 }
 
 const ::Engine::Util::Applied::ResourceHandle<

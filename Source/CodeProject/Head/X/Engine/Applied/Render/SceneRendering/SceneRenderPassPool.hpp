@@ -3,16 +3,30 @@
 #include <functional>
 #include <string>
 
+namespace Engine::Applied::Render::SceneRendering::SceneList
+{
+
+struct Frame;
+
+}
+
 namespace Engine::Applied::Render::SceneRendering::SceneRenderPassPool
 {
 
-using RenderPass = std::function<void()>;
+enum class Phase
+{
+    Geometry,
+    Light,
+    Transparent
+};
 
-void Register(std::string p_Name, RenderPass p_Callback, int p_Order);
+using RenderPass = std::function<void(const SceneList::Frame&)>;
+
+void Register(std::string p_Name, Phase p_Phase, RenderPass p_Callback, int p_Order);
 
 void Seal();
 
-void RenderAll();
+void RenderAll(Phase p_Phase, const SceneList::Frame& p_Frame);
 
 void Clear();
 

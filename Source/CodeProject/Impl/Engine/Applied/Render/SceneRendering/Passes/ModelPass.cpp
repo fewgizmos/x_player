@@ -4,6 +4,7 @@
 
 #include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
 
+#include "X/Engine/Applied/Render/SceneRendering/Passes/LightPass.hpp"
 #include "X/Engine/Applied/Render/SceneRendering/SceneList.hpp"
 #include "X/Engine/Applied/Render/SceneRendering/SceneRenderPassPool.hpp"
 
@@ -40,7 +41,6 @@ namespace
 namespace RenderBase = ::Engine::Base::Render;
 
 using ModelPart        = ::Engine::Applied::Render::Resources::Models::ModelPart;
-using ModelSnapshot    = ::Engine::Applied::Render::Resources::Models::ModelSnapshot;
 using MeshSnapshot     = ::Engine::Applied::Render::Resources::Meshes::MeshSnapshot;
 using MaterialSnapshot = ::Engine::Applied::Render::Resources::Materials::MaterialSnapshot;
 using ShaderSnapshot   = ::Engine::Applied::Render::Resources::Shaders::ShaderSnapshot;
@@ -85,6 +85,7 @@ struct Draw
     bool Mirrored;
     bool DynamicFaces;
     bool Instanced;
+    bool SceneLights;
 
     float Depth;
 
@@ -97,7 +98,16 @@ struct Draw
     }
 };
 
-std::array<RenderBase::Buffer, Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT> m_InstanceBuffers;
+struct InstanceBuffers
+{
+    RenderBase::Buffer Geometry;
+    RenderBase::Buffer Transparent;
+};
+
+std::array<InstanceBuffers, Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT> m_InstanceBuffers;
+
+constexpr const char* GeometryDefine = "X_BASE_MODEL_GEOMETRY_PASS";
+constexpr const char* TransparentDefine = "X_BASE_MODEL_TRANSPARENT_PASS";
 
 void Cleanup();
 
@@ -145,12 +155,12 @@ Instance BuildInstance(const glm::mat4& p_World, bool& p_Mirrored)
     return Result;
 }
 
-void CollectDraws(const SceneList::Frame& p_Scene, std::vector<Draw>& p_Draws)
+void CollectDraws(const SceneList::Frame& p_Scene, std::vector<Draw>& p_Draws, bool p_Transparent)
 {
     const auto& Camera = *p_Scene.ActiveCamera;
 
     for (const SceneList::ModelEntry& Entry : p_Scene.Models) {
-        const std::shared_ptr<const ModelSnapshot> Model = Entry.Target->GetSnapshot();
+        const auto& Model = Entry.Snapshot;
 
         if (!Model) { continue; }
 
@@ -159,6 +169,10 @@ void CollectDraws(const SceneList::Frame& p_Scene, std::vector<Draw>& p_Draws)
         if (IsOutsideFrustum(ModelClip, Model->BoundsCenter, Model->BoundsExtent)) { continue; }
 
         for (const ModelPart& Part : Model->Parts) {
+            const AlphaMode Alpha = Part.Material->GetAlphaMode();
+
+            if ((Alpha == AlphaMode::Blend) != p_Transparent) { continue; }
+
             const std::shared_ptr<const MeshSnapshot> Mesh = Part.Mesh->GetSnapshot();
             const std::shared_ptr<const MaterialSnapshot> Material = Part.Material->GetSnapshot();
 
@@ -183,10 +197,12 @@ void CollectDraws(const SceneList::Frame& p_Scene, std::vector<Draw>& p_Draws)
             Item.Mesh         = Mesh;
             Item.Material     = Material;
             Item.Data         = BuildInstance(World, Item.Mirrored);
-            Item.Alpha        = Part.Material->GetAlphaMode();
+            Item.Alpha        = Alpha;
             Item.DoubleSided  = Part.Material->IsDoubleSided();
             Item.DynamicFaces = Graphics.DynamicFaces;
             Item.Instanced    = Graphics.ModelInstanceTransforms;
+            Item.SceneLights  = p_Transparent && Graphics.SetLayouts.size() > 1
+                && Graphics.SetLayouts[1] == LightPass::GetSetLayout();
             Item.Depth        = -(Camera.View * World * glm::vec4(Center, 1.0f)).z;
         }
     }
@@ -194,12 +210,16 @@ void CollectDraws(const SceneList::Frame& p_Scene, std::vector<Draw>& p_Draws)
 
 void Cleanup()
 {
-    for (auto& Buffer : m_InstanceBuffers) { RenderBase::ResourceLoader::DestroyBuffer(Buffer); }
+    for (auto& Buffers : m_InstanceBuffers) {
+        RenderBase::ResourceLoader::DestroyBuffer(Buffers.Geometry);
+        RenderBase::ResourceLoader::DestroyBuffer(Buffers.Transparent);
+    }
 }
 
-VkBuffer UploadInstances(const std::vector<Draw>& p_Draws)
+VkBuffer UploadInstances(const std::vector<Draw>& p_Draws, bool p_Transparent)
 {
-    auto& Buffer = m_InstanceBuffers[RenderBase::Vk::Frame::GetCurrentFrameIndex()];
+    auto& Buffers = m_InstanceBuffers[RenderBase::Vk::Frame::GetCurrentFrameIndex()];
+    auto& Buffer = p_Transparent ? Buffers.Transparent : Buffers.Geometry;
     const VkDeviceSize Bytes = p_Draws.size() * sizeof(Instance);
 
     if (Buffer.Size < Bytes) {
@@ -224,23 +244,12 @@ VkBuffer UploadInstances(const std::vector<Draw>& p_Draws)
     return Buffer.Handle;
 }
 
-}
-
-void Init()
+void Render(const SceneList::Frame& p_Scene, bool p_Transparent)
 {
-    SceneRenderPassPool::Register("model", Render, 900);
-}
-
-void Render()
-{
-    const std::shared_ptr<const SceneList::Frame> Scene = SceneList::Acquire();
-
-    if (!Scene || !Scene->ActiveCamera) { return; }
-
     std::vector<Draw> Draws;
-    Draws.reserve(Scene->Models.size());
+    Draws.reserve(p_Scene.Models.size());
 
-    CollectDraws(*Scene, Draws);
+    CollectDraws(p_Scene, Draws, p_Transparent);
 
     if (Draws.empty()) { return; }
 
@@ -254,7 +263,7 @@ void Render()
 
     const VkCommandBuffer Cmd = RenderBase::Vk::Frame::GetCurrentFrame().CommandBuffer;
     const auto& Disp = RenderBase::Vk::Device::GetDisp();
-    const VkBuffer InstanceBuffer = UploadInstances(Draws);
+    const VkBuffer InstanceBuffer = UploadInstances(Draws, p_Transparent);
     const VkDeviceSize Offset = 0;
 
     Disp.cmdBindVertexBuffers(Cmd, 1, 1, &InstanceBuffer, &Offset);
@@ -263,7 +272,9 @@ void Render()
     VkBuffer VertexBuffer = VK_NULL_HANDLE;
     VkBuffer IndexBuffer = VK_NULL_HANDLE;
 
-    const VkDescriptorSet DescriptorSet = ::Engine::Applied::Render::Resources::Textures::GetBindlessSet();
+    const VkDescriptorSet Sets[] = {
+        ::Engine::Applied::Render::Resources::Textures::GetBindlessSet(), LightPass::GetSet()
+    };
 
     for (std::size_t First = 0; First < Draws.size();) {
         const Draw& Entry = Draws[First];
@@ -282,7 +293,7 @@ void Render()
         if (BoundPipeline.Layout != Pipeline.Layout) {
             Disp.cmdBindDescriptorSets(
                 Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, Pipeline.Layout,
-                0, 1, &DescriptorSet, 0, nullptr
+                0, Entry.SceneLights ? 2 : 1, Sets, 0, nullptr
             );
         }
 
@@ -304,7 +315,7 @@ void Render()
         }
 
         const auto& Material = Entry.Material->Data;
-        glm::mat4 Transform = Scene->ActiveCamera->ViewProjection;
+        glm::mat4 Transform = p_Scene.ActiveCamera->ViewProjection;
 
         if (!Entry.Instanced) { Transform *= Entry.Data.World; }
 
@@ -338,6 +349,37 @@ void Render()
 
         First = End;
     }
+}
+
+}
+
+void Init()
+{
+    SceneRenderPassPool::Register("model", SceneRenderPassPool::Phase::Geometry,
+        [](const SceneList::Frame& p_Frame) { Render(p_Frame, false); }, 900);
+    SceneRenderPassPool::Register("transparent_model", SceneRenderPassPool::Phase::Transparent,
+        [](const SceneList::Frame& p_Frame) { Render(p_Frame, true); }, 900);
+}
+
+void ConfigureGeometry(RenderBase::GraphicsPipelineCreateInfo& p_Pipeline)
+{
+    p_Pipeline.ColorFormats = {
+        Configs::Static::Graphics::GBUFFER_ALBEDO_FORMAT, Configs::Static::Graphics::GBUFFER_NORMAL_FORMAT
+    };
+    p_Pipeline.DepthFormat = Configs::Static::Graphics::DEPTH_FORMAT;
+    p_Pipeline.Defines.push_back(GeometryDefine);
+}
+
+void ConfigureTransparency(RenderBase::GraphicsPipelineCreateInfo& p_Pipeline)
+{
+    const auto Define = std::find(p_Pipeline.Defines.begin(), p_Pipeline.Defines.end(), GeometryDefine);
+
+    if (Define == p_Pipeline.Defines.end()) { return; }
+
+    *Define = TransparentDefine;
+
+    p_Pipeline.ColorFormats = {Configs::Static::Graphics::SCENE_COLOR_FORMAT};
+    p_Pipeline.SetLayouts.push_back(LightPass::GetSetLayout());
 }
 
 }

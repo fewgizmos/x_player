@@ -6,6 +6,7 @@
 #include "X/Engine/Applied/Scene/Scene.hpp"
 
 #include "X/Engine/Applied/Scene/Volume/SceneVolCameraInstance.hpp"
+#include "X/Engine/Applied/Scene/Volume/SceneVolLightPoint.hpp"
 #include "X/Engine/Applied/Scene/Volume/SceneVolModelInstance.hpp"
 
 #include "X/Engine/Applied/Render/SceneRendering/SceneList.hpp"
@@ -24,10 +25,14 @@ namespace SceneList = ::Engine::Applied::Render::SceneRendering::SceneList;
 using SceneVolume     = ::Engine::Applied::Scene::Volume::SceneVolume;
 using VolumeComponent = ::Engine::Applied::Scene::Volume::VolumeComponent;
 using CameraInstance  = ::Engine::Applied::Scene::Volume::SceneVolCameraInstance;
+using LightComponent  = ::Engine::Applied::Scene::Volume::SceneVolLightPoint;
 using ModelInstance   = ::Engine::Applied::Scene::Volume::SceneVolModelInstance;
 
 using Camera          = ::Engine::Applied::Render::SceneRendering::Resources::Camera;
 using ModelEntry      = ::Engine::Applied::Render::SceneRendering::SceneList::ModelEntry;
+using LightPoint      = ::Engine::Applied::Render::SceneRendering::Resources::LightPoint;
+using LightType       = ::Engine::Applied::Render::SceneRendering::Resources::LightType;
+using PunctualLight   = ::Engine::Applied::Render::Resources::Models::PunctualLight;
 
 const ::Engine::Base::JobSystem::DeferredTaskRegistration::Registrar RegisterTask(
     ::Engine::Base::Runtime::EngineThreadID::GameTh,
@@ -55,6 +60,7 @@ void CaptureCamera(SceneList::Frame& p_Frame)
             FrameCamera,
             CameraComponent->GetLocalTransform()
         );
+
         ::Engine::Util::Applied::Scene::Transform::CameraApplier::ApplyWorld(
             FrameCamera,
             Volume.GetWorldTransform()
@@ -66,15 +72,49 @@ void CaptureCamera(SceneList::Frame& p_Frame)
     }
 }
 
-void CaptureModels(SceneList::Frame& p_Frame, const SceneVolume& p_Volume)
+void CaptureModelLights(SceneList::Frame& p_Frame, const ModelEntry& p_Model)
+{
+    for (const PunctualLight& Source : p_Model.Snapshot->Lights) {
+        LightPoint Light;
+
+        switch (Source.Type) {
+        case PunctualLight::Kind::Point:       Light.Type = LightType::Point;       break;
+        case PunctualLight::Kind::Spot:        Light.Type = LightType::Spot;        break;
+        case PunctualLight::Kind::Directional: Light.Type = LightType::Directional; break;
+        }
+
+        Light.Color          = Source.Color;
+        Light.Intensity      = Source.Intensity;
+        Light.Range          = Source.Range;
+        Light.InnerConeAngle = Source.InnerConeAngle;
+        Light.OuterConeAngle = Source.OuterConeAngle;
+
+        p_Frame.Lights.push_back({std::move(Light), p_Model.AppliedTransform * Source.NodeTransform});
+    }
+}
+
+void CaptureVolume(SceneList::Frame& p_Frame, const SceneVolume& p_Volume)
 {
     for (const std::unique_ptr<VolumeComponent>& Component : p_Volume.GetComponents()) {
+        if (const auto* Light = dynamic_cast<const LightComponent*>(Component.get())) {
+            if (Light->GetLight().Enabled) {
+                p_Frame.Lights.push_back({
+                    Light->GetLight(), p_Volume.GetWorldTransform().ToMatrix() * Light->GetLocalTransform().ToMatrix()
+                });
+            }
+
+            continue;
+        }
+
         const auto* ModelComponent = dynamic_cast<const ModelInstance*>(Component.get());
 
         if (ModelComponent == nullptr || !ModelComponent->GetModel().IsReady()) { continue; }
 
         ModelEntry Entry;
         Entry.Target = ModelComponent->GetModel();
+        Entry.Snapshot = Entry.Target->GetSnapshot();
+
+        if (!Entry.Snapshot) { continue; }
 
         ::Engine::Util::Applied::Scene::Transform::ModelApplier::ApplyLocal(
             Entry,
@@ -86,7 +126,9 @@ void CaptureModels(SceneList::Frame& p_Frame, const SceneVolume& p_Volume)
             p_Volume.GetWorldTransform()
         );
 
-        p_Frame.Models.push_back(std::move(Entry));
+        CaptureModelLights(p_Frame, Entry);
+
+        if (!Entry.Snapshot->Parts.empty()) { p_Frame.Models.push_back(std::move(Entry)); }
     }
 }
 
@@ -103,11 +145,9 @@ void CaptureFrame()
     for (const std::unique_ptr<::Engine::Applied::Scene::SceneEntity>& Entity
         : ::Engine::Applied::Scene::It::GetAllEntities()) {
 
-        if (::Engine::Applied::Scene::It::Service::IsEntityPendingErase(Entity.get())) {
-            continue;
-        }
+        if (::Engine::Applied::Scene::It::Service::IsEntityPendingErase(Entity.get())) { continue; }
 
-        CaptureModels(
+        CaptureVolume(
             *Frame,
             static_cast<const ::Engine::Applied::Scene::SceneEntity&>(*Entity)
                 .GetSceneVolume()

@@ -43,16 +43,16 @@ namespace
 {
 
 const std::string CompositorFragmentShaderPath = "Rendering/Service/Composite.frag";
-const std::string CompositorVertexShaderPath = "Rendering/Service/Composite.vert";
+const std::string CompositorVertexShaderPath   = "Rendering/Service/Composite.vert";
 
 vkb::Instance m_Instance;
 
 uint32_t m_FrameCounter = 0;
 
 std::atomic<bool> m_AcquirePending = false;
-std::atomic<bool> m_AcquireReady = false;
+std::atomic<bool> m_AcquireReady   = false;
 
-std::atomic<VkResult> m_AcquireResult = VK_NOT_READY;
+std::atomic<VkResult> m_AcquireResult     = VK_NOT_READY;
 std::atomic<uint32_t> m_AcquireImageIndex = 0;
 
 VkSemaphore m_AcquireSemaphore = VK_NULL_HANDLE;
@@ -72,22 +72,28 @@ const JobSystem::DeferredTaskRegistration::Registrar
     RegisterFrame(::Engine::Base::Runtime::EngineThreadID::RenderTh, "render_frame", RenderFrame, 50);
 
 VkDescriptorSetLayout m_LayerLayout = VK_NULL_HANDLE;
-VkDescriptorPool m_LayerPool = VK_NULL_HANDLE;
+VkDescriptorPool      m_LayerPool   = VK_NULL_HANDLE;
+
 std::vector<VkDescriptorSet> m_LayerSets;
-Pipeline m_CompositePipeline;
+
+Pipeline  m_CompositePipeline;
 VkSampler m_LayerSampler = VK_NULL_HANDLE;
 
 void CreateCompositePipeline()
 {
     GraphicsPipelineCreateInfo Info;
-    Info.ColorFormats = {Vk::Frame::GetSwapchain().image_format};
-    Info.DepthWrite = false;
-    Info.CullMode = VK_CULL_MODE_NONE;
-    Info.AlphaBlend = true;
+    Info.ColorFormats        = {Vk::Frame::GetSwapchain().image_format};
+    Info.DepthWrite          = false;
+    Info.CullMode            = VK_CULL_MODE_NONE;
+    Info.AlphaBlend          = true;
     Info.SrcColorBlendFactor = VK_BLEND_FACTOR_ONE;
-    Info.SetLayouts = {m_LayerLayout};
+    Info.SetLayouts          = {m_LayerLayout};
+
     m_CompositePipeline = Vk::Shader::CreateGraphicsPipeline(
-        CompositorVertexShaderPath, CompositorFragmentShaderPath, Info);
+        CompositorVertexShaderPath,
+        CompositorFragmentShaderPath,
+        Info
+    );
 }
 
 void ReleaseLayerSets()
@@ -103,13 +109,18 @@ void BindLayerImages(std::span<const RenderingPool::RenderTarget> p_Layers)
 {
     if (p_Layers.empty() || m_LayerPool != VK_NULL_HANDLE) { return; }
 
-    const auto Count = static_cast<uint32_t>(p_Layers.size());
+    const auto     Count        = static_cast<uint32_t>(p_Layers.size());
     constexpr auto Type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+
     m_LayerPool = Vk::Descriptors::CreatePool(Count, {{Type, Count}});
+
     for (const auto& Layer : p_Layers) {
         VkDescriptorSet Set = Vk::Descriptors::AllocateSet(m_LayerPool, m_LayerLayout);
+
         Vk::Descriptors::WriteImage(Set, 0, Type, Layer.View,
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, m_LayerSampler);
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, m_LayerSampler
+        );
+
         m_LayerSets.push_back(Set);
     }
 }
@@ -120,19 +131,24 @@ void CompositeLayers(VkCommandBuffer p_Cmd, std::span<const RenderingPool::Rende
     const auto& Target = Vk::Frame::GetCurrentImage();
     const auto& Disp   = Vk::Device::GetDisp();
 
-    Vk::Commands::TransitionImage(p_Cmd, Target.Image, VK_IMAGE_LAYOUT_UNDEFINED,
-        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_2_NONE, 0,
-        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+    Vk::Commands::TransitionImage(
+        p_Cmd,
+        Target.Image,
+        VK_IMAGE_LAYOUT_UNDEFINED,
+        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+        0,
+        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT
+    );
 
     VkRenderingAttachmentInfo Attachment{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
-
     Attachment.imageView   = Target.ImageView;
     Attachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     Attachment.loadOp      = VK_ATTACHMENT_LOAD_OP_CLEAR;
     Attachment.storeOp     = VK_ATTACHMENT_STORE_OP_STORE;
 
-    const bool SRGB = Vk::Frame::GetSwapchain().image_format == VK_FORMAT_B8G8R8A8_SRGB
-        || Vk::Frame::GetSwapchain().image_format == VK_FORMAT_R8G8B8A8_SRGB;
+    const bool SRGB = Vk::Frame::GetSwapchain().image_format == VK_FORMAT_B8G8R8A8_SRGB || Vk::Frame::GetSwapchain().image_format == VK_FORMAT_R8G8B8A8_SRGB;
 
     for (int I = 0; I < 3; ++I) {
         const float Value = Configs::Static::Graphics::BACKGROUND_RGB[I] / 255.0f;
@@ -152,17 +168,21 @@ void CompositeLayers(VkCommandBuffer p_Cmd, std::span<const RenderingPool::Rende
     Info.pColorAttachments    = &Attachment;
 
     Disp.cmdBeginRendering(p_Cmd, &Info);
+
     const VkExtent2D Extent = Info.renderArea.extent;
-    const VkViewport Viewport{0, 0, static_cast<float>(Extent.width),
-        static_cast<float>(Extent.height), 0, 1};
+    const VkViewport Viewport{0, 0, static_cast<float>(Extent.width), static_cast<float>(Extent.height), 0, 1};
+
     Disp.cmdSetViewport(p_Cmd, 0, 1, &Viewport);
     Disp.cmdSetScissor(p_Cmd, 0, 1, &Info.renderArea);
     Disp.cmdBindPipeline(p_Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_CompositePipeline.Handle);
+
     for (VkDescriptorSet Set : m_LayerSets) {
         Disp.cmdBindDescriptorSets(p_Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
             m_CompositePipeline.Layout, 0, 1, &Set, 0, nullptr);
+
         Disp.cmdDraw(p_Cmd, 3, 1, 0, 0);
     }
+
     Disp.cmdEndRendering(p_Cmd);
 }
 
@@ -172,18 +192,26 @@ void RecreateSwapchain()
 
     if (m_AcquireSemaphoreSignaled) {
         Vk::Device::ConsumeSemaphore(m_AcquireSemaphore);
+
         m_AcquireSemaphoreSignaled = false;
     }
 
     const VkFormat PreviousFormat = Vk::Frame::GetSwapchain().image_format;
-    Vk::Frame::RecreateSwapchain(); // Waits for all users of the old views.
+
+    Vk::Frame::RecreateSwapchain();
+
     ReleaseLayerSets();
+
     RenderingPool::ResizeTargets(Vk::Frame::GetSwapchain().extent);
+
     if (PreviousFormat != Vk::Frame::GetSwapchain().image_format) {
         Vk::Shader::DestroyPipeline(m_CompositePipeline);
+
         m_CompositePipeline = {};
+
         CreateCompositePipeline();
     }
+
     m_AcquirePending.store(false, std::memory_order_release);
     m_AcquireReady.store(false, std::memory_order_release);
     m_AcquireResult.store(VK_NOT_READY, std::memory_order_release);
@@ -240,8 +268,10 @@ void Init()
     Sampler.magFilter = Sampler.minFilter = VK_FILTER_LINEAR;
     Sampler.addressModeU = Sampler.addressModeV = Sampler.addressModeW =
         VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+
     X_ASSERT(Vk::Device::GetDisp().createSampler(&Sampler, nullptr, &m_LayerSampler) != VK_SUCCESS,
-        "Failed to create compositor sampler");
+        "failed to create compositor sampler");
+
     CreateCompositePipeline();
 }
 
@@ -250,27 +280,32 @@ void WaitIdle()
     if (Vk::Device::GetDevice().device != VK_NULL_HANDLE) {
         ResourceLoader::StopAcceptingJobs();
         ResourceLoader::DrainJobs();
+
         Vk::Device::DrainRenderOperations();
         Vk::Device::WaitIdle();
         Vk::Device::StopQueueExecutor();
     }
 }
 
-const vkb::Instance& GetInstance()
-{
-    return m_Instance;
-}
+const vkb::Instance& GetInstance() { return m_Instance; }
 
 void Cleanup()
 {
     if (Vk::Device::GetDevice().device != VK_NULL_HANDLE) {
         ReleaseLayerSets();
+
         Vk::Shader::DestroyPipeline(m_CompositePipeline);
+
         m_CompositePipeline = {};
+
         Vk::Descriptors::DestroySetLayout(m_LayerLayout);
+
         m_LayerLayout = VK_NULL_HANDLE;
+
         Vk::Device::GetDisp().destroySampler(m_LayerSampler, nullptr);
+
         m_LayerSampler = VK_NULL_HANDLE;
+
         Vk::Samplers::DestroyAll();
         Vk::Device::DestroyRenderCompletionSemaphore();
     }
@@ -285,17 +320,13 @@ void RenderFrame()
 
     const VkResult FrameStatus = Vk::Device::GetFenceStatus(Frame.FenceInflight);
 
-    if (FrameStatus == VK_NOT_READY) {
-        return;
-    }
+    if (FrameStatus == VK_NOT_READY) { return; }
 
-    X_ASSERT(FrameStatus != VK_SUCCESS, "Failed to query frame fence");
+    X_ASSERT(FrameStatus != VK_SUCCESS, "failed to query frame fence");
 
     const auto Extent = Viewport::Surface::GetExtent();
 
-    if (Extent.x == 0 || Extent.y == 0) {
-        return;
-    }
+    if (Extent.x == 0 || Extent.y == 0) { return; }
 
     if (Viewport::Surface::GetUnhandleResized()) {
         RecreateSwapchain();
@@ -333,6 +364,7 @@ void RenderFrame()
 
     const VkResult Result = m_AcquireResult.load(std::memory_order_acquire);
     Vk::Frame::GetImageIndex() = m_AcquireImageIndex.load(std::memory_order_relaxed);
+
     m_AcquireReady.store(false, std::memory_order_release);
 
     if (Result == VK_NOT_READY || Result == VK_TIMEOUT) { return; }
@@ -351,7 +383,7 @@ void RenderFrame()
 
     X_ASSERT(
         Result != VK_SUCCESS && Result != VK_SUBOPTIMAL_KHR,
-        "Failed to acquire swapchain image: " + std::to_string(static_cast<int>(Result))
+        "failed to acquire swapchain image: " + std::to_string(static_cast<int>(Result))
     );
 
     const bool Recreate = Result == VK_SUBOPTIMAL_KHR;
@@ -373,7 +405,7 @@ void RenderFrame()
 
     Vk::Commands::End(Frame.CommandBuffer);
 
-    X_ASSERT(Vk::Device::ResetFence(Frame.FenceInflight) != VK_SUCCESS, "Failed to reset frame fence");
+    X_ASSERT(Vk::Device::ResetFence(Frame.FenceInflight) != VK_SUCCESS, "failed to reset frame fence");
 
     VkSemaphoreSubmitInfo Wait{VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
 
@@ -392,9 +424,9 @@ void RenderFrame()
     );
     VkSemaphoreSubmitInfo LoaderWaits[2] = {};
     for (uint32_t I = 0; I < CompletionCount; ++I) {
-        LoaderWaits[I].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+        LoaderWaits[I].sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
         LoaderWaits[I].semaphore = CompletionWaits[I].Semaphore;
-        LoaderWaits[I].value = CompletionWaits[I].Value;
+        LoaderWaits[I].value     = CompletionWaits[I].Value;
         LoaderWaits[I].stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
     }
 
@@ -402,26 +434,27 @@ void RenderFrame()
 
     VkPresentInfoKHR Present{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
     Present.waitSemaphoreCount = 1;
-    Present.pWaitSemaphores = &Image.SemaphoreFinished;
-    Present.swapchainCount = 1;
-    Present.pSwapchains = &Swapchain;
-    Present.pImageIndices = &Vk::Frame::GetImageIndex();
+    Present.pWaitSemaphores    = &Image.SemaphoreFinished;
+    Present.swapchainCount     = 1;
+    Present.pSwapchains        = &Swapchain;
+    Present.pImageIndices      = &Vk::Frame::GetImageIndex();
 
     VkCommandBufferSubmitInfo Command{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO };
     Command.commandBuffer = Frame.CommandBuffer;
 
     VkSemaphoreSubmitInfo Waits[3] = { Wait };
+
     for (uint32_t I = 0; I < CompletionCount; ++I) {
         Waits[I + 1] = LoaderWaits[I];
     }
 
     VkSubmitInfo2 Submit{ VK_STRUCTURE_TYPE_SUBMIT_INFO_2 };
-    Submit.waitSemaphoreInfoCount = CompletionCount + 1;
-    Submit.pWaitSemaphoreInfos = Waits;
-    Submit.commandBufferInfoCount = 1;
-    Submit.pCommandBufferInfos = &Command;
+    Submit.waitSemaphoreInfoCount   = CompletionCount + 1;
+    Submit.pWaitSemaphoreInfos      = Waits;
+    Submit.commandBufferInfoCount   = 1;
+    Submit.pCommandBufferInfos      = &Command;
     Submit.signalSemaphoreInfoCount = 1;
-    Submit.pSignalSemaphoreInfos = &Signal;
+    Submit.pSignalSemaphoreInfos    = &Signal;
 
     const uint64_t RenderCompletionValue = Vk::Device::QueueSubmitAndPresentAsync(
         &Submit,
@@ -429,6 +462,7 @@ void RenderFrame()
         Frame.FenceInflight,
         &Present
     );
+
     m_AcquireSemaphoreSignaled = false;
     ResourceLoader::OnRenderSubmitted(RenderCompletionValue);
 
@@ -436,14 +470,14 @@ void RenderFrame()
 
     if (Result == VK_ERROR_OUT_OF_DATE_KHR || Result == VK_SUBOPTIMAL_KHR || Recreate) {
         X_ASSERT(Result != VK_SUCCESS && Result != VK_ERROR_OUT_OF_DATE_KHR && Result != VK_SUBOPTIMAL_KHR,
-            "Failed to present swapchain image");
+            "failed to present swapchain image");
 
         RecreateSwapchain();
 
         return;
     }
 
-    X_ASSERT(Result != VK_SUCCESS, "Failed to present swapchain image");
+    X_ASSERT(Result != VK_SUCCESS, "failed to present swapchain image");
 }
 
 }

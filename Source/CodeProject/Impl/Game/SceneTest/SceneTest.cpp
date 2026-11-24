@@ -5,7 +5,10 @@
 #include "X/Engine/Applied/Scene/Scene.hpp"
 #include "X/Engine/Applied/Scene/Volume/SceneVolModelInstance.hpp"
 #include "X/Engine/Applied/Scene/Volume/SceneVolCameraInstance.hpp"
+#include "X/Engine/Applied/Scene/Volume/SceneVolLightPoint.hpp"
+
 #include "X/Engine/Applied/Render/Resources/Textures.hpp"
+#include "X/Engine/Applied/Render/SceneRendering/Passes/ModelPass.hpp"
 
 #include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
 #include "X/Engine/Base/JobSystem/DeferredTaskRegistration.hpp"
@@ -31,6 +34,8 @@ namespace Resources = Applied::Render::Resources;
 
 using ModelInfo       = Resources::Models::ModelCreateInfo;
 using CameraComponent = Scene::Volume::SceneVolCameraInstance;
+using LightPoint      = Applied::Render::SceneRendering::Resources::LightPoint;
+using LightType       = Applied::Render::SceneRendering::Resources::LightType;
 
 namespace Inputs = Base::Viewport::Inputs;
 using Key        = Inputs::KeyboardInputCodes;
@@ -47,6 +52,20 @@ public:
         Transform.SetScale(glm::vec3(p_Scale));
 
         Volume.EmplaceComponent<Scene::Volume::SceneVolModelInstance>(p_Model);
+    }
+};
+
+class LightEntity final : public Scene::SceneEntity
+{
+public:
+    LightEntity(const LightPoint& p_Light, glm::vec3 p_Position, glm::vec3 p_Rotation)
+    {
+        auto& Volume = GetSceneVolume();
+        auto& Transform = Volume.GetWorldTransform();
+        Transform.SetPosition(p_Position);
+        Transform.SetRotation(p_Rotation);
+
+        Volume.EmplaceComponent<Scene::Volume::SceneVolLightPoint>(p_Light);
     }
 };
 
@@ -120,7 +139,8 @@ private:
 };
 
 std::array<ModeledEntity*, 4> m_ModeledEntities{};
-CameraEntity* m_Camera = nullptr;
+std::array<LightEntity*, 3>   m_LightEntities{};
+CameraEntity*                 m_Camera = nullptr;
 
 void UpdateCamera()
 {
@@ -136,23 +156,22 @@ void Init()
     Shader.FragmentFile = "Materials/BaseModel.frag";
 
     auto& Pipeline = Shader.Graphics;
-    Pipeline.ColorFormats       = {VK_FORMAT_R8G8B8A8_SRGB};
-    Pipeline.DepthFormat        = VK_FORMAT_D32_SFLOAT;
-    Pipeline.DepthCompare       = VK_COMPARE_OP_GREATER;
-    Pipeline.DynamicFaces       = true;
-    Pipeline.PushConstantSize   = 128;
-    Pipeline.PushConstantStages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-    Pipeline.SetLayouts         = {Resources::Textures::GetBindlessSetLayout()};
+    Applied::Render::SceneRendering::Passes::ModelPass::ConfigureGeometry(Pipeline);
+    Pipeline.DepthCompare            = VK_COMPARE_OP_GREATER;
+    Pipeline.DynamicFaces            = true;
+    Pipeline.PushConstantSize        = 128;
+    Pipeline.PushConstantStages      = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    Pipeline.SetLayouts              = {Resources::Textures::GetBindlessSetLayout()};
     Pipeline.ModelInstanceTransforms = true;
 
     Pipeline.VertexBindings = {
         {0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX},
         {1, 7 * sizeof(glm::vec4), VK_VERTEX_INPUT_RATE_INSTANCE}
     };
-    Pipeline.VertexAttributes   = {
+    Pipeline.VertexAttributes = {
         {0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, Position)},
-        {1, 0, VK_FORMAT_R32_SFLOAT, offsetof(Vertex, UvX)},
-        {2, 0, VK_FORMAT_R32_SFLOAT, offsetof(Vertex, UvY)},
+        {1, 0, VK_FORMAT_R32_SFLOAT,       offsetof(Vertex, UvX)},
+        {2, 0, VK_FORMAT_R32_SFLOAT,       offsetof(Vertex, UvY)},
         {3, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, Normal)}
     };
 
@@ -162,19 +181,28 @@ void Init()
         });
     }
 
+    Resources::Shaders::ShaderCreateInfo Blended = Shader;
+    Blended.Queue = Resources::Shaders::RenderQueue::Blended;
+    Blended.Graphics.AlphaBlend = true;
+    Blended.Graphics.DepthWrite = false;
+    Applied::Render::SceneRendering::Passes::ModelPass::ConfigureTransparency(Blended.Graphics);
+
     const Util::Applied::ResourceHandle<Resources::Shaders::Shader> ModelShader(std::move(Shader));
-    const auto& ModelsDir = Configs::Static::Contents::GLTF_MODELS_DIR;
-    const ModelInfo CoastalCliff{ModelsDir + "nordic_coastal_cliff_ulejebpfa_mid.glb", ModelShader};
-    const ModelInfo ForestCliff{ModelsDir + "nordic_forest_cliff_large_xibsff1_mid.glb", ModelShader};
-    const ModelInfo Pistol{ModelsDir + "service_pistol/service_pistol_1k.gltf", ModelShader};
-    const ModelInfo Dagger{ModelsDir + "ornate_medieval_dagger/ornate_medieval_dagger_1k.gltf", ModelShader};
+    const Util::Applied::ResourceHandle<Resources::Shaders::Shader> BlendedShader(std::move(Blended));
+
+    const std::string& ModelsDir = Configs::Static::Contents::GLTF_MODELS_DIR;
+
+    const ModelInfo CoastalCliff{ModelsDir + "nordic_coastal_cliff_ulejebpfa_mid.glb",                ModelShader, BlendedShader};
+    const ModelInfo ForestCliff{ ModelsDir + "nordic_forest_cliff_large_xibsff1_mid.glb",             ModelShader, BlendedShader};
+    const ModelInfo Pistol{      ModelsDir + "service_pistol/service_pistol_1k.gltf",                 ModelShader, BlendedShader};
+    const ModelInfo Dagger{      ModelsDir + "ornate_medieval_dagger/ornate_medieval_dagger_1k.gltf", ModelShader, BlendedShader};
 
     m_ModeledEntities = {
         Scene::It::CreateEntity<ModeledEntity>(
-            CoastalCliff, glm::vec3(-0.32f, 0.22f, -0.46f), glm::vec3(-15.0f, -15.0f, 0.0f), 0.11f
+            CoastalCliff, glm::vec3(-0.32f, 0.22f, -0.46f), glm::vec3(0.0f), 0.11f
         ),
         Scene::It::CreateEntity<ModeledEntity>(
-            ForestCliff, glm::vec3(0.25f, 0.20f, -0.56f), glm::vec3(-15.0f, 12.0f, 0.0f), 0.045f
+            ForestCliff, glm::vec3(0.25f, 0.20f, -0.56f), glm::vec3(0.0f), 0.045f
         ),
         Scene::It::CreateEntity<ModeledEntity>(
             Pistol, glm::vec3(-0.165f, 0.050f, 0.32f), glm::vec3(-35.0f, 8.0f, 0.0f), 1.0f
@@ -182,6 +210,28 @@ void Init()
         Scene::It::CreateEntity<ModeledEntity>(
             Dagger, glm::vec3(0.17f, 0.071f, 0.34f), glm::vec3(-35.0f, -8.0f, -12.0f), 1.0f
         )
+    };
+
+    LightPoint KeyLight;
+    KeyLight.Type      = LightType::Directional;
+    KeyLight.Color     = {1.0f, 0.94f, 0.85f};
+    KeyLight.Intensity = 2.8f;
+
+    LightPoint FillLight;
+    FillLight.Type      = LightType::Point;
+    FillLight.Color     = {0.52f, 0.72f, 1.0f};
+    FillLight.Intensity = 0.42f;
+    FillLight.Range     = 1.3f;
+
+    LightPoint SkyLight;
+    SkyLight.Type           = LightType::Sky;
+    SkyLight.Intensity      = 0.24f;
+    SkyLight.ShowBackground = false;
+
+    m_LightEntities = {
+        Scene::It::CreateEntity<LightEntity>(KeyLight,  glm::vec3(0.0f), glm::vec3(-42.0f, -23.0f, 0.0f)),
+        Scene::It::CreateEntity<LightEntity>(FillLight, glm::vec3(0.55f, 0.38f, 0.48f), glm::vec3(0.0f)),
+        Scene::It::CreateEntity<LightEntity>(SkyLight,  glm::vec3(0.0f), glm::vec3(0.0f))
     };
 
     m_Camera = Scene::It::CreateEntity<CameraEntity>(glm::vec3(0.04f, 0.59f, 1.04f));
@@ -197,6 +247,7 @@ void Cleanup()
     m_Camera = nullptr;
 
     for (auto* Entity : m_ModeledEntities) { Scene::It::EraseEntity(Entity); }
+    for (auto* Entity : m_LightEntities)     { Scene::It::EraseEntity(Entity); }
 
     Scene::It::ApplyPendingOperations();
 }

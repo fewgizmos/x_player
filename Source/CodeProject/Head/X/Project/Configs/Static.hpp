@@ -53,6 +53,8 @@ inline constexpr uint32_t MAX_MATERIALS = 4096;
 inline constexpr VkFormat DEPTH_FORMAT = VK_FORMAT_D32_SFLOAT;
 inline constexpr VkFormat HDR_FORMAT   = VK_FORMAT_R16G16B16A16_SFLOAT;
 
+inline constexpr VkFormat SCENE_COLOR_FORMAT      = VK_FORMAT_R8G8B8A8_SRGB;
+inline constexpr VkFormat GBUFFER_ALBEDO_FORMAT   = VK_FORMAT_R8G8B8A8_SRGB;
 inline constexpr VkFormat GBUFFER_NORMAL_FORMAT   = VK_FORMAT_R16G16B16A16_SFLOAT;
 inline constexpr VkFormat GBUFFER_VELOCITY_FORMAT = VK_FORMAT_R16G16_SFLOAT;
 
