@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 run_after=0
+full_vk_logging=0
 
 usage() {
     echo "Usage: $0 [options]"
@@ -13,6 +14,7 @@ usage() {
     echo
     echo "Options:"
     echo "  -r, --run   run the executable after a successful build"
+    echo "  --full-vk-logging  dump Vulkan API calls to stdout when used with --run"
     echo "  -h, --help  show this help and exit"
     echo
     echo "Short options can be combined, e.g. -rh"
@@ -27,6 +29,7 @@ bad_arg() {
 for arg in "$@"; do
     case "$arg" in
         --run) run_after=1 ;;
+        --full-vk-logging) full_vk_logging=1 ;;
         --help) usage; exit 0 ;;
         --*) bad_arg "$arg" ;;
         -?*)
@@ -73,5 +76,12 @@ ln -sfn "$(realpath --relative-to="$out_dir" "$ROOT_DIR/ProjectResources")" "$ou
 echo "Compiled Executable: '$out_dir/$X_ARTIFACT_NAME'"
 
 if [[ "$run_after" -eq 1 ]]; then
-    (cd "$out_dir" && "./$X_ARTIFACT_NAME")
+    (
+        cd "$out_dir"
+        if [[ "$full_vk_logging" -eq 1 ]]; then
+            export VK_INSTANCE_LAYERS=VK_LAYER_LUNARG_api_dump
+            export VK_API_DUMP_FILE=false
+        fi
+        "./$X_ARTIFACT_NAME"
+    )
 fi

@@ -12,6 +12,7 @@ PACKAGES=(
 
     libvulkan-dev
     vulkan-validationlayers
+    lunarg-vulkan-layers
     vulkan-tools
 
     glslang-dev

@@ -1,5 +1,5 @@
-## `X-Player` Demonstration Screenshots Gallery::
+## `X-Player` Demo Screenshots Gallery
 
-| ImGui & Base model rendering: |
-| :--- |
+| ImGui & Base model rendering:                                       |
+| :---                                                                |
 | ![Screenshot-Demo-01](/Docs/X-Player/Assets/Screenshot-Demo-01.png) |
