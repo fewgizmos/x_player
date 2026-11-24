@@ -29,24 +29,24 @@ namespace
 namespace Scene     = Applied::Scene;
 namespace Resources = Applied::Render::Resources;
 
-using ModelInfo = Resources::Models::ModelCreateInfo;
+using ModelInfo       = Resources::Models::ModelCreateInfo;
 using CameraComponent = Scene::Volume::SceneVolCameraInstance;
 
 namespace Inputs = Base::Viewport::Inputs;
-using Key = Inputs::KeyboardInputCodes;
+using Key        = Inputs::KeyboardInputCodes;
 
 class ModeledEntity final : public Scene::SceneEntity
 {
 public:
-    ModeledEntity(const ModelInfo& p_Model, float p_X, float p_Scale = 1.0f)
+    ModeledEntity(const ModelInfo& p_Model, glm::vec3 p_Position, glm::vec3 p_Rotation, float p_Scale)
     {
         auto& Volume = GetSceneVolume();
+        auto& Transform = Volume.GetWorldTransform();
+        Transform.SetPosition(p_Position);
+        Transform.SetRotation(p_Rotation);
+        Transform.SetScale(glm::vec3(p_Scale));
 
-        Volume.GetWorldTransform().SetPosition({p_X, 0, 0});
-
-        auto& Model = Volume.EmplaceComponent<Scene::Volume::SceneVolModelInstance>(p_Model);
-
-        Model.GetLocalTransform().SetScale(glm::vec3(p_Scale));
+        Volume.EmplaceComponent<Scene::Volume::SceneVolModelInstance>(p_Model);
     }
 };
 
@@ -56,7 +56,8 @@ public:
     explicit CameraEntity(glm::vec3 p_Eye) : m_Component(GetSceneVolume().EmplaceComponent<CameraComponent>())
     {
         auto& Camera = m_Component.GetCamera();
-        Camera.Position = p_Eye;
+        Camera.Position  = p_Eye;
+        Camera.Fov       = glm::radians(50.0f);
         Camera.NearPlane = 0.01f;
         Camera.FarPlane  = 10.0f;
 
@@ -92,6 +93,7 @@ public:
 
         if (glm::dot(Movement, Movement) > 0.0f) {
             constexpr float Speed = 1.0f;
+
             Camera.Position += glm::normalize(Movement) * Speed * Util::Base::Timer::Delta;
         }
 
@@ -117,7 +119,7 @@ private:
     float m_Pitch;
 };
 
-std::array<ModeledEntity*, 2> m_ModeledEntitis{};
+std::array<ModeledEntity*, 4> m_ModeledEntities{};
 CameraEntity* m_Camera = nullptr;
 
 void UpdateCamera()
@@ -161,13 +163,28 @@ void Init()
     }
 
     const Util::Applied::ResourceHandle<Resources::Shaders::Shader> ModelShader(std::move(Shader));
-    ModelInfo RockModel{Configs::Static::Contents::GLTF_MODELS_DIR + "Rock/Rock.gltf", ModelShader};
-    ModelInfo CliffModel{Configs::Static::Contents::GLTF_MODELS_DIR + "nordic_forest_cliff_large_xibsff1_mid.glb", ModelShader};
+    const auto& ModelsDir = Configs::Static::Contents::GLTF_MODELS_DIR;
+    const ModelInfo CoastalCliff{ModelsDir + "nordic_coastal_cliff_ulejebpfa_mid.glb", ModelShader};
+    const ModelInfo ForestCliff{ModelsDir + "nordic_forest_cliff_large_xibsff1_mid.glb", ModelShader};
+    const ModelInfo Pistol{ModelsDir + "service_pistol/service_pistol_1k.gltf", ModelShader};
+    const ModelInfo Dagger{ModelsDir + "ornate_medieval_dagger/ornate_medieval_dagger_1k.gltf", ModelShader};
 
-    m_ModeledEntitis[0] = Scene::It::CreateEntity<ModeledEntity>(RockModel, -0.32f);
-    m_ModeledEntitis[1] = Scene::It::CreateEntity<ModeledEntity>(CliffModel, 0.32f, 0.04f);
+    m_ModeledEntities = {
+        Scene::It::CreateEntity<ModeledEntity>(
+            CoastalCliff, glm::vec3(-0.32f, 0.22f, -0.46f), glm::vec3(-15.0f, -15.0f, 0.0f), 0.11f
+        ),
+        Scene::It::CreateEntity<ModeledEntity>(
+            ForestCliff, glm::vec3(0.25f, 0.20f, -0.56f), glm::vec3(-15.0f, 12.0f, 0.0f), 0.045f
+        ),
+        Scene::It::CreateEntity<ModeledEntity>(
+            Pistol, glm::vec3(-0.165f, 0.050f, 0.32f), glm::vec3(-35.0f, 8.0f, 0.0f), 1.0f
+        ),
+        Scene::It::CreateEntity<ModeledEntity>(
+            Dagger, glm::vec3(0.17f, 0.071f, 0.34f), glm::vec3(-35.0f, -8.0f, -12.0f), 1.0f
+        )
+    };
 
-    m_Camera = Scene::It::CreateEntity<CameraEntity>(glm::vec3(0.65f, 1.05f, 1.15f));
+    m_Camera = Scene::It::CreateEntity<CameraEntity>(glm::vec3(0.04f, 0.59f, 1.04f));
 
     Scene::It::SetPlayerEntity(m_Camera);
 }
@@ -179,7 +196,7 @@ void Cleanup()
 
     m_Camera = nullptr;
 
-    for (auto* ModeledEntityEntity : m_ModeledEntitis) { Scene::It::EraseEntity(ModeledEntityEntity); }
+    for (auto* Entity : m_ModeledEntities) { Scene::It::EraseEntity(Entity); }
 
     Scene::It::ApplyPendingOperations();
 }
