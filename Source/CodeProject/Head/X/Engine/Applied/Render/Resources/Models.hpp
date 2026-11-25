@@ -10,6 +10,7 @@
 
 #include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
+#include <glm/vec4.hpp>
 
 #include <atomic>
 #include <cstdint>
@@ -20,11 +21,31 @@
 namespace Engine::Applied::Render::Resources::Models
 {
 
+struct alignas(16) DrawConstants
+{
+    glm::mat4 Transform;
+
+    VkDeviceAddress Materials;
+    VkDeviceAddress Vertices;
+    VkDeviceAddress ExtraTexCoords;
+
+    uint32_t MaterialIndex;
+    uint32_t ExtraTexCoordCount;
+};
+
+struct DrawInstance
+{
+    glm::mat4 World;
+    glm::vec4 Normal[3];
+};
+
 struct ModelCreateInfo
 {
     std::string GltfPath;
     ::Engine::Util::Applied::ResourceHandle<
         ::Engine::Applied::Render::Resources::Shaders::Shader> Shader;
+    ::Engine::Util::Applied::ResourceHandle<
+        ::Engine::Applied::Render::Resources::Shaders::Shader> TransparentShader;
 };
 
 struct ModelPart

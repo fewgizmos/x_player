@@ -8,6 +8,7 @@
 #include <glm/common.hpp>
 
 #include <algorithm>
+#include <cstring>
 #include <exception>
 #include <limits>
 #include <mutex>
@@ -40,6 +41,8 @@ struct Mesh::LoadData
     std::vector<Vertex>   Vertices;
     std::vector<uint32_t> Indices;
 
+    std::vector<glm::vec2> ExtraTexCoords;
+
     std::vector<uint32_t> SortedIndices;
     std::vector<Cluster>  Clusters;
     std::vector<Cluster>  ClusterGroups;
@@ -49,11 +52,13 @@ struct Mesh::LoadData
 
     std::string FailureReason;
     bool Finished = false;
-    bool Failed = false;
+    bool Failed   = false;
+
     uint64_t VersionChecksum = 0;
 
     ::Engine::Base::Render::Buffer VertexBuffer;
     ::Engine::Base::Render::Buffer IndexBuffer;
+
     bool UploadRejected = false;
 };
 
@@ -103,11 +108,14 @@ uint32_t MortonCode(const glm::vec3& p_Point, const glm::vec3& p_Min, const glm:
 }
 
 Mesh::Mesh(CreateInfo p_CreateInfo)
-    : Resource(std::to_string(HashBytes(p_CreateInfo.Vertices)) + ":" + std::to_string(HashBytes(p_CreateInfo.Indices)))
+    : Resource(std::to_string(HashBytes(p_CreateInfo.Vertices)) + ":" + std::to_string(HashBytes(p_CreateInfo.Indices))
+        + ":" + std::to_string(p_CreateInfo.ExtraTexCoordCount) + ":" + std::to_string(HashBytes(p_CreateInfo.ExtraTexCoords)))
     , m_Vertices(std::move(p_CreateInfo.Vertices))
     , m_Indices(std::move(p_CreateInfo.Indices))
+    , m_ExtraTexCoords(std::move(p_CreateInfo.ExtraTexCoords))
     , m_VertexCount(static_cast<uint32_t>(m_Vertices.size()))
     , m_IndexCount(static_cast<uint32_t>(m_Indices.size()))
+    , m_ExtraTexCoordCount(p_CreateInfo.ExtraTexCoordCount)
     , LoadDataState(std::make_shared<LoadData>())
 {
 }
@@ -163,11 +171,12 @@ void MeshMorphTarget::BeginLoad()
     AdvanceVersionChecksum();
     m_GpuTicket.reset();
     m_Snapshot.store(nullptr, std::memory_order_release);
+
     m_LoadData = std::make_shared<LoadData>();
 
     std::lock_guard<std::mutex> Lock(m_LoadData->Mutex);
     m_LoadData->PositionDeltas = m_CreateInfo.PositionDeltas;
-    m_LoadData->NormalDeltas = m_CreateInfo.NormalDeltas;
+    m_LoadData->NormalDeltas   = m_CreateInfo.NormalDeltas;
     SetState(::Engine::Util::Applied::ResourceState::LoadingCpu);
 }
 
@@ -213,9 +222,9 @@ void MeshMorphTarget::Update()
 
         std::shared_ptr<MeshMorphTargetSnapshot> Snapshot = std::make_shared<MeshMorphTargetSnapshot>();
 
-        Snapshot->PositionBuffer = m_LoadData->PositionBuffer;
-        Snapshot->NormalBuffer = m_LoadData->NormalBuffer;
-        Snapshot->VertexCount = static_cast<uint32_t>(m_CreateInfo.PositionDeltas.size());
+        Snapshot->PositionBuffer  = m_LoadData->PositionBuffer;
+        Snapshot->NormalBuffer    = m_LoadData->NormalBuffer;
+        Snapshot->VertexCount     = static_cast<uint32_t>(m_CreateInfo.PositionDeltas.size());
         Snapshot->VersionChecksum = GetVersionChecksum();
 
         m_Snapshot.store(
@@ -229,9 +238,9 @@ void MeshMorphTarget::Update()
     }
 
     const std::shared_ptr<LoadData> Data = m_LoadData;
-    const uint64_t VersionChecksum = GetVersionChecksum();
-    const VkDeviceSize PositionBytes = sizeof(glm::vec3) * Data->PositionDeltas.size();
-    const VkDeviceSize NormalBytes = sizeof(glm::vec3) * Data->NormalDeltas.size();
+    const uint64_t VersionChecksum       = GetVersionChecksum();
+    const VkDeviceSize PositionBytes     = sizeof(glm::vec3) * Data->PositionDeltas.size();
+    const VkDeviceSize NormalBytes       = sizeof(glm::vec3) * Data->NormalDeltas.size();
 
     SetState(::Engine::Util::Applied::ResourceState::QueuedGpu);
     m_GpuTicket = ::Engine::Base::Render::ResourceLoader::PushFrameJobVk(
@@ -303,6 +312,7 @@ void MeshMorphTarget::Unload()
     }
 
     m_CreateInfo = {};
+
     SetState(::Engine::Util::Applied::ResourceState::Unloading);
 }
 
@@ -333,15 +343,20 @@ void Mesh::BeginLoad()
     Data->VersionChecksum = GetVersionChecksum();
 
     Data->Vertices = std::move(m_Vertices);
-    Data->Indices = std::move(m_Indices);
+    Data->Indices  = std::move(m_Indices);
+
+    Data->ExtraTexCoords = std::move(m_ExtraTexCoords);
 
     ::Engine::Base::JobSystem::It::PushBackground(
         ::Engine::Base::Runtime::EngineThreadID::RenderResourceLoaderTh,
         "mesh_load_" + GetKey(),
-        [Data] {
+        [Data, ExtraTexCoordCount = m_ExtraTexCoordCount] {
             try {
                 if (Data->Vertices.empty() || Data->Indices.empty() || Data->Indices.size() % TRIANGLE_INDICES != 0) {
                     Data->FailureReason = "mesh data is empty or has incomplete triangles";
+                    Data->Failed = true;
+                } else if (Data->ExtraTexCoords.size() != Data->Vertices.size() * ExtraTexCoordCount) {
+                    Data->FailureReason = "mesh texture coordinate count does not match vertex count";
                     Data->Failed = true;
                 } else {
                     Data->BoundsMin = glm::vec3(std::numeric_limits<float>::max());
@@ -446,6 +461,7 @@ void Mesh::Update()
     if (m_GpuTicket) {
         if (GetVersionChecksum() != m_GpuVersionChecksum) {
             SetRejected("mesh GPU job version is stale");
+
             return;
         }
 
@@ -470,6 +486,7 @@ void Mesh::Update()
 
         if (UploadRejected) {
             SetRejected("mesh upload version is stale");
+
             return;
         }
 
@@ -483,24 +500,29 @@ void Mesh::Update()
         const ::Engine::Base::Render::Buffer PreviousIndexBuffer = m_IndexBuffer;
 
         m_VertexBuffer = LoadDataState->VertexBuffer;
-        m_IndexBuffer = LoadDataState->IndexBuffer;
+        m_IndexBuffer  = LoadDataState->IndexBuffer;
         LoadDataState->VertexBuffer = {};
         LoadDataState->IndexBuffer = {};
 
         if (!KEEP_CPU_DATA) {
             std::lock_guard<std::mutex> Lock(LoadDataState->Mutex);
+
             LoadDataState->Vertices.clear();
             LoadDataState->SortedIndices.clear();
+            LoadDataState->ExtraTexCoords.clear();
         }
 
         const std::shared_ptr<MeshSnapshot> Snapshot = std::make_shared<MeshSnapshot>();
-
         Snapshot->VertexBuffer = m_VertexBuffer;
-        Snapshot->IndexBuffer = m_IndexBuffer;
-        Snapshot->VertexCount = m_VertexCount;
-        Snapshot->IndexCount = m_IndexCount;
+        Snapshot->IndexBuffer  = m_IndexBuffer;
+        Snapshot->VertexCount  = m_VertexCount;
+        Snapshot->IndexCount   = m_IndexCount;
+
+        Snapshot->ExtraTexCoordCount = m_ExtraTexCoordCount;
+
         Snapshot->BoundsMin = m_BoundsMin;
         Snapshot->BoundsMax = m_BoundsMax;
+
         Snapshot->VersionChecksum = m_GpuVersionChecksum;
 
         m_Snapshot.store(
@@ -534,15 +556,12 @@ void Mesh::Update()
     {
         std::lock_guard<std::mutex> Lock(LoadDataState->Mutex);
 
-        if (!LoadDataState->Finished) {
-
-            return;
-        }
+        if (!LoadDataState->Finished) { return; }
 
         if (LoadDataState->Failed) {
             FailureReason = std::move(LoadDataState->FailureReason);
         } else {
-            Clusters = std::move(LoadDataState->Clusters);
+            Clusters      = std::move(LoadDataState->Clusters);
             ClusterGroups = std::move(LoadDataState->ClusterGroups);
             BoundsMin = LoadDataState->BoundsMin;
             BoundsMax = LoadDataState->BoundsMax;
@@ -556,8 +575,9 @@ void Mesh::Update()
     }
 
     try {
-        m_Clusters = std::move(Clusters);
+        m_Clusters      = std::move(Clusters);
         m_ClusterGroups = std::move(ClusterGroups);
+
         m_BoundsMin = BoundsMin;
         m_BoundsMax = BoundsMax;
 
@@ -570,6 +590,7 @@ void Mesh::Update()
 
             m_Vertices = Data->Vertices;
             m_Indices = Data->SortedIndices;
+            m_ExtraTexCoords = Data->ExtraTexCoords;
         }
 
         SetState(::Engine::Util::Applied::ResourceState::QueuedGpu);
@@ -579,13 +600,18 @@ void Mesh::Update()
 
                 if (Data->VersionChecksum != VersionChecksum) {
                     Data->UploadRejected = true;
+
                     return;
                 }
 
                 try {
+                    const VkDeviceSize VertexBytes = sizeof(Vertex) * Data->Vertices.size();
+                    const VkDeviceSize TexCoordBytes = sizeof(glm::vec2) * Data->ExtraTexCoords.size();
+
                     Data->VertexBuffer = ::Engine::Base::Render::ResourceLoader::CreateBuffer(
-                        sizeof(Vertex) * Data->Vertices.size(),
-                        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
+                        VertexBytes + TexCoordBytes,
+                        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
+                            | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
                     );
 
                     Data->IndexBuffer = ::Engine::Base::Render::ResourceLoader::CreateBuffer(
@@ -593,11 +619,16 @@ void Mesh::Update()
                         VK_BUFFER_USAGE_INDEX_BUFFER_BIT
                     );
 
-                    ::Engine::Base::Render::ResourceLoader::QueueBufferUpload(
-                        Data->VertexBuffer,
-                        Data->Vertices.data(),
-                        Data->VertexBuffer.Size
-                    );
+                    if (TexCoordBytes != 0) {
+                        std::vector<std::byte> Contents(VertexBytes + TexCoordBytes);
+                        std::memcpy(Contents.data(), Data->Vertices.data(), VertexBytes);
+                        std::memcpy(Contents.data() + VertexBytes, Data->ExtraTexCoords.data(), TexCoordBytes);
+                        ::Engine::Base::Render::ResourceLoader::QueueBufferUpload(
+                            Data->VertexBuffer, Contents.data(), Data->VertexBuffer.Size);
+                    } else {
+                        ::Engine::Base::Render::ResourceLoader::QueueBufferUpload(
+                            Data->VertexBuffer, Data->Vertices.data(), VertexBytes);
+                    }
 
                     ::Engine::Base::Render::ResourceLoader::QueueBufferUpload(
                         Data->IndexBuffer,
@@ -616,6 +647,7 @@ void Mesh::Update()
             10,
             {
                 sizeof(Vertex) * Data->Vertices.size()
+                    + sizeof(glm::vec2) * Data->ExtraTexCoords.size()
                     + sizeof(uint32_t) * Data->SortedIndices.size(),
                 2,
                 2,
@@ -682,6 +714,7 @@ void Mesh::Unload()
         if (LoadDataState->VertexBuffer.Handle != VK_NULL_HANDLE) {
             ::Engine::Base::Render::ResourceLoader::DestroyBuffer(LoadDataState->VertexBuffer);
         }
+
         if (LoadDataState->IndexBuffer.Handle != VK_NULL_HANDLE) {
             ::Engine::Base::Render::ResourceLoader::DestroyBuffer(LoadDataState->IndexBuffer);
         }

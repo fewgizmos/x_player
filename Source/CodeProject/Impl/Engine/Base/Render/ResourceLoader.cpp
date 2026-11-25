@@ -880,10 +880,10 @@ void RecordReleaseBuffer(VkCommandBuffer p_CommandBuffer, const AcquireBuffer& p
 
     VkBufferMemoryBarrier2 Barrier{ VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2 };
 
-    Barrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+    Barrier.srcStageMask  = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
     Barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-    Barrier.dstStageMask = VK_PIPELINE_STAGE_2_NONE;
-    Barrier.dstAccessMask = 0;
+    Barrier.dstStageMask  = Queues.DedicatedTransfer ? VK_PIPELINE_STAGE_2_NONE : VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+    Barrier.dstAccessMask = Queues.DedicatedTransfer ? 0 : VK_ACCESS_2_MEMORY_READ_BIT;
 
     Barrier.srcQueueFamilyIndex = Queues.DedicatedTransfer
         ? Queues.TransferFamily
@@ -1589,10 +1589,7 @@ void QueueImageUploadChunk(const Image& Target, const void* Data, VkDeviceSize S
         FirstRow, RowCount, FirstChunk, LastChunk);
 
     m_ActiveBatch->Staging.push_back(Use);
-
-    if (!::Engine::Base::Render::Vk::Device::GetQueues().DedicatedTransfer) {
-        m_ActiveBatch->GraphicsHasCommands = true;
-    }
+    m_ActiveBatch->GraphicsHasCommands = true;
 }
 
 Buffer CreateMappedBuffer(VkDeviceSize p_Size, VkBufferUsageFlags p_Usage)

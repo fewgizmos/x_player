@@ -1,26 +1,8 @@
 #version 450
 
-layout(push_constant) uniform PushConstants
-{
-    mat4 Projection;
+#include "Materials/StdModel/ModelDraw.glsl"
 
-    vec4 BaseColor;
-
-    uint TextureIndex;
-    uint SamplerIndex;
-
-    float AlphaCutoff;
-
-    uint AlphaMode;
-
-    vec4 UvTransformRow0;
-    vec4 UvTransformRow1;
-} Push;
-
-layout(location = 0) in vec3  aPosition;
-layout(location = 1) in float aUvX;
-layout(location = 2) in float aUvY;
-layout(location = 3) in vec3  aNormal;
+#include "Util/Head/MaterialUv.glsl"
 
 layout(location = 4) in mat4 aWorld;
 
@@ -28,31 +10,45 @@ layout(location = 8) in vec4  aNormal0;
 layout(location = 9) in vec4  aNormal1;
 layout(location = 10) in vec4 aNormal2;
 
-layout(location = 0) out vec2 UV;
-layout(location = 1) out vec3 Normal;
+layout(location = 0) out vec4 UvPairs[MaterialUvPairCount];
 
-#ifdef X_SHADE_SERVICE_TRANSPARENT
+layout(location = MaterialUvPairCount) out vec3      Normal;
+layout(location = MaterialUvPairCount + 1u) out vec4 Tangent;
+layout(location = MaterialUvPairCount + 2u) out vec3 WorldPosition;
 
-layout(location = 2) out vec3 WorldPosition;
+vec2 GetUv(uint p_Slot, vec2 p_Uv)
+{
+    const MaterialTextureData Texture = Push.Materials.Items[Push.MaterialIndex].Textures[p_Slot];
 
-#endif
+    if (Texture.Texture == NoTexture) { return vec2(0.0); }
+
+    vec2 UV = p_Uv;
+
+    if (Texture.TexCoord > 0u && Texture.TexCoord <= Push.ExtraTexCoordCount) {
+        const uint Index = uint(gl_VertexIndex) * Push.ExtraTexCoordCount + Texture.TexCoord - 1u;
+
+        UV = Push.ExtraTexCoords.Items[Index];
+    }
+
+    return MaterialUv(Texture, UV);
+}
 
 void main()
 {
-    const vec4 Position = aWorld * vec4(aPosition, 1.0);
+    const MeshVertex Vertex = Push.Vertices.Items[uint(gl_VertexIndex)];
 
-    UV = vec2(
-        dot(Push.UvTransformRow0, vec4(aUvX, aUvY, 1.0, 1.0)),
-        dot(Push.UvTransformRow1, vec4(aUvX, aUvY, 1.0, 1.0))
-    );
+    const vec4 Position = aWorld * vec4(Vertex.Position, 1.0);
+    const vec2 UV       = vec2(Vertex.UvX, Vertex.UvY);
 
-    Normal = mat3(aNormal0.xyz, aNormal1.xyz, aNormal2.xyz) * aNormal;
+    for (uint Pair = 0u; Pair < MaterialUvPairCount; ++Pair) {
+        const uint Slot = Pair * 2u;
 
-    gl_Position = Push.Projection * Position;
+        UvPairs[Pair] = vec4(GetUv(Slot, UV), Slot + 1u < MaterialTexturesCount ? GetUv(Slot + 1u, UV) : vec2(0.0));
+    }
 
-#ifdef X_SHADE_SERVICE_TRANSPARENT
-
+    Normal  = mat3(aNormal0.xyz, aNormal1.xyz, aNormal2.xyz) * Vertex.Normal;
+    Tangent = vec4(mat3(aWorld) * Vertex.Tangent.xyz, aNormal0.w * Vertex.Tangent.w);
     WorldPosition = Position.xyz;
 
-#endif
+    gl_Position = Push.Projection * Position;
 }

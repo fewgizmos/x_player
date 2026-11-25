@@ -6,6 +6,7 @@
 #include "X/Engine/Base/Render/Vulkan/GpuResources.hpp"
 
 #include <glm/vec3.hpp>
+#include <glm/vec2.hpp>
 #include <glm/vec4.hpp>
 #include <glm/mat4x4.hpp>
 
@@ -24,6 +25,7 @@ struct MeshSnapshot
 
     uint32_t VertexCount = 0;
     uint32_t IndexCount  = 0;
+    uint32_t ExtraTexCoordCount = 0;
 
     glm::vec3 BoundsMin = glm::vec3(0.0f);
     glm::vec3 BoundsMax = glm::vec3(0.0f);
@@ -51,6 +53,8 @@ struct MeshCreateInfo
 {
     std::vector<Vertex> Vertices;
     std::vector<uint32_t> Indices;
+    std::vector<glm::vec2> ExtraTexCoords;
+    uint32_t ExtraTexCoordCount = 0;
 };
 
 struct MeshSkeletonCreateInfo
@@ -114,6 +118,7 @@ public:
 private:
     std::vector<Vertex> m_Vertices;
     std::vector<uint32_t> m_Indices;
+    std::vector<glm::vec2> m_ExtraTexCoords;
     std::vector<Cluster> m_Clusters;
     std::vector<Cluster> m_ClusterGroups;
 
@@ -122,6 +127,7 @@ private:
 
     uint32_t m_VertexCount = 0;
     uint32_t m_IndexCount = 0;
+    uint32_t m_ExtraTexCoordCount = 0;
 
     glm::vec3 m_BoundsMin = glm::vec3(0.0f);
     glm::vec3 m_BoundsMax = glm::vec3(0.0f);

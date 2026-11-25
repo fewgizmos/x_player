@@ -22,10 +22,12 @@
 
 #include <glm/vec4.hpp>
 
+#include <array>
 #include <bit>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <exception>
 #include <mutex>
 #include <sstream>
@@ -55,25 +57,24 @@ namespace
 const std::string ValidatorShaderPath = "Materials/Service/MaterialValidator.comp";
 
 static_assert(std::is_standard_layout_v<MaterialData>);
-static_assert(sizeof(MaterialData) == 704);
-static_assert(alignof(MaterialData) == alignof(glm::vec4));
-static_assert(offsetof(MaterialData, UvTransforms) == 176);
-static_assert(offsetof(MaterialData, SpecularColor) == 624);
-static_assert(offsetof(MaterialData, Padding1) == 700);
+static_assert(sizeof(MaterialTextureData)      == 48);
+static_assert(sizeof(MaterialData)             == 1200);
+static_assert(offsetof(MaterialData, Textures) == 192);
 
 std::once_flag m_Validated;
 
 void ValidateLayout()
 {
-    constexpr uint32_t OpTypeRuntimeArray = 29;
-    constexpr uint32_t OpDecorate = 71;
-    constexpr uint32_t OpMemberDecorate = 72;
+    constexpr uint32_t OpTypeRuntimeArray    = 29;
+    constexpr uint32_t OpDecorate            = 71;
+    constexpr uint32_t OpMemberDecorate      = 72;
     constexpr uint32_t DecorationArrayStride = 6;
-    constexpr uint32_t DecorationOffset = 35;
+    constexpr uint32_t DecorationOffset      = 35;
 
     const std::string ValidateShaderSource = ::Engine::Util::File::ReadRaw(
         std::string(::Engine::Configs::Static::Contents::SHADERS_DIR) + ValidatorShaderPath
     );
+
     const std::vector<uint32_t> ValidateShader = ::Engine::Base::Render::Vk::Shader::CompileGlsl(
         ValidateShaderSource, ::Engine::Base::Render::ShaderStage::Compute, ValidatorShaderPath, {}, false
     );
@@ -83,63 +84,21 @@ void ValidateLayout()
         offsetof(MaterialData, Emissive),
         offsetof(MaterialData, Metallic),
         offsetof(MaterialData, Roughness),
-
         offsetof(MaterialData, NormalScale),
-
         offsetof(MaterialData, OcclusionStrength),
-
         offsetof(MaterialData, AlphaCutoff),
-
-        offsetof(MaterialData, BaseColorTexture),
-        offsetof(MaterialData, BaseColorSampler),
-
-        offsetof(MaterialData,  MetallicRoughnessTexture),
-        offsetof(MaterialData, MetallicRoughnessSampler),
-
-        offsetof(MaterialData, NormalTexture),
-        offsetof(MaterialData, NormalSampler),
-
-        offsetof(MaterialData, OcclusionTexture),
-        offsetof(MaterialData, OcclusionSampler),
-
-        offsetof(MaterialData, EmissiveTexture),
-        offsetof(MaterialData, EmissiveSampler),
-
-        offsetof(MaterialData, AlphaMode),
-
-        offsetof(MaterialData, SpecularTexture),
-        offsetof(MaterialData, SpecularSampler),
-        offsetof(MaterialData, SpecularColorTexture),
-        offsetof(MaterialData, SpecularColorSampler),
-
-        offsetof(MaterialData, DiffuseTransmissionTexture),
-        offsetof(MaterialData, DiffuseTransmissionSampler),
-        offsetof(MaterialData, DiffuseTransmissionColorTexture),
-        offsetof(MaterialData, DiffuseTransmissionColorSampler),
-
-        offsetof(MaterialData, ClearcoatTexture),
-        offsetof(MaterialData, ClearcoatSampler),
-
-        offsetof(MaterialData, ClearcoatRoughnessTexture),
-        offsetof(MaterialData, ClearcoatRoughnessSampler),
-        offsetof(MaterialData, ClearcoatNormalTexture),
-        offsetof(MaterialData, ClearcoatNormalSampler),
-
-        offsetof(MaterialData, SheenColorTexture),
-        offsetof(MaterialData, SheenColorSampler),
-
-        offsetof(MaterialData, SheenRoughnessTexture),
-        offsetof(MaterialData, SheenRoughnessSampler),
-
-        offsetof(MaterialData, HeightTexture),
-        offsetof(MaterialData, HeightSampler),
-
-        offsetof(MaterialData, Padding0),
-
-        offsetof(MaterialData, UvTransforms),
 
         offsetof(MaterialData, SpecularColor),
         offsetof(MaterialData, SpecularFactor),
+
+        offsetof(MaterialData,  DiffuseTransmissionColor),
+        offsetof(MaterialData, DiffuseTransmissionFactor),
+
+        offsetof(MaterialData, SheenColor),
+        offsetof(MaterialData, SheenRoughness),
+
+        offsetof(MaterialData, AttenuationColor),
+        offsetof(MaterialData, AttenuationDistance),
 
         offsetof(MaterialData, Ior),
 
@@ -147,19 +106,25 @@ void ValidateLayout()
 
         offsetof(MaterialData, ClearcoatFactor),
         offsetof(MaterialData, ClearcoatRoughness),
-
-        offsetof(MaterialData, DiffuseTransmissionColor),
-        offsetof(MaterialData, DiffuseTransmissionFactor),
-
-        offsetof(MaterialData, SheenColor),
-        offsetof(MaterialData, SheenRoughness),
-
         offsetof(MaterialData, ClearcoatNormalScale),
 
         offsetof(MaterialData, HeightScale),
         offsetof(MaterialData, HeightWorld),
 
-        offsetof(MaterialData, Padding1)
+        offsetof(MaterialData, TransmissionFactor),
+        offsetof(MaterialData, ThicknessFactor),
+
+        offsetof(MaterialData, IridescenceFactor),
+        offsetof(MaterialData, IridescenceIor),
+        offsetof(MaterialData, IridescenceThicknessMin),
+        offsetof(MaterialData, IridescenceThicknessMax),
+
+        offsetof(MaterialData, AnisotropyStrength),
+        offsetof(MaterialData, AnisotropyRotation),
+
+        offsetof(MaterialData, AlphaMode),
+        offsetof(MaterialData, Options),
+        offsetof(MaterialData, Textures)
     };
 
     std::unordered_map<uint32_t, uint32_t> ArrayElements;
@@ -226,18 +191,8 @@ struct ErasedMaterial
 };
 
 std::vector<ErasedMaterial> m_ErasedMaterials;
-std::vector<Material*>      m_PendingGpuMaterials;
 
 ::Engine::Base::Render::Buffer m_Buffers[::Engine::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT];
-
-std::shared_ptr<::Engine::Base::Render::ResourceLoader::ResourceJobTicket>
-    m_BufferTickets[::Engine::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT];
-
-std::shared_ptr<::Engine::Base::Render::ResourceLoader::ResourceJobTicket>
-    m_BufferCreateTickets[::Engine::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT];
-
-std::atomic<std::shared_ptr<const MaterialBufferSnapshot>> m_BufferSnapshot;
-std::shared_ptr<const MaterialBufferSnapshot>              m_FrameBufferSnapshot;
 
 uint64_t m_Version = 0;
 uint64_t m_BufferVersions[::Engine::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT] = {};
@@ -248,9 +203,40 @@ const ::Engine::Base::BootstrapManager::DeferredBootstrapRegistration::InitRegis
 const ::Engine::Base::BootstrapManager::DeferredBootstrapRegistration::CleanRegistrar
     RegisterClean("materials_cleanup", Cleanup, 75);
 
-std::string TextureKey(const MaterialTexture& p_Texture)
+std::array<const MaterialTexture*, MATERIAL_TEXTURES_COUNT> GetTextures(const MaterialCreateInfo& p_Info)
 {
-    return p_Texture.Target ? p_Texture.Target->GetKey() : std::string();
+    return {
+        &p_Info.BaseColorTexture,
+        &p_Info.MetallicRoughnessTexture,
+        &p_Info.NormalTexture,
+        &p_Info.OcclusionTexture,
+        &p_Info.EmissiveTexture,
+
+        &p_Info.SpecularTexture,
+        &p_Info.SpecularColorTexture,
+
+        &p_Info.DiffuseTransmissionTexture,
+        &p_Info.DiffuseTransmissionColorTexture,
+
+        &p_Info.ClearcoatTexture,
+        &p_Info.ClearcoatRoughnessTexture,
+        &p_Info.ClearcoatNormalTexture,
+
+        &p_Info.SheenColorTexture,
+        &p_Info.SheenRoughnessTexture,
+
+        &p_Info.HeightTexture,
+
+        &p_Info.TransmissionTexture,
+
+        &p_Info.ThicknessTexture,
+
+        &p_Info.IridescenceTexture,
+        &p_Info.IridescenceThicknessTexture,
+
+        &p_Info.AnisotropyTexture,
+        &p_Info.PackedNormalMetallicRoughnessTexture
+    };
 }
 
 std::string MakeKey(const MaterialCreateInfo& p_CreateInfo)
@@ -284,26 +270,29 @@ std::string MakeKey(const MaterialCreateInfo& p_CreateInfo)
     };
 
     AddVector4(p_CreateInfo.BaseColor);
-    AddVector3(p_CreateInfo.Emissive);
 
+    AddVector3(p_CreateInfo.Emissive);
     Add(p_CreateInfo.Metallic);
     Add(p_CreateInfo.Roughness);
     Add(p_CreateInfo.NormalScale);
     Add(p_CreateInfo.OcclusionStrength);
+
     Add(p_CreateInfo.AlphaCutoff);
 
     Key += ":" + std::to_string(static_cast<uint32_t>(p_CreateInfo.Alpha));
     Key += ":" + std::to_string(p_CreateInfo.DoubleSided);
     Key += ":" + std::to_string(p_CreateInfo.CastShadows);
+    Key += ":" + std::to_string(p_CreateInfo.Unlit);
 
     Add(p_CreateInfo.Ior);
+
     Add(p_CreateInfo.SpecularFactor);
+
     Add(p_CreateInfo.EmissiveStrength);
 
     AddVector3(p_CreateInfo.SpecularColor);
 
     Add(p_CreateInfo.DiffuseTransmissionFactor);
-
     AddVector3(p_CreateInfo.DiffuseTransmissionColor);
 
     Add(p_CreateInfo.ClearcoatFactor);
@@ -311,37 +300,28 @@ std::string MakeKey(const MaterialCreateInfo& p_CreateInfo)
     Add(p_CreateInfo.ClearcoatNormalScale);
 
     AddVector3(p_CreateInfo.SheenColor);
-
     Add(p_CreateInfo.SheenRoughness);
+
     Add(p_CreateInfo.HeightScale);
     Add(p_CreateInfo.HeightWorld);
 
-    const MaterialTexture* Textures[MATERIAL_TEXTURES_COUNT + 1] = {
-        &p_CreateInfo.BaseColorTexture,
+    Add(p_CreateInfo.TransmissionFactor);
 
-        &p_CreateInfo.MetallicRoughnessTexture,
-        &p_CreateInfo.NormalTexture,
-        &p_CreateInfo.OcclusionTexture,
-        &p_CreateInfo.EmissiveTexture,
+    Add(p_CreateInfo.ThicknessFactor);
 
-        &p_CreateInfo.SpecularTexture,
-        &p_CreateInfo.SpecularColorTexture,
+    Add(p_CreateInfo.AttenuationDistance);
+    AddVector3(p_CreateInfo.AttenuationColor);
 
-        &p_CreateInfo.DiffuseTransmissionTexture,
-        &p_CreateInfo.DiffuseTransmissionColorTexture,
+    Add(p_CreateInfo.IridescenceFactor);
+    Add(p_CreateInfo.IridescenceIor);
+    Add(p_CreateInfo.IridescenceThicknessMin);
+    Add(p_CreateInfo.IridescenceThicknessMax);
+   
+    Add(p_CreateInfo.AnisotropyStrength);
+    Add(p_CreateInfo.AnisotropyRotation);
 
-        &p_CreateInfo.ClearcoatTexture,
-        &p_CreateInfo.ClearcoatRoughnessTexture,
-        &p_CreateInfo.ClearcoatNormalTexture,
-
-        &p_CreateInfo.SheenColorTexture,
-        &p_CreateInfo.SheenRoughnessTexture,
-
-        &p_CreateInfo.HeightTexture
-    };
-
-    for (const MaterialTexture* Texture : Textures) {
-        const std::string Path = TextureKey(*Texture);
+    for (const MaterialTexture* Texture : GetTextures(p_CreateInfo)) {
+        const std::string Path = Texture->Target ? Texture->Target->GetKey() : std::string();
         Key += ":" + std::to_string(Path.size()) + ":" + Path;
         Key += ":" + std::to_string(static_cast<int>(Texture->Sampler.MagFilter));
         Key += ":" + std::to_string(static_cast<int>(Texture->Sampler.MinFilter));
@@ -356,23 +336,26 @@ std::string MakeKey(const MaterialCreateInfo& p_CreateInfo)
         Add(Texture->UvScale.x);
         Add(Texture->UvScale.y);
         Add(Texture->UvRotation);
+        Key += ":" + std::to_string(Texture->TexCoord);
     }
 
     return Key;
 }
 
-void WriteUvTransform(const MaterialTexture& p_Source, glm::vec4& p_Row0, glm::vec4& p_Row1)
+void WriteUvTransform(const MaterialTexture& p_Source, MaterialTextureData& p_Target)
 {
     const float CosRotation = std::cos(p_Source.UvRotation);
     const float SinRotation = std::sin(p_Source.UvRotation);
 
-    p_Row0 = glm::vec4(
+    p_Target.TexCoord = p_Source.TexCoord;
+    p_Target.UvTransformRow0 = glm::vec4(
         CosRotation  * p_Source.UvScale.x,
         -SinRotation * p_Source.UvScale.y,
         p_Source.UvOffset.x,
         0.0f
     );
-    p_Row1 = glm::vec4(
+
+    p_Target.UvTransformRow1 = glm::vec4(
         SinRotation * p_Source.UvScale.x,
         CosRotation * p_Source.UvScale.y,
         p_Source.UvOffset.y,
@@ -395,72 +378,49 @@ MaterialData BuildBaseData(const MaterialCreateInfo& p_CreateInfo)
     Result.AlphaCutoff = p_CreateInfo.AlphaCutoff;
     Result.AlphaMode   = static_cast<uint32_t>(p_CreateInfo.Alpha);
 
-    const MaterialTexture* Textures[MATERIAL_TEXTURES_COUNT] = {
-        &p_CreateInfo.BaseColorTexture,
-        &p_CreateInfo.MetallicRoughnessTexture,
-        &p_CreateInfo.NormalTexture,
-        &p_CreateInfo.OcclusionTexture,
-        &p_CreateInfo.EmissiveTexture,
-
-        &p_CreateInfo.SpecularTexture,
-        &p_CreateInfo.SpecularColorTexture,
-
-        &p_CreateInfo.DiffuseTransmissionTexture,
-        &p_CreateInfo.DiffuseTransmissionColorTexture,
-
-        &p_CreateInfo.ClearcoatTexture,
-        &p_CreateInfo.ClearcoatRoughnessTexture,
-        &p_CreateInfo.ClearcoatNormalTexture,
-
-        &p_CreateInfo.SheenColorTexture,
-        &p_CreateInfo.SheenRoughnessTexture
-    };
-
-    for (uint32_t I = 0; I < MATERIAL_TEXTURES_COUNT; I++) {
-        WriteUvTransform(*Textures[I], Result.UvTransforms[I * 2], Result.UvTransforms[I * 2 + 1]);
+    const auto Textures = GetTextures(p_CreateInfo);
+    for (uint32_t I = 0; I < MATERIAL_TEXTURES_COUNT; ++I) {
+        WriteUvTransform(*Textures[I], Result.Textures[I]);
     }
 
     Result.SpecularColor  = p_CreateInfo.SpecularColor;
     Result.SpecularFactor = p_CreateInfo.SpecularFactor;
 
-    Result.Ior = p_CreateInfo.Ior;
-
-    Result.EmissiveStrength = p_CreateInfo.EmissiveStrength;
-
-    Result.ClearcoatFactor    = p_CreateInfo.ClearcoatFactor;
-    Result.ClearcoatRoughness = p_CreateInfo.ClearcoatRoughness;
     Result.DiffuseTransmissionColor  = p_CreateInfo.DiffuseTransmissionColor;
     Result.DiffuseTransmissionFactor = p_CreateInfo.DiffuseTransmissionFactor;
 
     Result.SheenColor     = p_CreateInfo.SheenColor;
     Result.SheenRoughness = p_CreateInfo.SheenRoughness;
 
+    Result.AttenuationColor    = p_CreateInfo.AttenuationColor;
+    Result.AttenuationDistance = p_CreateInfo.AttenuationDistance;
+
+    Result.Ior = p_CreateInfo.Ior;
+
+    Result.EmissiveStrength = p_CreateInfo.EmissiveStrength;
+
+    Result.ClearcoatFactor      = p_CreateInfo.ClearcoatFactor;
+    Result.ClearcoatRoughness   = p_CreateInfo.ClearcoatRoughness;
     Result.ClearcoatNormalScale = p_CreateInfo.ClearcoatNormalScale;
 
     Result.HeightScale = p_CreateInfo.HeightScale;
     Result.HeightWorld = p_CreateInfo.HeightWorld;
 
-    Result.BaseColorTexture         = NO_TEXTURE;
-    Result.MetallicRoughnessTexture = NO_TEXTURE;
-    Result.NormalTexture            = NO_TEXTURE;
+    Result.TransmissionFactor = p_CreateInfo.TransmissionFactor;
 
-    Result.OcclusionTexture = NO_TEXTURE;
-    Result.EmissiveTexture  = NO_TEXTURE;
+    Result.ThicknessFactor = p_CreateInfo.ThicknessFactor;
 
-    Result.SpecularTexture = NO_TEXTURE;
-    Result.SpecularColorTexture = NO_TEXTURE;
+    Result.IridescenceFactor       = p_CreateInfo.IridescenceFactor;
+    Result.IridescenceIor          = p_CreateInfo.IridescenceIor;
+    Result.IridescenceThicknessMin = p_CreateInfo.IridescenceThicknessMin;
+    Result.IridescenceThicknessMax = p_CreateInfo.IridescenceThicknessMax;
 
-    Result.DiffuseTransmissionTexture = NO_TEXTURE;
-    Result.DiffuseTransmissionColorTexture = NO_TEXTURE;
+    Result.AnisotropyStrength = p_CreateInfo.AnisotropyStrength;
+    Result.AnisotropyRotation = p_CreateInfo.AnisotropyRotation;
 
-    Result.ClearcoatTexture          = NO_TEXTURE;
-    Result.ClearcoatRoughnessTexture = NO_TEXTURE;
-    Result.ClearcoatNormalTexture    = NO_TEXTURE;
-
-    Result.SheenColorTexture     = NO_TEXTURE;
-    Result.SheenRoughnessTexture = NO_TEXTURE;
-
-    Result.HeightTexture = NO_TEXTURE;
+    Result.Options.x = (p_CreateInfo.Unlit ? MaterialUnlit : 0u)
+        | (p_CreateInfo.DoubleSided ? MaterialDoubleSided : 0u)
+        | (p_CreateInfo.CastShadows ? MaterialCastShadows : 0u);
 
     return Result;
 }
@@ -519,32 +479,9 @@ bool TexturesReady(
     bool& p_Rejected
 )
 {
-    const MaterialTexture* Textures[MATERIAL_TEXTURES_COUNT + 1] = {
-        &p_CreateInfo.BaseColorTexture,
-        &p_CreateInfo.MetallicRoughnessTexture,
-        &p_CreateInfo.NormalTexture,
-        &p_CreateInfo.OcclusionTexture,
-        &p_CreateInfo.EmissiveTexture,
-
-        &p_CreateInfo.SpecularTexture,
-        &p_CreateInfo.SpecularColorTexture,
-
-        &p_CreateInfo.DiffuseTransmissionTexture,
-        &p_CreateInfo.DiffuseTransmissionColorTexture,
-
-        &p_CreateInfo.ClearcoatTexture,
-        &p_CreateInfo.ClearcoatRoughnessTexture,
-        &p_CreateInfo.ClearcoatNormalTexture,
-
-        &p_CreateInfo.SheenColorTexture,
-        &p_CreateInfo.SheenRoughnessTexture,
-
-        &p_CreateInfo.HeightTexture
-    };
-
     bool Ready = true;
 
-    for (const MaterialTexture* Texture : Textures) {
+    for (const MaterialTexture* Texture : GetTextures(p_CreateInfo)) {
         if (TextureFailed(*Texture, p_Reason, p_Rejected)) {
             return false;
         }
@@ -557,30 +494,16 @@ bool TexturesReady(
     return Ready;
 }
 
-void SetTexture(MaterialData& p_Data, uint32_t p_Slot, const MaterialTexture& p_Source, uint32_t& p_TextureIndex, uint32_t& p_SamplerIndex)
+void SetTexture(MaterialTextureData& p_Target, const MaterialTexture& p_Source)
 {
-    if (!p_Source.Target) {
-        p_TextureIndex = NO_TEXTURE;
-        p_SamplerIndex = 0;
+    if (!p_Source.Target) { return; }
 
-        return;
-    }
+    const auto Snapshot = p_Source.Target->GetSnapshot();
 
-    const std::shared_ptr<const ::Engine::Applied::Render::Resources::Textures::TextureSnapshot> Snapshot = p_Source.Target->GetSnapshot();
+    if (!Snapshot) { return; }
 
-    if (!Snapshot) {
-        p_TextureIndex = NO_TEXTURE;
-        p_SamplerIndex = 0;
-
-        return;
-    }
-
-    p_TextureIndex = Snapshot->Index;
-    p_SamplerIndex = ::Engine::Base::Render::Vk::Samplers::Make(p_Source.Sampler);
-
-    ::Engine::Applied::Render::Resources::Textures::SyncSamplers();
-
-    WriteUvTransform(p_Source, p_Data.UvTransforms[p_Slot * 2], p_Data.UvTransforms[p_Slot * 2 + 1]);
+    p_Target.Texture = Snapshot->Index;
+    p_Target.Sampler = ::Engine::Base::Render::Vk::Samplers::Make(p_Source.Sampler);
 }
 
 }
@@ -592,11 +515,6 @@ Material::Material(MaterialCreateInfo p_CreateInfo)
 {
 }
 
-Material::~Material()
-{
-    std::erase(m_PendingGpuMaterials, this);
-}
-
 std::string Material::GetTypeName() const
 {
     return "Material";
@@ -604,16 +522,13 @@ std::string Material::GetTypeName() const
 
 void Material::BeginLoad()
 {
-    std::erase(m_PendingGpuMaterials, this);
-
     ReleaseIndex(Index);
     Index = UINT32_MAX;
 
     AdvanceVersionChecksum();
 
     LoadState = std::make_shared<LoadData>();
-    m_GpuTicket.reset();
-    Index = UINT32_MAX;
+    m_Snapshot.store(nullptr, std::memory_order_release);
 
     if (!m_CreateInfo.TargetShader) {
         SetFailed("material requires shader resource via handler");
@@ -658,42 +573,6 @@ void Material::Update()
     if (GetState() != ::Engine::Util::Applied::ResourceState::LoadingCpu
         && GetState() != ::Engine::Util::Applied::ResourceState::QueuedGpu
         && GetState() != ::Engine::Util::Applied::ResourceState::Uploading) {
-
-        return;
-    }
-
-    if (m_GpuTicket) {
-        if (!m_GpuTicket->Done.load(std::memory_order_acquire)) {
-            SetState(::Engine::Util::Applied::ResourceState::Uploading);
-
-            return;
-        }
-
-        if (m_GpuTicket->Rejected.load(std::memory_order_acquire)) {
-            SetRejected(m_GpuTicket->FailureReason);
-
-            return;
-        }
-
-        if (m_GpuTicket->Failed.load(std::memory_order_acquire)) {
-            SetFailed(m_GpuTicket->FailureReason);
-
-            return;
-        }
-
-        SetState(::Engine::Util::Applied::ResourceState::Ready);
-
-        const std::shared_ptr<MaterialSnapshot> Snapshot = std::make_shared<MaterialSnapshot>();
-
-        Snapshot->Data  = Data;
-        Snapshot->Index = Index;
-
-        Snapshot->VersionChecksum = GetVersionChecksum();
-
-        m_Snapshot.store(
-            std::shared_ptr<const MaterialSnapshot>(Snapshot),
-            std::memory_order_release
-        );
 
         return;
     }
@@ -752,50 +631,30 @@ void Material::Update()
         return;
     }
 
-    SetTexture(Data, 0, m_CreateInfo.BaseColorTexture, Data.BaseColorTexture, Data.BaseColorSampler);
-    SetTexture(Data, 1, m_CreateInfo.MetallicRoughnessTexture, Data.MetallicRoughnessTexture, Data.MetallicRoughnessSampler);
-    SetTexture(Data, 2, m_CreateInfo.NormalTexture, Data.NormalTexture, Data.NormalSampler);
-    SetTexture(Data, 3, m_CreateInfo.OcclusionTexture, Data.OcclusionTexture, Data.OcclusionSampler);
-    SetTexture(Data, 4, m_CreateInfo.EmissiveTexture, Data.EmissiveTexture, Data.EmissiveSampler);
-    SetTexture(Data, 5, m_CreateInfo.SpecularTexture, Data.SpecularTexture, Data.SpecularSampler);
-    SetTexture(Data, 6, m_CreateInfo.SpecularColorTexture, Data.SpecularColorTexture, Data.SpecularColorSampler);
-    SetTexture(Data, 7, m_CreateInfo.DiffuseTransmissionTexture, Data.DiffuseTransmissionTexture, Data.DiffuseTransmissionSampler);
-    SetTexture(Data, 8, m_CreateInfo.DiffuseTransmissionColorTexture, Data.DiffuseTransmissionColorTexture, Data.DiffuseTransmissionColorSampler);
-    SetTexture(Data, 9, m_CreateInfo.ClearcoatTexture, Data.ClearcoatTexture, Data.ClearcoatSampler);
-    SetTexture(Data, 10, m_CreateInfo.ClearcoatRoughnessTexture, Data.ClearcoatRoughnessTexture, Data.ClearcoatRoughnessSampler);
-    SetTexture(Data, 11, m_CreateInfo.ClearcoatNormalTexture, Data.ClearcoatNormalTexture, Data.ClearcoatNormalSampler);
-    SetTexture(Data, 12, m_CreateInfo.SheenColorTexture, Data.SheenColorTexture, Data.SheenColorSampler);
-    SetTexture(Data, 13, m_CreateInfo.SheenRoughnessTexture, Data.SheenRoughnessTexture, Data.SheenRoughnessSampler);
-
-    if (m_CreateInfo.HeightTexture.Target) {
-        const std::shared_ptr<const ::Engine::Applied::Render::Resources::Textures::TextureSnapshot> Snapshot = m_CreateInfo.HeightTexture.Target->GetSnapshot();
-
-        if (!Snapshot) { return; }
-
-        Data.HeightTexture = Snapshot->Index;
-
-        Data.HeightSampler = ::Engine::Base::Render::Vk::Samplers::Make(m_CreateInfo.HeightTexture.Sampler);
-
-        ::Engine::Applied::Render::Resources::Textures::SyncSamplers();
+    const auto Textures = GetTextures(m_CreateInfo);
+    for (uint32_t I = 0; I < MATERIAL_TEXTURES_COUNT; ++I) {
+        SetTexture(Data.Textures[I], *Textures[I]);
     }
+    ::Engine::Applied::Render::Resources::Textures::SyncSamplers();
 
     Index = TakeIndex();
 
     {
         std::lock_guard<std::mutex> Lock(m_RegistryMutex);
         m_Data[Index] = Data;
-
         ++m_Version;
     }
 
-    m_PendingGpuMaterials.push_back(this);
-    SetState(::Engine::Util::Applied::ResourceState::QueuedGpu);
+    auto Snapshot = std::make_shared<MaterialSnapshot>();
+    Snapshot->Data = Data;
+    Snapshot->Index = Index;
+    Snapshot->VersionChecksum = GetVersionChecksum();
+    m_Snapshot.store(std::move(Snapshot), std::memory_order_release);
+    SetState(::Engine::Util::Applied::ResourceState::Ready);
 }
 
 void Material::Unload()
 {
-    std::erase(m_PendingGpuMaterials, this);
-
     AdvanceVersionChecksum();
 
     if (GetState() == ::Engine::Util::Applied::ResourceState::Unloading) {
@@ -808,21 +667,9 @@ void Material::Unload()
     Index = UINT32_MAX;
 }
 
-void Material::SetGpuTicket(
-    std::shared_ptr<::Engine::Base::Render::ResourceLoader::ResourceJobTicket> p_Ticket
-)
-{
-    m_GpuTicket = std::move(p_Ticket);
-}
-
 std::shared_ptr<const MaterialSnapshot> Material::GetSnapshot() const
 {
     return m_Snapshot.load(std::memory_order_acquire);
-}
-
-void CaptureFrameSnapshot()
-{
-    m_FrameBufferSnapshot = m_BufferSnapshot.load(std::memory_order_acquire);
 }
 
 uint32_t Material::GetIndex() const { return Index; }
@@ -841,31 +688,10 @@ VkDescriptorSet Material::GetExtraSet() const { return m_CreateInfo.ExtraSet; }
 void Init()
 {
     ::Engine::Base::Render::RenderingPool::RegisterSnapshot("scene_materials_flush", Flush, 899);
-    ::Engine::Base::Render::RenderingPool::RegisterSnapshot(
-        "scene_materials_snapshot",
-        CaptureFrameSnapshot,
-        900
-    );
-
-    for (uint32_t I = 0; I < ::Engine::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT; ++I) {
-        m_BufferCreateTickets[I] = ::Engine::Base::Render::ResourceLoader::PushFrameJobVk(
-            [I](VkCommandBuffer) {
-                m_Buffers[I] = ::Engine::Base::Render::ResourceLoader::CreateBuffer(
-                    sizeof(MaterialData) * ::Engine::Configs::Static::Graphics::MAX_MATERIALS,
-                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-                    VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
-                );
-            },
-            100,
-            { 0, 0, 1, 0, 0 }
-        );
-    }
 }
 
 void Cleanup()
 {
-    m_PendingGpuMaterials.clear();
-
     for (auto& Buffer : m_Buffers) { ::Engine::Base::Render::ResourceLoader::DestroyBuffer(Buffer); }
 
     std::lock_guard<std::mutex> Lock(m_RegistryMutex);
@@ -873,7 +699,6 @@ void Cleanup()
     m_Data.clear();
     m_FreeIndices.clear();
     m_ErasedMaterials.clear();
-    m_FrameBufferSnapshot.reset();
 
     m_Version = 0;
 
@@ -900,86 +725,29 @@ void Flush()
         ++m_Version;
     }
 
-    const uint32_t Frame = ::Engine::Base::Render::Vk::Frame::GetCurrentFrameIndex();
-    if (m_BufferTickets[Frame]
-        && m_BufferTickets[Frame]->Done.load(std::memory_order_acquire)
-        && !m_BufferTickets[Frame]->Failed.load(std::memory_order_acquire)
-        && !m_BufferTickets[Frame]->Rejected.load(std::memory_order_acquire)) {
-
-        const std::shared_ptr<MaterialBufferSnapshot> Snapshot = std::make_shared<MaterialBufferSnapshot>();
-
-        Snapshot->Buffer  = m_Buffers[Frame];
-        Snapshot->Address = m_Buffers[Frame].Address;
-        Snapshot->Version = m_BufferVersions[Frame];
-
-        m_BufferSnapshot.store(
-            std::shared_ptr<const MaterialBufferSnapshot>(Snapshot),
-            std::memory_order_release
-        );
-    }
-
-    if (!m_BufferCreateTickets[Frame]
-        || !m_BufferCreateTickets[Frame]->Done.load(std::memory_order_acquire)) {
-
-        return;
-    }
-
-    if (m_BufferCreateTickets[Frame]->Rejected.load(std::memory_order_acquire)) {
-        for (Material* MaterialValue : m_PendingGpuMaterials) {
-            MaterialValue->SetRejected(m_BufferCreateTickets[Frame]->FailureReason);
-        }
-
-        m_PendingGpuMaterials.clear();
-
-        return;
-    }
-
-    if (m_BufferCreateTickets[Frame]->Failed.load(std::memory_order_acquire)) {
-        for (Material* MaterialValue : m_PendingGpuMaterials) {
-            MaterialValue->SetFailed(m_BufferCreateTickets[Frame]->FailureReason);
-        }
-
-        m_PendingGpuMaterials.clear();
-
-        return;
-    }
+    namespace RenderBase = ::Engine::Base::Render;
+    const uint32_t Frame = RenderBase::Vk::Frame::GetCurrentFrameIndex();
 
     if (m_BufferVersions[Frame] == m_Version || m_Data.empty()) { return; }
 
-    const ::Engine::Base::Render::Buffer Buffer = m_Buffers[Frame];
+    auto& Buffer = m_Buffers[Frame];
+    const VkDeviceSize Bytes = sizeof(MaterialData) * m_Data.size();
 
-    m_BufferTickets[Frame] = ::Engine::Base::Render::ResourceLoader::PushFrameJobVk(
-        [Buffer](VkCommandBuffer) {
-            std::vector<MaterialData> Data;
+    if (Buffer.Size < Bytes) {
+        const auto Replacement = RenderBase::ResourceLoader::CreateMappedBuffer(
+            std::max(Bytes, Buffer.Size * 2),
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
+        );
 
-            {
-                std::lock_guard<std::mutex> Lock(m_RegistryMutex);
-                Data = m_Data;
-            }
+        RenderBase::ResourceLoader::DestroyBuffer(Buffer);
 
-            ::Engine::Base::Render::ResourceLoader::QueueBufferUpload(
-                Buffer,
-                Data.data(),
-                sizeof(MaterialData) * Data.size()
-            );
-        },
-        10,
-        {
-            sizeof(MaterialData) * m_Data.size(),
-            1,
-            0,
-            0,
-            1
-        }
-    );
-
-    for (Material* MaterialValue : m_PendingGpuMaterials) {
-        MaterialValue->SetGpuTicket(m_BufferTickets[Frame]);
+        Buffer = Replacement;
     }
-    m_PendingGpuMaterials.clear();
+
+    std::memcpy(RenderBase::Vk::GpuResources::GetMappedData(Buffer), m_Data.data(), Bytes);
+    RenderBase::Vk::GpuResources::FlushMappedBuffer(Buffer, 0, Bytes);
 
     m_BufferVersions[Frame] = m_Version;
-
 }
 
 const std::vector<MaterialData>& GetData()
@@ -995,11 +763,6 @@ const ::Engine::Base::Render::Buffer& GetBuffer()
 VkDeviceAddress GetBufferAddress()
 {
     return GetBuffer().Address;
-}
-
-std::shared_ptr<const MaterialBufferSnapshot> GetBufferSnapshot()
-{
-    return m_FrameBufferSnapshot;
 }
 
 }

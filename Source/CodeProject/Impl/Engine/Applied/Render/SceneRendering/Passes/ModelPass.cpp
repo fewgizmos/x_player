@@ -45,36 +45,28 @@ using MeshSnapshot     = ::Engine::Applied::Render::Resources::Meshes::MeshSnaps
 using MaterialSnapshot = ::Engine::Applied::Render::Resources::Materials::MaterialSnapshot;
 using ShaderSnapshot   = ::Engine::Applied::Render::Resources::Shaders::ShaderSnapshot;
 using AlphaMode        = ::Engine::Applied::Render::Resources::Materials::AlphaMode;
-
-struct alignas(16) PushConstants
-{
-    glm::mat4 Transform;
-
-    glm::vec4 BaseColor;
-
-    uint32_t TextureIndex;
-    uint32_t SamplerIndex;
-
-    float AlphaCutoff;
-    uint32_t AlphaMode;
-
-    glm::vec4 UvTransformRow0;
-    glm::vec4 UvTransformRow1;
-};
-
-struct Instance
-{
-    glm::mat4 World;
-    glm::vec4 Normal[3];
-};
+using DrawConstants    = ::Engine::Applied::Render::Resources::Models::DrawConstants;
+using Instance         = ::Engine::Applied::Render::Resources::Models::DrawInstance;
+using Vertex = ::Engine::Applied::Render::Resources::Meshes::Vertex;
 
 static_assert(sizeof(Instance) == 7 * sizeof(glm::vec4));
-static_assert(sizeof(PushConstants) == 128);
+static_assert(sizeof(DrawConstants) == 96);
+static_assert(offsetof(DrawConstants, Materials) == 64);
+static_assert(offsetof(DrawConstants, Vertices) == 72);
+static_assert(offsetof(DrawConstants, ExtraTexCoords) == 80);
+static_assert(offsetof(DrawConstants, MaterialIndex) == 88);
+
+static_assert(sizeof(Vertex) == 96);
+static_assert(offsetof(Vertex, Normal) == 16);
+static_assert(offsetof(Vertex, Tangent) == 32);
+static_assert(offsetof(Vertex, Color) == 48);
+static_assert(offsetof(Vertex, Joints) == 64);
+static_assert(offsetof(Vertex, Weights) == 80);
 
 struct Draw
 {
-    std::shared_ptr<const ShaderSnapshot> Shader;
-    std::shared_ptr<const MeshSnapshot> Mesh;
+    std::shared_ptr<const ShaderSnapshot>   Shader;
+    std::shared_ptr<const MeshSnapshot>     Mesh;
     std::shared_ptr<const MaterialSnapshot> Material;
 
     Instance Data;
@@ -127,8 +119,10 @@ bool IsOutsideFrustum(const glm::mat4& p_Clip, glm::vec3 p_Center, glm::vec3 p_E
 
     for (const glm::vec4& Plane : Planes) {
         const glm::vec3 Normal(Plane);
+
         const float Distance = glm::dot(Normal, p_Center) + Plane.w;
         const float Radius = glm::dot(glm::abs(Normal), p_Extent);
+
         if (Distance + Radius < 0.0f) { return true; }
     }
 
@@ -142,12 +136,13 @@ Instance BuildInstance(const glm::mat4& p_World, bool& p_Mirrored)
     const glm::vec3 AxisZ(p_World[2]);
 
     const glm::vec3 CofactorX = glm::cross(AxisY, AxisZ);
+ 
     p_Mirrored = glm::dot(AxisX, CofactorX) < 0.0f;
     const float Sign = p_Mirrored ? -1.0f : 1.0f;
 
     Instance Result;
     Result.World = p_World;
-    Result.Normal[0] = glm::vec4(Sign * CofactorX, 0.0f);
+    Result.Normal[0] = glm::vec4(Sign * CofactorX, Sign);
     Result.Normal[1] = glm::vec4(Sign * glm::cross(AxisZ, AxisX), 0.0f);
     Result.Normal[2] = glm::vec4(Sign * glm::cross(AxisX, AxisY), 0.0f);
 
@@ -266,11 +261,11 @@ void Render(const SceneList::Frame& p_Scene, bool p_Transparent)
     const auto& Disp = RenderBase::Vk::Device::GetDisp();
     const VkBuffer InstanceBuffer = UploadInstances(Draws, p_Transparent);
     const VkDeviceSize Offset = 0;
+    const VkDeviceAddress Materials = ::Engine::Applied::Render::Resources::Materials::GetBufferAddress();
 
     Disp.cmdBindVertexBuffers(Cmd, 1, 1, &InstanceBuffer, &Offset);
 
     RenderBase::Pipeline BoundPipeline{};
-    VkBuffer VertexBuffer = VK_NULL_HANDLE;
     VkBuffer IndexBuffer = VK_NULL_HANDLE;
 
     const VkDescriptorSet Sets[] = {
@@ -305,32 +300,24 @@ void Render(const SceneList::Frame& p_Scene, bool p_Transparent)
             Disp.cmdSetFrontFace(Cmd, Entry.Mirrored ? VK_FRONT_FACE_CLOCKWISE : VK_FRONT_FACE_COUNTER_CLOCKWISE);
         }
 
-        if (VertexBuffer != Entry.Mesh->VertexBuffer.Handle) {
-            VertexBuffer = Entry.Mesh->VertexBuffer.Handle;
-
-            Disp.cmdBindVertexBuffers(Cmd, 0, 1, &VertexBuffer, &Offset);
-        }
-
         if (IndexBuffer != Entry.Mesh->IndexBuffer.Handle) {
             IndexBuffer = Entry.Mesh->IndexBuffer.Handle;
 
             Disp.cmdBindIndexBuffer(Cmd, IndexBuffer, 0, VK_INDEX_TYPE_UINT32);
         }
 
-        const auto& Material = Entry.Material->Data;
         glm::mat4 Transform                        = p_Scene.ActiveCamera->ViewProjection;
 
         if (!Entry.Instanced) { Transform *= Entry.Data.World; }
 
-        const PushConstants Constants{
+        const DrawConstants Constants{
             Transform,
-            Material.BaseColor,
-            Material.BaseColorTexture,
-            Material.BaseColorSampler,
-            Material.AlphaCutoff,
-            Material.AlphaMode,
-            Material.UvTransforms[0],
-            Material.UvTransforms[1]
+            Materials,
+            Entry.Mesh->VertexBuffer.Address,
+            Entry.Mesh->ExtraTexCoordCount == 0 ? 0 : Entry.Mesh->VertexBuffer.Address
+                + sizeof(Vertex) * Entry.Mesh->VertexCount,
+            Entry.Material->Index,
+            Entry.Mesh->ExtraTexCoordCount
         };
 
         RenderBase::Vk::Commands::PushConstants(

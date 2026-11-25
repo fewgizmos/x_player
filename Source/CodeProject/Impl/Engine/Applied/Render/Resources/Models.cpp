@@ -2,6 +2,8 @@
 
 #include "X/Project/Configs/Static.hpp"
 
+#include "X/Engine/Applied/Render/Resources/Textures.hpp"
+
 #include "X/Engine/Base/JobSystem/JobManager.hpp"
 #include "X/Engine/Base/Runtime/BaseEngineThreadIDs.hpp"
 
@@ -43,9 +45,10 @@ namespace
 
 std::string MakeKey(const ModelCreateInfo& p_Info)
 {
-    std::string Key = p_Info.GltfPath + ":";
+    const std::string ShaderKey = p_Info.Shader ? p_Info.Shader->GetKey() : std::string();
+    std::string Key = p_Info.GltfPath + ":" + std::to_string(ShaderKey.size()) + ":" + ShaderKey;
 
-    if (p_Info.Shader) { Key += p_Info.Shader->GetKey(); }
+    if (p_Info.TransparentShader) { Key += p_Info.TransparentShader->GetKey(); }
 
     return Key;
 }
@@ -66,18 +69,6 @@ PunctualLight MakeLight(const fastgltf::Light& p_Light, const glm::mat4& p_Trans
     Light.InnerConeAngle = p_Light.innerConeAngle.value_or(Light.InnerConeAngle);
     Light.OuterConeAngle = p_Light.outerConeAngle.value_or(Light.OuterConeAngle);
     return {::Engine::Util::Applied::ResourceHandle<LightPoint>(std::move(Light)), p_Transform};
-}
-
-::Engine::Util::Applied::ResourceHandle<Shaders::Shader> MakeTransparentVariant(const ModelCreateInfo& p_Info)
-{
-    Shaders::ShaderCreateInfo Variant = p_Info.Shader->GetCreateInfo();
-    Variant.Graphics.Defines.push_back("X_SHADE_SERVICE_TRANSPARENT");
-    Variant.Graphics.ColorFormats = {Configs::Static::Graphics::SCENE_COLOR_FORMAT};
-    Variant.Graphics.AlphaBlend = true;
-    Variant.Graphics.DepthWrite = false;
-    Variant.Queue = Shaders::RenderQueue::Blended;
-
-    return ::Engine::Util::Applied::ResourceHandle<Shaders::Shader>(std::move(Variant));
 }
 
 std::vector<uint32_t> BuildTriangleIndices(const fastgltf::Asset& p_Asset, const fastgltf::Primitive& p_Primitive)
@@ -141,12 +132,18 @@ std::vector<uint32_t> BuildTriangleIndices(const fastgltf::Asset& p_Asset, const
     throw std::runtime_error("unsupported model primitive topology");
 }
 
+std::size_t GetTexCoordSet(const fastgltf::TextureInfo& p_Info)
+{
+    return p_Info.transform ? p_Info.transform->texCoordIndex.value_or(p_Info.texCoordIndex) : p_Info.texCoordIndex;
+}
+
 template<typename TextureInfoType>
 void SetMaterialTexture(
     const fastgltf::Asset& p_Asset,
     const std::optional<TextureInfoType>& p_Info,
     const std::filesystem::path& p_ModelPath,
-    Materials::MaterialTexture& p_Target
+    Materials::MaterialTexture& p_Target,
+    VkFormat p_Format = VK_FORMAT_R8G8B8A8_UNORM
 )
 {
     if (!p_Info.has_value()) { return; }
@@ -161,21 +158,28 @@ void SetMaterialTexture(
 
     const fastgltf::Image& Image = p_Asset.images[Texture.imageIndex.value()];
     Textures::TextureCreateInfo Info;
+    Info.Format = p_Format;
 
     if (const auto* Source = std::get_if<fastgltf::sources::URI>(&Image.data)) {
         Info.Path = std::filesystem::absolute(p_ModelPath.parent_path() / Source->uri.fspath())
             .lexically_normal().string();
 
-    } else if (const auto* View = std::get_if<fastgltf::sources::BufferView>(&Image.data)) {
-        const auto Bytes = fastgltf::DefaultBufferDataAdapter{}(p_Asset, View->bufferViewIndex);
-
+    } else {
         Info.Path = std::filesystem::absolute(p_ModelPath).lexically_normal().string() + "#image/" + std::to_string(Texture.imageIndex.value());
 
-        Info.EncodedData = std::make_shared<const std::vector<std::byte>>(Bytes.begin(), Bytes.end());
+        if (const auto* View = std::get_if<fastgltf::sources::BufferView>(&Image.data)) {
+            const auto Bytes = fastgltf::DefaultBufferDataAdapter{}(p_Asset, View->bufferViewIndex);
 
-    } else { return; }
+            Info.EncodedData = std::make_shared<const std::vector<std::byte>>(Bytes.begin(), Bytes.end());
+        } else if (const auto* Array = std::get_if<fastgltf::sources::Array>(&Image.data)) {
+            Info.EncodedData = std::make_shared<const std::vector<std::byte>>(Array->bytes.begin(), Array->bytes.end());
+        } else if (const auto* View = std::get_if<fastgltf::sources::ByteView>(&Image.data)) {
+            Info.EncodedData = std::make_shared<const std::vector<std::byte>>(View->bytes.begin(), View->bytes.end());
+        } else { return; }
+    }
 
     p_Target.Target = ::Engine::Util::Applied::ResourceHandle<Textures::Texture>(std::move(Info));
+    p_Target.TexCoord = static_cast<uint32_t>(GetTexCoordSet(*p_Info));
 
     if (p_Info->transform) {
         p_Target.UvOffset = glm::vec2(
@@ -220,12 +224,9 @@ void SetMaterialTexture(
 
     const auto ConvertWrap = [](fastgltf::Wrap p_Wrap) {
         switch (p_Wrap) {
-        case fastgltf::Wrap::ClampToEdge:
-            return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-        case fastgltf::Wrap::MirroredRepeat:
-            return VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
-        case fastgltf::Wrap::Repeat:
-            return VK_SAMPLER_ADDRESS_MODE_REPEAT;
+            case fastgltf::Wrap::ClampToEdge:    return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+            case fastgltf::Wrap::MirroredRepeat: return VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+            case fastgltf::Wrap::Repeat:         return VK_SAMPLER_ADDRESS_MODE_REPEAT;
         }
 
         return VK_SAMPLER_ADDRESS_MODE_REPEAT;
@@ -235,12 +236,102 @@ void SetMaterialTexture(
     p_Target.Sampler.WrapV = ConvertWrap(Sampler.wrapT);
 }
 
+void ReadMaterialTextures(const fastgltf::Asset& p_Asset, const fastgltf::Material& p_Material,
+    const std::filesystem::path& p_Path, Materials::MaterialCreateInfo& p_Info)
+{
+    const auto Set = [&](const auto& p_Texture, Materials::MaterialTexture& p_Target,
+        VkFormat p_Format = VK_FORMAT_R8G8B8A8_UNORM) {
+        SetMaterialTexture(p_Asset, p_Texture, p_Path, p_Target, p_Format);
+    };
+
+    constexpr VkFormat Srgb = VK_FORMAT_R8G8B8A8_SRGB;
+    Set(p_Material.pbrData.baseColorTexture, p_Info.BaseColorTexture, Srgb);
+    Set(p_Material.pbrData.metallicRoughnessTexture, p_Info.MetallicRoughnessTexture);
+    Set(p_Material.normalTexture, p_Info.NormalTexture);
+    Set(p_Material.occlusionTexture, p_Info.OcclusionTexture);
+    Set(p_Material.emissiveTexture, p_Info.EmissiveTexture, Srgb);
+    Set(p_Material.packedNormalMetallicRoughnessTexture, p_Info.PackedNormalMetallicRoughnessTexture);
+
+    if (p_Material.normalTexture)    { p_Info.NormalScale       = p_Material.normalTexture->scale; }
+    if (p_Material.occlusionTexture) { p_Info.OcclusionStrength = p_Material.occlusionTexture->strength; }
+
+    p_Info.EmissiveStrength = p_Material.emissiveStrength;
+    p_Info.Ior = p_Material.ior;
+    p_Info.Unlit = p_Material.unlit;
+
+    if (const auto& Specular = p_Material.specular) {
+        p_Info.SpecularFactor = Specular->specularFactor;
+        p_Info.SpecularColor = glm::vec3(Specular->specularColorFactor[0], Specular->specularColorFactor[1], Specular->specularColorFactor[2]);
+
+        Set(Specular->specularTexture, p_Info.SpecularTexture);
+        Set(Specular->specularColorTexture, p_Info.SpecularColorTexture, Srgb);
+    }
+
+    if (const auto& Transmission = p_Material.transmission) {
+        p_Info.TransmissionFactor = Transmission->transmissionFactor;
+
+        Set(Transmission->transmissionTexture, p_Info.TransmissionTexture);
+    }
+
+    if (const auto& Volume = p_Material.volume) {
+        p_Info.ThicknessFactor     = Volume->thicknessFactor;
+        p_Info.AttenuationDistance = Volume->attenuationDistance;
+        p_Info.AttenuationColor    = glm::vec3(Volume->attenuationColor[0], Volume->attenuationColor[1], Volume->attenuationColor[2]);
+
+        Set(Volume->thicknessTexture, p_Info.ThicknessTexture);
+    }
+
+    if (const auto& Transmission = p_Material.diffuseTransmission) {
+        p_Info.DiffuseTransmissionFactor = Transmission->diffuseTransmissionFactor;
+
+        const auto& Color = Transmission->diffuseTransmissionColorFactor;
+        p_Info.DiffuseTransmissionColor = glm::vec3(Color[0], Color[1], Color[2]);
+
+        Set(Transmission->diffuseTransmissionTexture, p_Info.DiffuseTransmissionTexture);
+        Set(Transmission->diffuseTransmissionColorTexture, p_Info.DiffuseTransmissionColorTexture, Srgb);
+    }
+
+    if (const auto& Clearcoat = p_Material.clearcoat) {
+        p_Info.ClearcoatFactor    = Clearcoat->clearcoatFactor;
+        p_Info.ClearcoatRoughness = Clearcoat->clearcoatRoughnessFactor;
+
+        if (Clearcoat->clearcoatNormalTexture) { p_Info.ClearcoatNormalScale = Clearcoat->clearcoatNormalTexture->scale; }
+
+        Set(Clearcoat->clearcoatTexture, p_Info.ClearcoatTexture);
+        Set(Clearcoat->clearcoatRoughnessTexture, p_Info.ClearcoatRoughnessTexture);
+        Set(Clearcoat->clearcoatNormalTexture, p_Info.ClearcoatNormalTexture);
+    }
+    if (const auto& Sheen = p_Material.sheen) {
+        p_Info.SheenColor = glm::vec3(Sheen->sheenColorFactor[0], Sheen->sheenColorFactor[1], Sheen->sheenColorFactor[2]);
+        p_Info.SheenRoughness = Sheen->sheenRoughnessFactor;
+
+        Set(Sheen->sheenColorTexture, p_Info.SheenColorTexture, Srgb);
+        Set(Sheen->sheenRoughnessTexture, p_Info.SheenRoughnessTexture);
+    }
+    if (const auto& Iridescence = p_Material.iridescence) {
+        p_Info.IridescenceFactor = Iridescence->iridescenceFactor;
+        p_Info.IridescenceIor    = Iridescence->iridescenceIor;
+
+        p_Info.IridescenceThicknessMin = Iridescence->iridescenceThicknessMinimum;
+        p_Info.IridescenceThicknessMax = Iridescence->iridescenceThicknessMaximum;
+
+        Set(Iridescence->iridescenceTexture, p_Info.IridescenceTexture);
+        Set(Iridescence->iridescenceThicknessTexture, p_Info.IridescenceThicknessTexture);
+    }
+    if (const auto& Anisotropy = p_Material.anisotropy) {
+        p_Info.AnisotropyStrength = Anisotropy->anisotropyStrength;
+        p_Info.AnisotropyRotation = Anisotropy->anisotropyRotation;
+
+        Set(Anisotropy->anisotropyTexture, p_Info.AnisotropyTexture);
+    }
+}
+
 Meshes::MeshCreateInfo BuildMesh(const fastgltf::Asset& p_Asset, const fastgltf::Primitive& p_Primitive)
 {
     const auto PositionAttribute = p_Primitive.findAttribute("POSITION");
 
     if (PositionAttribute == p_Primitive.attributes.end()) {
-        throw std::runtime_error("model primitive has no POSITION attribute");
+        throw std::runtime_error("model primitive has no position attribute");
     }
 
     const fastgltf::Accessor& Positions = p_Asset.accessors[PositionAttribute->accessorIndex];
@@ -250,9 +341,9 @@ Meshes::MeshCreateInfo BuildMesh(const fastgltf::Asset& p_Asset, const fastgltf:
 
     for (Meshes::Vertex& Vertex : Result.Vertices) {
         Vertex = {};
-        Vertex.Normal = glm::vec3(0.0f, 1.0f, 0.0f);
-        Vertex.Color = glm::vec4(1.0f);
-        Vertex.Joints = glm::uvec4(0u);
+        Vertex.Normal  = glm::vec3(0.0f, 1.0f, 0.0f);
+        Vertex.Color   = glm::vec4(1.0f);
+        Vertex.Joints  = glm::uvec4(0u);
         Vertex.Weights = glm::vec4(0.0f);
         Vertex.Weights.x = 1.0f;
     }
@@ -278,6 +369,10 @@ Meshes::MeshCreateInfo BuildMesh(const fastgltf::Asset& p_Asset, const fastgltf:
     const auto UvAttribute = p_Primitive.findAttribute("TEXCOORD_0");
 
     if (UvAttribute != p_Primitive.attributes.end()) {
+        if (p_Asset.accessors[UvAttribute->accessorIndex].count != Positions.count) {
+            throw std::runtime_error("texture coordinate count does not match mesh vertex count");
+        }
+
         fastgltf::iterateAccessorWithIndex<glm::vec2>(p_Asset,
             p_Asset.accessors[UvAttribute->accessorIndex],
             [&Result](glm::vec2 p_Value, std::size_t p_Index) {
@@ -285,6 +380,30 @@ Meshes::MeshCreateInfo BuildMesh(const fastgltf::Asset& p_Asset, const fastgltf:
                 Result.Vertices[p_Index].UvY = p_Value.y;
             }
         );
+    }
+
+    std::vector<std::size_t> ExtraUvAccessors;
+
+    for (uint32_t Set = 1; ; ++Set) {
+        const auto Attribute = p_Primitive.findAttribute("TEXCOORD_" + std::to_string(Set));
+
+        if (Attribute == p_Primitive.attributes.end()) { break; }
+
+        ExtraUvAccessors.push_back(Attribute->accessorIndex);
+    }
+
+    Result.ExtraTexCoordCount = static_cast<uint32_t>(ExtraUvAccessors.size());
+    Result.ExtraTexCoords.resize(Positions.count * Result.ExtraTexCoordCount);
+
+    for (uint32_t Set = 0; Set < Result.ExtraTexCoordCount; ++Set) {
+        const auto& Accessor = p_Asset.accessors[ExtraUvAccessors[Set]];
+
+        if (Accessor.count != Positions.count) { throw std::runtime_error("texture coordinate count does not match mesh vertex count"); }
+
+        fastgltf::iterateAccessorWithIndex<glm::vec2>(p_Asset, Accessor,
+            [&Result, Set](glm::vec2 p_Value, std::size_t p_Index) {
+                Result.ExtraTexCoords[p_Index * Result.ExtraTexCoordCount + Set] = p_Value;
+            });
     }
 
     const auto TangentAttribute = p_Primitive.findAttribute("TANGENT");
@@ -355,11 +474,12 @@ std::vector<glm::vec2> ReadTangentTexCoords(
     const std::size_t MaterialIndex = p_Primitive.materialIndex.value_or(p_Asset.materials.size());
 
     if (MaterialIndex < p_Asset.materials.size()) {
-        const auto& Texture = p_Asset.materials[MaterialIndex].normalTexture;
+        const auto& Material = p_Asset.materials[MaterialIndex];
 
-        if (Texture) {
-            Set = Texture->transform ? Texture->transform->texCoordIndex.value_or(Texture->texCoordIndex)
-                : Texture->texCoordIndex;
+        if (Material.normalTexture) {
+            Set = GetTexCoordSet(*Material.normalTexture);
+        } else if (Material.packedNormalMetallicRoughnessTexture) {
+            Set = GetTexCoordSet(*Material.packedNormalMetallicRoughnessTexture);
         }
     }
 
@@ -374,6 +494,7 @@ std::vector<glm::vec2> ReadTangentTexCoords(
     }
 
     std::vector<glm::vec2> TexCoords(p_VertexCount);
+
     fastgltf::iterateAccessorWithIndex<glm::vec2>(p_Asset, Accessor,
         [&TexCoords](glm::vec2 p_Value, std::size_t p_Index) { TexCoords[p_Index] = p_Value; });
 
@@ -382,10 +503,11 @@ std::vector<glm::vec2> ReadTangentTexCoords(
 
 struct TangentBasis
 {
-    glm::vec3 Tangent = glm::vec3(0.0f);
+    glm::vec3 Tangent   = glm::vec3(0.0f);
     glm::vec3 Bitangent = glm::vec3(0.0f);
 
     int Orientation = 0;
+
     uint32_t MirroredVertex = UINT32_MAX;
 };
 
@@ -435,7 +557,6 @@ void GenerateTangents(
             for (std::size_t Corner = First; Corner < First + 3; ++Corner) {
                 uint32_t& Index = p_Mesh.Indices[Corner];
 
-                // Shared vertices need separate bases on either side of a mirrored UV seam.
                 if (Bases[Index].Orientation == -Orientation) {
                     if (Bases[Index].MirroredVertex == UINT32_MAX) {
                         if (p_Mesh.Vertices.size() >= UINT32_MAX) {
@@ -443,8 +564,15 @@ void GenerateTangents(
                         }
 
                         Bases[Index].MirroredVertex = static_cast<uint32_t>(p_Mesh.Vertices.size());
+
                         p_Mesh.Vertices.push_back(p_Mesh.Vertices[Index]);
                         Bases.emplace_back();
+
+                        for (uint32_t Set = 0; Set < p_Mesh.ExtraTexCoordCount; ++Set) {
+                            const auto Uv = p_Mesh.ExtraTexCoords[static_cast<std::size_t>(Index) * p_Mesh.ExtraTexCoordCount + Set];
+
+                            p_Mesh.ExtraTexCoords.push_back(Uv);
+                        }
 
                         for (auto& Target : p_MorphTargets) {
                             if (!Target.PositionDeltas.empty()) { Target.PositionDeltas.push_back(Target.PositionDeltas[Index]); }
@@ -607,46 +735,13 @@ void Model::BeginLoad()
                         SourceMaterial.emissiveFactor[2]
                     );
 
-                    SetMaterialTexture(
-                        Asset,
-                        SourceMaterial.pbrData.baseColorTexture,
-                        Path,
-                        MaterialInfo.BaseColorTexture
-                    );
-
-                    SetMaterialTexture(
-                        Asset,
-                        SourceMaterial.pbrData.metallicRoughnessTexture,
-                        Path,
-                        MaterialInfo.MetallicRoughnessTexture
-                    );
-
-                    SetMaterialTexture(
-                        Asset,
-                        SourceMaterial.normalTexture,
-                        Path,
-                        MaterialInfo.NormalTexture
-                    );
-
-                    SetMaterialTexture(
-                        Asset,
-                        SourceMaterial.occlusionTexture,
-                        Path,
-                        MaterialInfo.OcclusionTexture
-                    );
-
-                    SetMaterialTexture(
-                        Asset,
-                        SourceMaterial.emissiveTexture,
-                        Path,
-                        MaterialInfo.EmissiveTexture
-                    );
+                    ReadMaterialTextures(Asset, SourceMaterial, Path, MaterialInfo);
 
                     if (SourceMaterial.alphaMode == fastgltf::AlphaMode::Mask) {
                         MaterialInfo.Alpha = Materials::AlphaMode::Mask;
-                    } else if (SourceMaterial.alphaMode == fastgltf::AlphaMode::Blend && Info.Shader) {
+                    } else if (SourceMaterial.alphaMode == fastgltf::AlphaMode::Blend) {
                         MaterialInfo.Alpha = Materials::AlphaMode::Blend;
-                        MaterialInfo.TargetShader = MakeTransparentVariant(Info);
+                        MaterialInfo.TargetShader = Info.TransparentShader;
                     }
 
                     MaterialInfo.AlphaCutoff = SourceMaterial.alphaCutoff;
@@ -830,6 +925,10 @@ void Model::BeginLoad()
                             for (Meshes::Vertex& Vertex : MeshInfo.Vertices) {
                                 glm::vec4 Position(0.0f);
                                 glm::vec3 Normal(0.0f);
+                                glm::vec3 Tangent(0.0f);
+                                glm::vec3 Bitangent(0.0f);
+                                const glm::vec3 SourceTangent(Vertex.Tangent);
+                                const glm::vec3 SourceBitangent = glm::cross(Vertex.Normal, SourceTangent) * Vertex.Tangent.w;
                                 float WeightSum = 0.0f;
 
                                 for (std::size_t Influence = 0; Influence < 4; ++Influence) {
@@ -845,6 +944,8 @@ void Model::BeginLoad()
                                     Position += JointMatrix * glm::vec4(Vertex.Position, 1.0f) * Weight;
                                     Normal += glm::mat3(glm::transpose(glm::inverse(JointMatrix)))
                                         * Vertex.Normal * Weight;
+                                    Tangent += glm::mat3(JointMatrix) * SourceTangent * Weight;
+                                    Bitangent += glm::mat3(JointMatrix) * SourceBitangent * Weight;
                                     WeightSum += Weight;
                                 }
 
@@ -853,6 +954,11 @@ void Model::BeginLoad()
 
                                     if (glm::dot(Normal, Normal) > 0.0f) {
                                         Vertex.Normal = glm::normalize(Normal);
+                                    }
+
+                                    if (glm::dot(Tangent, Tangent) > 0.0f) {
+                                        const float Handedness = glm::dot(glm::cross(Vertex.Normal, Tangent), Bitangent) < 0.0f ? -1.0f : 1.0f;
+                                        Vertex.Tangent = glm::vec4(glm::normalize(Tangent), Handedness);
                                     }
                                 }
                             }
@@ -1022,6 +1128,18 @@ void Model::Update()
     for (const ModelPart& Part : m_LoadData->Parts) {
         if (!Part.Mesh || !Part.Material) {
             SetFailed("model part has no mesh or material");
+
+            return;
+        }
+
+        if (Part.Mesh.GetState() == ::Engine::Util::Applied::ResourceState::Failed) {
+            SetFailed("model mesh dependency failed: " + Part.Mesh->GetFailureReason());
+
+            return;
+        }
+
+        if (Part.Mesh.GetState() == ::Engine::Util::Applied::ResourceState::Rejected) {
+            SetRejected("model mesh dependency rejected: " + Part.Mesh->GetFailureReason());
 
             return;
         }

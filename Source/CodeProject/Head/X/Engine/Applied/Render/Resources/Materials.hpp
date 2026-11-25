@@ -14,6 +14,7 @@
 #include <glm/vec4.hpp>
 
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
@@ -22,7 +23,14 @@ namespace Engine::Applied::Render::Resources::Materials
 {
 
 constexpr uint32_t NO_TEXTURE              = 0xFFFFFFFFu;
-constexpr uint32_t MATERIAL_TEXTURES_COUNT = 14;
+constexpr uint32_t MATERIAL_TEXTURES_COUNT = 21;
+
+enum MaterialFlags : uint32_t
+{
+    MaterialUnlit      = 1u << 0,
+    MaterialDoubleSided = 1u << 1,
+    MaterialCastShadows = 1u << 2
+};
 
 enum class AlphaMode : uint32_t
 {
@@ -41,6 +49,7 @@ struct MaterialTexture
     glm::vec2 UvOffset = glm::vec2(0.0f);
     glm::vec2 UvScale = glm::vec2(1.0f);
     float UvRotation = 0.0f;
+    uint32_t TexCoord = 0;
 };
 
 struct MaterialCreateInfo
@@ -61,6 +70,7 @@ struct MaterialCreateInfo
     AlphaMode Alpha = AlphaMode::Opaque;
     bool DoubleSided = false;
     bool CastShadows = true;
+    bool Unlit = false;
 
     float Ior = 1.5f;
     float SpecularFactor = 1.0f;
@@ -77,6 +87,17 @@ struct MaterialCreateInfo
     glm::vec3 SheenColor = glm::vec3(0.0f);
     float SheenRoughness = 0.0f;
 
+    float TransmissionFactor = 0.0f;
+    float ThicknessFactor = 0.0f;
+    float AttenuationDistance = std::numeric_limits<float>::infinity();
+    glm::vec3 AttenuationColor = glm::vec3(1.0f);
+    float IridescenceFactor = 0.0f;
+    float IridescenceIor = 1.3f;
+    float IridescenceThicknessMin = 100.0f;
+    float IridescenceThicknessMax = 400.0f;
+    float AnisotropyStrength = 0.0f;
+    float AnisotropyRotation = 0.0f;
+
     MaterialTexture BaseColorTexture;
     MaterialTexture MetallicRoughnessTexture;
     MaterialTexture NormalTexture;
@@ -92,12 +113,29 @@ struct MaterialCreateInfo
     MaterialTexture SheenColorTexture;
     MaterialTexture SheenRoughnessTexture;
     MaterialTexture HeightTexture;
+    MaterialTexture TransmissionTexture;
+    MaterialTexture ThicknessTexture;
+    MaterialTexture IridescenceTexture;
+    MaterialTexture IridescenceThicknessTexture;
+    MaterialTexture AnisotropyTexture;
+    MaterialTexture PackedNormalMetallicRoughnessTexture;
 
     float HeightScale = 0.0f;
     float HeightWorld = 0.0f;
 };
 
-struct MaterialData
+struct alignas(16) MaterialTextureData
+{
+    glm::vec4 UvTransformRow0;
+    glm::vec4 UvTransformRow1;
+
+    uint32_t Texture = NO_TEXTURE;
+    uint32_t Sampler = 0;
+    uint32_t TexCoord = 0;
+    uint32_t Padding = 0;
+};
+
+struct alignas(16) MaterialData
 {
     glm::vec4 BaseColor;
 
@@ -109,55 +147,34 @@ struct MaterialData
     float OcclusionStrength;
     float AlphaCutoff;
 
-    uint32_t BaseColorTexture;
-    uint32_t BaseColorSampler;
-    uint32_t MetallicRoughnessTexture;
-    uint32_t MetallicRoughnessSampler;
-    uint32_t NormalTexture;
-    uint32_t NormalSampler;
-    uint32_t OcclusionTexture;
-    uint32_t OcclusionSampler;
-    uint32_t EmissiveTexture;
-    uint32_t EmissiveSampler;
-    uint32_t AlphaMode;
-    uint32_t SpecularTexture;
-    uint32_t SpecularSampler;
-    uint32_t SpecularColorTexture;
-    uint32_t SpecularColorSampler;
-    uint32_t DiffuseTransmissionTexture;
-    uint32_t DiffuseTransmissionSampler;
-    uint32_t DiffuseTransmissionColorTexture;
-    uint32_t DiffuseTransmissionColorSampler;
-    uint32_t ClearcoatTexture;
-    uint32_t ClearcoatSampler;
-    uint32_t ClearcoatRoughnessTexture;
-    uint32_t ClearcoatRoughnessSampler;
-    uint32_t ClearcoatNormalTexture;
-    uint32_t ClearcoatNormalSampler;
-    uint32_t SheenColorTexture;
-    uint32_t SheenColorSampler;
-    uint32_t SheenRoughnessTexture;
-    uint32_t SheenRoughnessSampler;
-    uint32_t HeightTexture;
-    uint32_t HeightSampler;
-    uint32_t Padding0;
-
-    glm::vec4 UvTransforms[MATERIAL_TEXTURES_COUNT * 2];
-
     glm::vec3 SpecularColor;
     float SpecularFactor;
-    float Ior;
-    float EmissiveStrength;
-    float ClearcoatFactor;
-    float ClearcoatRoughness;
     glm::vec3 DiffuseTransmissionColor;
     float DiffuseTransmissionFactor;
     glm::vec3 SheenColor;
     float SheenRoughness;
+    glm::vec3 AttenuationColor;
+    float AttenuationDistance;
+
+    float Ior;
+    float EmissiveStrength;
+    float ClearcoatFactor;
+    float ClearcoatRoughness;
     float ClearcoatNormalScale;
     float HeightScale;
     float HeightWorld;
-    float Padding1;
+    float TransmissionFactor;
+    float ThicknessFactor;
+    float IridescenceFactor;
+    float IridescenceIor;
+    float IridescenceThicknessMin;
+    float IridescenceThicknessMax;
+    float AnisotropyStrength;
+    float AnisotropyRotation;
+    uint32_t AlphaMode;
+
+    glm::uvec4 Options = glm::uvec4(0);
+    MaterialTextureData Textures[MATERIAL_TEXTURES_COUNT];
 };
 
 struct MaterialSnapshot
@@ -167,20 +184,12 @@ struct MaterialSnapshot
     uint64_t VersionChecksum = 0;
 };
 
-struct MaterialBufferSnapshot
-{
-    ::Engine::Base::Render::Buffer Buffer;
-    VkDeviceAddress Address = 0;
-    uint64_t Version = 0;
-};
-
 class Material final : public ::Engine::Util::Applied::Resource
 {
 public:
     using CreateInfo = MaterialCreateInfo;
 
     explicit Material(MaterialCreateInfo p_CreateInfo);
-    ~Material() override;
 
     void BeginLoad() override;
     void Update() override;
@@ -196,7 +205,6 @@ public:
     const ::Engine::Util::Applied::ResourceHandle<
         ::Engine::Applied::Render::Resources::Shaders::Shader>& GetShader() const;
     VkDescriptorSet GetExtraSet() const;
-    void SetGpuTicket(std::shared_ptr<::Engine::Base::Render::ResourceLoader::ResourceJobTicket> p_Ticket);
     std::shared_ptr<const MaterialSnapshot> GetSnapshot() const;
 
 private:
@@ -206,7 +214,6 @@ private:
     MaterialData Data = {};
     uint32_t Index = UINT32_MAX;
     std::shared_ptr<LoadData> LoadState;
-    std::shared_ptr<::Engine::Base::Render::ResourceLoader::ResourceJobTicket> m_GpuTicket;
     std::atomic<std::shared_ptr<const MaterialSnapshot>> m_Snapshot;
 };
 
@@ -217,6 +224,5 @@ void Flush();
 const std::vector<MaterialData>& GetData();
 const ::Engine::Base::Render::Buffer& GetBuffer();
 VkDeviceAddress GetBufferAddress();
-std::shared_ptr<const MaterialBufferSnapshot> GetBufferSnapshot();
 
 }
