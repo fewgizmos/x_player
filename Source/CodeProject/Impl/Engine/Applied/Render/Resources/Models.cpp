@@ -9,11 +9,13 @@
 #include <fastgltf/glm_element_traits.hpp>
 #include <fastgltf/tools.hpp>
 
+#include <glm/geometric.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/vec2.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <functional>
 #include <limits>
@@ -343,6 +345,135 @@ Meshes::MeshCreateInfo BuildMesh(const fastgltf::Asset& p_Asset, const fastgltf:
     Result.Indices = BuildTriangleIndices(p_Asset, p_Primitive);
 
     return Result;
+}
+
+std::vector<glm::vec2> ReadTangentTexCoords(
+    const fastgltf::Asset& p_Asset, const fastgltf::Primitive& p_Primitive, std::size_t p_VertexCount
+)
+{
+    std::size_t Set = 0;
+    const std::size_t MaterialIndex = p_Primitive.materialIndex.value_or(p_Asset.materials.size());
+
+    if (MaterialIndex < p_Asset.materials.size()) {
+        const auto& Texture = p_Asset.materials[MaterialIndex].normalTexture;
+
+        if (Texture) {
+            Set = Texture->transform ? Texture->transform->texCoordIndex.value_or(Texture->texCoordIndex)
+                : Texture->texCoordIndex;
+        }
+    }
+
+    const auto Attribute = p_Primitive.findAttribute("TEXCOORD_" + std::to_string(Set));
+
+    if (Attribute == p_Primitive.attributes.end()) { return {}; }
+
+    const auto& Accessor = p_Asset.accessors[Attribute->accessorIndex];
+
+    if (Accessor.count != p_VertexCount) {
+        throw std::runtime_error("tangent texture coordinate count does not match mesh vertex count");
+    }
+
+    std::vector<glm::vec2> TexCoords(p_VertexCount);
+    fastgltf::iterateAccessorWithIndex<glm::vec2>(p_Asset, Accessor,
+        [&TexCoords](glm::vec2 p_Value, std::size_t p_Index) { TexCoords[p_Index] = p_Value; });
+
+    return TexCoords;
+}
+
+struct TangentBasis
+{
+    glm::vec3 Tangent = glm::vec3(0.0f);
+    glm::vec3 Bitangent = glm::vec3(0.0f);
+
+    int Orientation = 0;
+    uint32_t MirroredVertex = UINT32_MAX;
+};
+
+glm::vec3 NormalizeOr(glm::vec3 p_Vector, glm::vec3 p_Fallback)
+{
+    const float LengthSquared = glm::dot(p_Vector, p_Vector);
+
+    return std::isfinite(LengthSquared) && LengthSquared > 0.0f
+        ? p_Vector * glm::inversesqrt(LengthSquared) : p_Fallback;
+}
+
+void GenerateTangents(
+    Meshes::MeshCreateInfo& p_Mesh, const std::vector<glm::vec2>& p_TexCoords,
+    std::vector<Meshes::MeshMorphTargetCreateInfo>& p_MorphTargets
+)
+{
+    std::vector<TangentBasis> Bases(p_Mesh.Vertices.size());
+
+    if (!p_TexCoords.empty()) {
+        for (std::size_t First = 0; First < p_Mesh.Indices.size(); First += 3) {
+            const uint32_t A = p_Mesh.Indices[First];
+            const uint32_t B = p_Mesh.Indices[First + 1];
+            const uint32_t C = p_Mesh.Indices[First + 2];
+
+            if (A >= p_TexCoords.size() || B >= p_TexCoords.size() || C >= p_TexCoords.size()) {
+                throw std::runtime_error("mesh index is out of range");
+            }
+
+            const glm::dvec2 Uv1 = glm::dvec2(p_TexCoords[B]) - glm::dvec2(p_TexCoords[A]);
+            const glm::dvec2 Uv2 = glm::dvec2(p_TexCoords[C]) - glm::dvec2(p_TexCoords[A]);
+            const double Determinant = Uv1.x * Uv2.y - Uv1.y * Uv2.x;
+
+            if (!std::isfinite(Determinant) || Determinant == 0.0) { continue; }
+
+            const glm::dvec3 Position(p_Mesh.Vertices[A].Position);
+            const glm::dvec3 Edge1 = glm::dvec3(p_Mesh.Vertices[B].Position) - Position;
+            const glm::dvec3 Edge2 = glm::dvec3(p_Mesh.Vertices[C].Position) - Position;
+            const glm::dvec3 Normal = glm::cross(Edge1, Edge2);
+
+            if (!(glm::dot(Normal, Normal) > 0.0)) { continue; }
+
+            const int Orientation = Determinant < 0.0 ? -1 : 1;
+            const float Sign = static_cast<float>(Orientation);
+            const glm::vec3 Tangent = Sign * glm::vec3(glm::normalize(Edge1 * Uv2.y - Edge2 * Uv1.y));
+            const glm::vec3 Bitangent = Sign * glm::vec3(glm::normalize(Edge2 * Uv1.x - Edge1 * Uv2.x));
+
+            for (std::size_t Corner = First; Corner < First + 3; ++Corner) {
+                uint32_t& Index = p_Mesh.Indices[Corner];
+
+                // Shared vertices need separate bases on either side of a mirrored UV seam.
+                if (Bases[Index].Orientation == -Orientation) {
+                    if (Bases[Index].MirroredVertex == UINT32_MAX) {
+                        if (p_Mesh.Vertices.size() >= UINT32_MAX) {
+                            throw std::runtime_error("mesh vertex count exceeds the index range");
+                        }
+
+                        Bases[Index].MirroredVertex = static_cast<uint32_t>(p_Mesh.Vertices.size());
+                        p_Mesh.Vertices.push_back(p_Mesh.Vertices[Index]);
+                        Bases.emplace_back();
+
+                        for (auto& Target : p_MorphTargets) {
+                            if (!Target.PositionDeltas.empty()) { Target.PositionDeltas.push_back(Target.PositionDeltas[Index]); }
+                            if (!Target.NormalDeltas.empty()) { Target.NormalDeltas.push_back(Target.NormalDeltas[Index]); }
+                        }
+                    }
+
+                    Index = Bases[Index].MirroredVertex;
+                }
+
+                TangentBasis& Basis = Bases[Index];
+                Basis.Orientation = Orientation;
+                Basis.Tangent += Tangent;
+                Basis.Bitangent += Bitangent;
+            }
+        }
+    }
+
+    for (std::size_t Index = 0; Index < p_Mesh.Vertices.size(); ++Index) {
+        Meshes::Vertex& Vertex = p_Mesh.Vertices[Index];
+        const TangentBasis& Basis = Bases[Index];
+        const glm::vec3 Normal = NormalizeOr(Vertex.Normal, glm::vec3(0.0f, 1.0f, 0.0f));
+        const glm::vec3 Axis = std::abs(Normal.x) < 0.9f ? glm::vec3(1.0f, 0.0f, 0.0f) : glm::vec3(0.0f, 0.0f, 1.0f);
+        const glm::vec3 Fallback = glm::normalize(Axis - Normal * glm::dot(Normal, Axis));
+        const glm::vec3 Tangent = NormalizeOr(Basis.Tangent - Normal * glm::dot(Normal, Basis.Tangent), Fallback);
+        const float Sign = glm::dot(glm::cross(Normal, Tangent), Basis.Bitangent) < 0.0f ? -1.0f : 1.0f;
+
+        Vertex.Tangent = glm::vec4(Tangent, Sign);
+    }
 }
 
 Meshes::MeshSkeletonCreateInfo BuildSkeleton(
@@ -731,6 +862,11 @@ void Model::BeginLoad()
                             if (glm::dot(Vertex.Normal, Vertex.Normal) > 0.0f) {
                                 Vertex.Normal = glm::normalize(Vertex.Normal);
                             }
+                        }
+
+                        if (Primitive.findAttribute("TANGENT") == Primitive.attributes.end()) {
+                            const auto TexCoords = ReadTangentTexCoords(Asset, Primitive, MeshInfo.Vertices.size());
+                            GenerateTangents(MeshInfo, TexCoords, MorphInfos);
                         }
 
                         ModelPart Part;
