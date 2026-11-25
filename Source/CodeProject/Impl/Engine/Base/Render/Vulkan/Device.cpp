@@ -37,8 +37,8 @@ QueueSet m_Queues;
 std::mutex m_QueueSubmitMutex;
 std::mutex m_VulkanQueueCallMutex;
 
-std::atomic<uint64_t> m_NextQueueOperation        = 0;
-std::atomic<uint64_t> m_NextRenderCompletionValue = 0;
+std::atomic<uint64_t> m_NextQueueOperation    = 0;
+std::atomic<uint64_t> m_RenderCompletionValue = 0;
 
 VkSemaphore m_RenderCompletionSemaphore = VK_NULL_HANDLE;
 
@@ -669,11 +669,12 @@ void DrainRenderOperations()
     Future.get();
 }
 
-uint64_t QueueSubmitAndPresentAsync(
+void QueueSubmitAndPresentAsync(
     const VkSubmitInfo2* p_Submit,
     VkQueue p_Queue,
     VkFence p_Fence,
-    const VkPresentInfoKHR* p_PresentInfo
+    const VkPresentInfoKHR* p_PresentInfo,
+    std::function<void(FrameSubmissionResult)> p_Completion
 )
 {
     struct QueueOperation
@@ -692,23 +693,17 @@ uint64_t QueueSubmitAndPresentAsync(
 
         VkQueue Queue = VK_NULL_HANDLE;
         VkFence Fence = VK_NULL_HANDLE;
-
-        uint64_t CompletionValue = 0;
     };
 
     const std::shared_ptr<QueueOperation> Operation = std::make_shared<QueueOperation>();
     Operation->Queue = p_Queue;
     Operation->Fence = p_Fence;
 
-    Operation->CompletionValue = m_NextRenderCompletionValue.fetch_add(
-        1,
-        std::memory_order_acq_rel
-    ) + 1;
-
     Operation->Submit = *p_Submit;
-    Operation->Submit.pCommandBufferInfos = &Operation->Command;
-    Operation->Submit.pWaitSemaphoreInfos = Operation->Waits;
+    Operation->Submit.pCommandBufferInfos   = &Operation->Command;
+    Operation->Submit.pWaitSemaphoreInfos   = Operation->Waits;
     Operation->Submit.pSignalSemaphoreInfos = Operation->Signals;
+
     Operation->Command = *p_Submit->pCommandBufferInfos;
 
     for (uint32_t I = 0; I < p_Submit->waitSemaphoreInfoCount; ++I) {
@@ -719,48 +714,51 @@ uint64_t QueueSubmitAndPresentAsync(
         Operation->Signals[I] = p_Submit->pSignalSemaphoreInfos[I];
     }
 
-    Operation->Signals[p_Submit->signalSemaphoreInfoCount] = {
-        VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-        nullptr,
-        m_RenderCompletionSemaphore,
-        Operation->CompletionValue,
-        VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-        0
-    };
-    Operation->Submit.signalSemaphoreInfoCount = p_Submit->signalSemaphoreInfoCount + 1;
-
     Operation->Present = *p_PresentInfo;
     Operation->Present.pWaitSemaphores = &Operation->PresentWait;
-    Operation->Present.pSwapchains = &Operation->Swapchain;
-    Operation->Present.pImageIndices = &Operation->ImageIndex;
+    Operation->Present.pSwapchains     = &Operation->Swapchain;
+    Operation->Present.pImageIndices   = &Operation->ImageIndex;
+
     Operation->PresentWait = p_PresentInfo->pWaitSemaphores[0];
 
-    Operation->Swapchain = p_PresentInfo->pSwapchains[0];
+    Operation->Swapchain  = p_PresentInfo->pSwapchains[0];
     Operation->ImageIndex = p_PresentInfo->pImageIndices[0];
 
     PushQueueExecutorJob(
-        [Operation] {
-            VkResult SubmitResult = VK_SUCCESS;
+        [Operation, Completion = std::move(p_Completion)] {
+            const uint64_t CompletionValue = m_RenderCompletionValue.load(std::memory_order_relaxed) + 1;
 
-            SubmitResult = Submit2Locked(
+            Operation->Signals[Operation->Submit.signalSemaphoreInfoCount] = {
+                VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+                nullptr,
+                m_RenderCompletionSemaphore,
+                CompletionValue,
+                VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+                0
+            };
+
+            ++Operation->Submit.signalSemaphoreInfoCount;
+
+            FrameSubmissionResult Result;
+            Result.SubmitResult = Submit2Locked(
                 Operation->Queue,
                 1,
                 &Operation->Submit,
                 Operation->Fence
             );
 
-            if (SubmitResult == VK_SUCCESS) {
+            if (Result.SubmitResult == VK_SUCCESS) {
+                Result.CompletionValue = CompletionValue;
+                m_RenderCompletionValue.store(CompletionValue, std::memory_order_release);
+
                 std::lock_guard<std::mutex> Lock(m_VulkanQueueCallMutex);
 
-                    m_Disp.queuePresentKHR(
-                        m_Queues.Present,
-                        &Operation->Present
-                    );
+                Result.PresentResult = m_Disp.queuePresentKHR(m_Queues.Present, &Operation->Present);
             }
+
+            Completion(Result);
         }
     );
-
-    return Operation->CompletionValue;
 }
 
 VkSemaphore GetRenderCompletionSemaphore()
@@ -770,7 +768,7 @@ VkSemaphore GetRenderCompletionSemaphore()
 
 uint64_t GetRenderCompletionValue()
 {
-    return m_NextRenderCompletionValue.load(std::memory_order_acquire);
+    return m_RenderCompletionValue.load(std::memory_order_acquire);
 }
 
 void DestroyRenderCompletionSemaphore()

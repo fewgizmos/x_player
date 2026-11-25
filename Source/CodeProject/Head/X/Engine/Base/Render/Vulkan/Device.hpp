@@ -15,7 +15,7 @@ struct QueueSet
 {
     VkQueue Graphics = VK_NULL_HANDLE;
     VkQueue Present  = VK_NULL_HANDLE;
-    VkQueue Transfer  = VK_NULL_HANDLE;
+    VkQueue Transfer = VK_NULL_HANDLE;
 
     uint32_t GraphicsFamily = 0;
     uint32_t PresentFamily  = 0;
@@ -42,12 +42,14 @@ VkSurfaceKHR GetSurface();
 
 const QueueSet& GetQueues();
 std::mutex& GetQueueSubmitMutex();
+
 VkResult QueueSubmit2(
     VkQueue p_Queue,
     uint32_t p_SubmitCount,
     const VkSubmitInfo2* p_Submits,
     VkFence p_Fence
 );
+
 void QueueSubmit2Async(
     VkQueue p_Queue,
     uint32_t p_SubmitCount,
@@ -55,19 +57,33 @@ void QueueSubmit2Async(
     VkFence p_Fence,
     std::function<void(VkResult)> p_Completion = {}
 );
+
 VkResult QueuePresent(const VkPresentInfoKHR* p_PresentInfo);
-uint64_t QueueSubmitAndPresentAsync(
+
+struct FrameSubmissionResult
+{
+    VkResult SubmitResult  = VK_NOT_READY;
+    VkResult PresentResult = VK_NOT_READY;
+
+    uint64_t CompletionValue = 0;
+};
+
+void QueueSubmitAndPresentAsync(
     const VkSubmitInfo2* p_Submit,
     VkQueue p_Queue,
     VkFence p_Fence,
-    const VkPresentInfoKHR* p_PresentInfo
+    const VkPresentInfoKHR* p_PresentInfo,
+    std::function<void(FrameSubmissionResult)> p_Completion
 );
+
 VkSemaphore GetRenderCompletionSemaphore();
 uint64_t GetRenderCompletionValue();
+
 void DestroyRenderCompletionSemaphore();
 void DrainRenderOperations();
 void StopQueueExecutor();
 void WaitIdle();
+
 VkResult AcquireNextImage(
     VkSwapchainKHR p_Swapchain,
     uint64_t p_Timeout,
@@ -75,6 +91,7 @@ VkResult AcquireNextImage(
     VkFence p_Fence,
     uint32_t* p_ImageIndex
 );
+
 void AcquireNextImageAsync(
     VkSwapchainKHR p_Swapchain,
     uint64_t p_Timeout,
@@ -82,14 +99,17 @@ void AcquireNextImageAsync(
     VkFence p_Fence,
     std::function<void(VkResult, uint32_t)> p_Completion
 );
+
 void ConsumeSemaphore(VkSemaphore p_Semaphore);
 void ExecuteQueueOperation(std::function<void()> p_Operation);
+
 VkResult QueueSubmitLegacy(
     VkQueue p_Queue,
     uint32_t p_SubmitCount,
     const VkSubmitInfo* p_Submits,
     VkFence p_Fence
 );
+
 VkResult QueueWaitIdle(VkQueue p_Queue);
 VkResult GetFenceStatus(VkFence p_Fence);
 VkResult ResetFence(VkFence p_Fence);

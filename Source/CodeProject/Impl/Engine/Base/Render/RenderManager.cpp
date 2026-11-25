@@ -59,6 +59,12 @@ VkSemaphore m_AcquireSemaphore = VK_NULL_HANDLE;
 
 bool m_AcquireSemaphoreSignaled = false;
 
+Vk::Device::FrameSubmissionResult m_SubmissionResult;
+std::atomic<bool> m_SubmissionReady = false;
+bool m_SubmissionPending = false;
+
+bool m_SwapchainNeedsRecreate = false;
+
 const BootstrapManager::DeferredBootstrapRegistration::InitRegistrar
     RegisterInit("render_init", Init, 70);
 
@@ -215,6 +221,8 @@ void RecreateSwapchain()
     m_AcquirePending.store(false, std::memory_order_release);
     m_AcquireReady.store(false, std::memory_order_release);
     m_AcquireResult.store(VK_NOT_READY, std::memory_order_release);
+
+    m_SwapchainNeedsRecreate = false;
 }
 
 }
@@ -315,6 +323,25 @@ void Cleanup()
 
 void RenderFrame()
 {
+    if (m_SubmissionPending) {
+        if (!m_SubmissionReady.load(std::memory_order_acquire)) { return; }
+
+        m_SubmissionPending = false;
+        m_SubmissionReady.store(false, std::memory_order_relaxed);
+
+        X_ASSERT(m_SubmissionResult.SubmitResult != VK_SUCCESS,
+            "failed to submit render frame: " + std::to_string(static_cast<int>(m_SubmissionResult.SubmitResult)));
+
+        Vk::Frame::Advance();
+
+        const VkResult PresentResult = m_SubmissionResult.PresentResult;
+        const bool Recreate = PresentResult == VK_SUBOPTIMAL_KHR || PresentResult == VK_ERROR_OUT_OF_DATE_KHR;
+
+        X_ASSERT(PresentResult != VK_SUCCESS && !Recreate, "failed to present swapchain image: " + std::to_string(static_cast<int>(PresentResult)));
+
+        m_SwapchainNeedsRecreate |= Recreate;
+    }
+
     const auto& Disp = Vk::Device::GetDisp();
     auto& Frame = Vk::Frame::GetCurrentFrame();
 
@@ -328,9 +355,7 @@ void RenderFrame()
 
     if (Extent.x == 0 || Extent.y == 0) { return; }
 
-    if (Viewport::Surface::GetUnhandleResized()) {
-        RecreateSwapchain();
-    }
+    if (m_SwapchainNeedsRecreate || Viewport::Surface::GetUnhandleResized()) { RecreateSwapchain(); }
 
     if (!m_AcquirePending.load(std::memory_order_acquire)
         && !m_AcquireReady.load(std::memory_order_acquire)) {
@@ -386,7 +411,7 @@ void RenderFrame()
         "failed to acquire swapchain image: " + std::to_string(static_cast<int>(Result))
     );
 
-    const bool Recreate = Result == VK_SUBOPTIMAL_KHR;
+    m_SwapchainNeedsRecreate = Result == VK_SUBOPTIMAL_KHR;
     auto& Image = Vk::Frame::GetCurrentImage();
 
     vmaSetCurrentFrameIndex(Vk::GpuResources::GetAllocator(), m_FrameCounter++);
@@ -408,12 +433,10 @@ void RenderFrame()
     X_ASSERT(Vk::Device::ResetFence(Frame.FenceInflight) != VK_SUCCESS, "failed to reset frame fence");
 
     VkSemaphoreSubmitInfo Wait{VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
-
     Wait.semaphore = Frame.SemaphoreAvailable;
     Wait.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
 
     VkSemaphoreSubmitInfo Signal{VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
-
     Signal.semaphore = Image.SemaphoreFinished;
     Signal.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
 
@@ -422,7 +445,9 @@ void RenderFrame()
         CompletionWaits,
         2
     );
+
     VkSemaphoreSubmitInfo LoaderWaits[2] = {};
+
     for (uint32_t I = 0; I < CompletionCount; ++I) {
         LoaderWaits[I].sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
         LoaderWaits[I].semaphore = CompletionWaits[I].Semaphore;
@@ -456,28 +481,24 @@ void RenderFrame()
     Submit.signalSemaphoreInfoCount = 1;
     Submit.pSignalSemaphoreInfos    = &Signal;
 
-    const uint64_t RenderCompletionValue = Vk::Device::QueueSubmitAndPresentAsync(
+    m_SubmissionPending = true;
+
+    Vk::Device::QueueSubmitAndPresentAsync(
         &Submit,
         Vk::Device::GetQueues().Graphics,
         Frame.FenceInflight,
-        &Present
+        &Present,
+        [](Vk::Device::FrameSubmissionResult p_Result) {
+            if (p_Result.SubmitResult == VK_SUCCESS) {
+                ResourceLoader::OnRenderSubmitted(p_Result.CompletionValue);
+            }
+
+            m_SubmissionResult = p_Result;
+            m_SubmissionReady.store(true, std::memory_order_release);
+        }
     );
 
     m_AcquireSemaphoreSignaled = false;
-    ResourceLoader::OnRenderSubmitted(RenderCompletionValue);
-
-    Vk::Frame::Advance();
-
-    if (Result == VK_ERROR_OUT_OF_DATE_KHR || Result == VK_SUBOPTIMAL_KHR || Recreate) {
-        X_ASSERT(Result != VK_SUCCESS && Result != VK_ERROR_OUT_OF_DATE_KHR && Result != VK_SUBOPTIMAL_KHR,
-            "failed to present swapchain image");
-
-        RecreateSwapchain();
-
-        return;
-    }
-
-    X_ASSERT(Result != VK_SUCCESS, "failed to present swapchain image");
 }
 
 }
