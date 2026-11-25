@@ -72,7 +72,7 @@ void ValidateLayout()
     constexpr uint32_t DecorationOffset      = 35;
 
     const std::string ValidateShaderSource = ::Engine::Util::File::ReadRaw(
-        std::string(::Engine::Configs::Static::Contents::SHADERS_DIR) + ValidatorShaderPath
+        std::string(::Project::Configs::Static::Contents::SHADERS_DIR) + ValidatorShaderPath
     );
 
     const std::vector<uint32_t> ValidateShader = ::Engine::Base::Render::Vk::Shader::CompileGlsl(
@@ -192,10 +192,10 @@ struct ErasedMaterial
 
 std::vector<ErasedMaterial> m_ErasedMaterials;
 
-::Engine::Base::Render::Buffer m_Buffers[::Engine::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT];
+::Engine::Base::Render::Buffer m_Buffers[::Project::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT];
 
 uint64_t m_Version = 0;
-uint64_t m_BufferVersions[::Engine::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT] = {};
+uint64_t m_BufferVersions[::Project::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT] = {};
 
 const ::Engine::Base::BootstrapManager::DeferredBootstrapRegistration::InitRegistrar
     RegisterInit("materials_init", Init, 30);
@@ -437,7 +437,7 @@ uint32_t TakeIndex()
         return Index;
     }
 
-    X_ASSERT(m_Data.size() >= ::Engine::Configs::Static::Graphics::MAX_MATERIALS, "materials limit exceeded");
+    X_ASSERT(m_Data.size() >= ::Project::Configs::Static::Graphics::MAX_MATERIALS, "materials limit exceeded");
 
     m_Data.push_back({});
 
@@ -450,7 +450,7 @@ void ReleaseIndex(uint32_t p_Index)
 
     std::lock_guard<std::mutex> Lock(m_RegistryMutex);
 
-    m_ErasedMaterials.push_back({ p_Index, ::Engine::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT });
+    m_ErasedMaterials.push_back({ p_Index, ::Project::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT });
 }
 
 bool TextureFailed(

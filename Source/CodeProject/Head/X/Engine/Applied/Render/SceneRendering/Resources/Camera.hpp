@@ -19,9 +19,9 @@ struct Camera
 
     float Fov              = 1.04719755f;
     float Aspect           = 1.0f;
-    float NearPlane        = 0.1f * Configs::Static::Scene::UnitsPerMeter;
-    float FarPlane         = 10000.0f * Configs::Static::Scene::UnitsPerMeter;
-    float OrthographicSize = 10.0f * Configs::Static::Scene::UnitsPerMeter;
+    float NearPlane        = 0.1f * Project::Configs::Static::Scene::UnitsPerMeter;
+    float FarPlane         = 10000.0f * Project::Configs::Static::Scene::UnitsPerMeter;
+    float OrthographicSize = 10.0f * Project::Configs::Static::Scene::UnitsPerMeter;
 
     void Recalculate();
     void UpdatePerspectiveProjection();

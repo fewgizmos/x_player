@@ -86,7 +86,7 @@ std::vector<uint32_t> CompileVertexShader()
 {
     return ::Engine::Base::Render::Vk::Shader::CompileGlsl(
         ::Engine::Util::File::ReadRaw(
-            std::string(::Engine::Configs::Static::Contents::SHADERS_DIR) + ImGuiShader
+            std::string(::Project::Configs::Static::Contents::SHADERS_DIR) + ImGuiShader
         ),
         ::Engine::Base::Render::ShaderStage::Vertex,
         ImGuiShader
@@ -118,8 +118,8 @@ void Init()
     Info.QueueFamily = ::Engine::Base::Render::Vk::Device::GetQueues().GraphicsFamily;
     Info.Queue = ::Engine::Base::Render::Vk::Device::GetQueues().Graphics;
     Info.DescriptorPoolSize = 128;
-    Info.MinImageCount = ::Engine::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT;
-    Info.ImageCount = ::Engine::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT;
+    Info.MinImageCount = ::Project::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT;
+    Info.ImageCount = ::Project::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT;
     Info.UseDynamicRendering = true;
     Info.PipelineInfoMain.PipelineRenderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
     Info.PipelineInfoMain.PipelineRenderingCreateInfo.colorAttachmentCount = 1;

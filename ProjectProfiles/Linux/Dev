@@ -13,5 +13,6 @@ export X_PLATFORM_ID="LINUX"
 export X_VIEWPORT_WINDOW_NAME="demo"
 export X_VIEWPORT_WINDOW_LOGO_PATH="Resources/Images/DefaultEngineLogo.png"
 
-# dev
+# modules modes
 export X_DEV_MODE="ON"
+export X_PLAYING_MODE="ON"

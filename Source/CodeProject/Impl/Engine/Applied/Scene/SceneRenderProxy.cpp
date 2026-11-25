@@ -114,7 +114,7 @@ void CaptureVolume(SceneList::Frame& p_Frame, const SceneVolume& p_Volume)
             p_Volume.GetWorldTransform()
         );
 
-        Entry.AppliedTransform = glm::scale(Entry.AppliedTransform, glm::vec3(Configs::Static::Scene::UnitsPerMeter));
+        Entry.AppliedTransform = glm::scale(Entry.AppliedTransform, glm::vec3(Project::Configs::Static::Scene::UnitsPerMeter));
         CaptureModelLights(p_Frame, Entry);
 
         if (!Entry.Snapshot->Parts.empty()) { p_Frame.Models.push_back(std::move(Entry)); }

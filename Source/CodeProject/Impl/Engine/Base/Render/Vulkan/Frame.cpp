@@ -76,13 +76,13 @@ void BuildSwapchain()
         .set_desired_extent(static_cast<uint32_t>(Extent.x), static_cast<uint32_t>(Extent.y))
 
         .set_desired_present_mode(
-            ::Engine::Configs::Static::Graphics::VSYNC
+            ::Project::Configs::Static::Graphics::VSYNC
                 ? VK_PRESENT_MODE_FIFO_KHR
                 : VK_PRESENT_MODE_IMMEDIATE_KHR
         )
 
         .add_fallback_present_mode(
-            ::Engine::Configs::Static::Graphics::VSYNC
+            ::Project::Configs::Static::Graphics::VSYNC
                 ? VK_PRESENT_MODE_FIFO_KHR
                 : VK_PRESENT_MODE_FIFO_KHR
         )
@@ -159,7 +159,7 @@ void RecreateSwapchain()
 
 void CreateFrameData()
 {
-    m_Frames.resize(Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT);
+    m_Frames.resize(Project::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT);
 
     for (FrameData& Frame : m_Frames) {
         Frame.CommandBuffer = Commands::Allocate();
@@ -180,7 +180,7 @@ void CreateFrameData()
 
 void Advance()
 {
-    m_CurrentFrame = (m_CurrentFrame + 1) % Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT;
+    m_CurrentFrame = (m_CurrentFrame + 1) % Project::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT;
 }
 
 const vkb::Swapchain& GetSwapchain() { return m_Swapchain.Handle; }

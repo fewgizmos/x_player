@@ -157,7 +157,7 @@ void CompositeLayers(VkCommandBuffer p_Cmd, std::span<const RenderingPool::Rende
     const bool SRGB = Vk::Frame::GetSwapchain().image_format == VK_FORMAT_B8G8R8A8_SRGB || Vk::Frame::GetSwapchain().image_format == VK_FORMAT_R8G8B8A8_SRGB;
 
     for (int I = 0; I < 3; ++I) {
-        const float Value = Configs::Static::Graphics::BACKGROUND_RGB[I] / 255.0f;
+        const float Value = Project::Configs::Static::Graphics::BACKGROUND_RGB[I] / 255.0f;
 
         Attachment.clearValue.color.float32[I] = SRGB
             ? (Value <= 0.04045f ? Value / 12.92f : std::pow((Value + 0.055f) / 1.055f, 2.4f))

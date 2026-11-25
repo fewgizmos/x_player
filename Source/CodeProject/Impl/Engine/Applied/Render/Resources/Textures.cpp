@@ -270,7 +270,7 @@ uint32_t TakeIndex()
         return Index;
     }
 
-    X_ASSERT(m_NextIndex >= ::Engine::Configs::Static::Graphics::MAX_TEXTURES, "textures limit exceeded");
+    X_ASSERT(m_NextIndex >= ::Project::Configs::Static::Graphics::MAX_TEXTURES, "textures limit exceeded");
 
     return m_NextIndex++;
 }
@@ -280,7 +280,7 @@ void ReleaseIndex(uint32_t p_Index)
     if (p_Index != UINT32_MAX) {
         std::lock_guard<std::mutex> Lock(m_IndexMutex);
 
-        m_ErasedIndices.push_back({ p_Index, ::Engine::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT });
+        m_ErasedIndices.push_back({ p_Index, ::Project::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT });
     }
 }
 
@@ -641,8 +641,8 @@ std::shared_ptr<const TextureSnapshot> Texture::GetSnapshot() const
 void Init()
 {
     const std::vector<VkDescriptorPoolSize> PoolSizes = {
-        { VK_DESCRIPTOR_TYPE_SAMPLER, ::Engine::Configs::Static::Graphics::MAX_SAMPLERS },
-        { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, ::Engine::Configs::Static::Graphics::MAX_TEXTURES }
+        { VK_DESCRIPTOR_TYPE_SAMPLER, ::Project::Configs::Static::Graphics::MAX_SAMPLERS },
+        { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, ::Project::Configs::Static::Graphics::MAX_TEXTURES }
     };
 
     m_DescriptorPool = ::Engine::Base::Render::Vk::Descriptors::CreatePool(
@@ -652,8 +652,8 @@ void Init()
     );
 
     const std::vector<VkDescriptorSetLayoutBinding> Bindings = {
-        { 0, VK_DESCRIPTOR_TYPE_SAMPLER, ::Engine::Configs::Static::Graphics::MAX_SAMPLERS, VK_SHADER_STAGE_ALL, nullptr },
-        { 1, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, ::Engine::Configs::Static::Graphics::MAX_TEXTURES, VK_SHADER_STAGE_ALL, nullptr }
+        { 0, VK_DESCRIPTOR_TYPE_SAMPLER, ::Project::Configs::Static::Graphics::MAX_SAMPLERS, VK_SHADER_STAGE_ALL, nullptr },
+        { 1, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, ::Project::Configs::Static::Graphics::MAX_TEXTURES, VK_SHADER_STAGE_ALL, nullptr }
     };
 
     const VkDescriptorBindingFlags Flags =

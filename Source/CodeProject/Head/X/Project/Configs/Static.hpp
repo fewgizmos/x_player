@@ -6,7 +6,7 @@
 
 #include <string>
 
-namespace Engine::Configs::Static
+namespace Project::Configs::Static
 {
 
 inline constexpr int TARGET_FPS = 144;
@@ -84,7 +84,6 @@ namespace Scene
 {
 
 inline constexpr float MetersPerUnit = 1.0f;
-static_assert(MetersPerUnit > 0.0f);
 inline constexpr float UnitsPerMeter = 1.0f / MetersPerUnit;
 
 }

@@ -9,6 +9,7 @@ foreach(X_ENV_VAR
     X_VIEWPORT_WINDOW_LOGO_PATH
     X_DEV_MODE
     X_PLATFORM_ID
+    X_PLAYING_MODE
 )
     if("$ENV{${X_ENV_VAR}}" STREQUAL "")
         message(FATAL_ERROR "${X_ENV_VAR} is missing. Source a build profile from ProjectProfiles first.")

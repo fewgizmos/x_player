@@ -96,7 +96,7 @@ struct InstanceBuffers
     RenderBase::Buffer Transparent;
 };
 
-std::array<InstanceBuffers, Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT> m_InstanceBuffers;
+std::array<InstanceBuffers, Project::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT> m_InstanceBuffers;
 
 
 

@@ -32,7 +32,7 @@ std::vector<std::weak_ptr<Resource>>                     m_ManagedResources;
 struct RetiredResource
 {
     Resource* Target = nullptr;
-    int FramesLeft = ::Engine::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT;
+    int FramesLeft = ::Project::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT;
 };
 
 std::mutex                   m_RetiredMutex;

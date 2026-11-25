@@ -693,7 +693,7 @@ void Model::BeginLoad()
             try {
                 const std::filesystem::path Path(Info.GltfPath);
 
-                fastgltf::Parser Parser(::Engine::Configs::Static::Graphics::PARSER_EXTENSIONS);
+                fastgltf::Parser Parser(::Project::Configs::Static::Graphics::PARSER_EXTENSIONS);
                 auto File = fastgltf::GltfDataBuffer::FromPath(Path);
 
                 if (File.error() != fastgltf::Error::None) {

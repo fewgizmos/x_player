@@ -42,7 +42,7 @@ namespace LightResources = ::Engine::Applied::Render::Resources;
 using LightInstance      = SceneList::LightInstance;
 using LightType          = LightResources::LightType;
 
-constexpr uint32_t FrameCount = Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT;
+constexpr uint32_t FrameCount = Project::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT;
 
 struct alignas(16) FrameData
 {
@@ -123,10 +123,10 @@ GpuLight PackLight(const LightInstance& p_Instance, uint32_t p_TextureIndex)
     const float InnerAngle = std::clamp(Light.InnerConeAngle, 0.0f, OuterAngle);
 
     const glm::vec3 Size = glm::vec3(glm::length(glm::vec3(Transform[0])), glm::length(glm::vec3(Transform[1])),
-        glm::length(glm::vec3(Transform[2]))) * Configs::Static::Scene::MetersPerUnit;
+        glm::length(glm::vec3(Transform[2]))) * Project::Configs::Static::Scene::MetersPerUnit;
 
     return {
-        glm::vec4(glm::vec3(Transform[3]) * Configs::Static::Scene::MetersPerUnit, std::max(Light.Range, 0.0f)),
+        glm::vec4(glm::vec3(Transform[3]) * Project::Configs::Static::Scene::MetersPerUnit, std::max(Light.Range, 0.0f)),
         glm::vec4(Direction, std::max(Light.Intensity, 0.0f)),
         glm::vec4(glm::max(Light.Color, glm::vec3(0.0f)), 0.0f),
         glm::vec4(AxisX, Size.x),
@@ -233,10 +233,10 @@ void Prepare(const SceneList::Frame& p_Frame, VkImageView p_Albedo, VkImageView 
         Lights.push_back(PackLight(Instance, TextureIndex));
     }
 
-    const glm::mat4 WorldToMeters = glm::scale(glm::mat4(1.0f), glm::vec3(Configs::Static::Scene::MetersPerUnit));
+    const glm::mat4 WorldToMeters = glm::scale(glm::mat4(1.0f), glm::vec3(Project::Configs::Static::Scene::MetersPerUnit));
     const FrameData Header{
         WorldToMeters * p_Frame.ActiveCamera->InverseViewProjection,
-        glm::uvec4(static_cast<uint32_t>(Lights.size()), m_HdriSampler, glm::floatBitsToUint(Configs::Static::Scene::MetersPerUnit), 0u)
+        glm::uvec4(static_cast<uint32_t>(Lights.size()), m_HdriSampler, glm::floatBitsToUint(Project::Configs::Static::Scene::MetersPerUnit), 0u)
     };
 
     const VkDeviceSize LightBytes = Lights.size() * sizeof(GpuLight);

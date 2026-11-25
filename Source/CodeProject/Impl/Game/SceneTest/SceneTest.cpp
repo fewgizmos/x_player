@@ -39,7 +39,7 @@ using LightPoint      = Applied::Render::Resources::LightPointCreateInfo;
 using LightType       = Applied::Render::Resources::LightType;
 using Key             = Inputs::KeyboardInputCodes;
 
-using Configs::Static::Scene::UnitsPerMeter;
+using Project::Configs::Static::Scene::UnitsPerMeter;
 
 class ModeledEntity final : public Scene::SceneEntity
 {
@@ -162,8 +162,8 @@ void Init()
     Shader.FragmentFile = "Materials/StdModel/Geometry.frag";
 
     auto& Pipeline = Shader.Graphics;
-    Pipeline.ColorFormats = {Configs::Static::Graphics::GBUFFER_ALBEDO_FORMAT, Configs::Static::Graphics::GBUFFER_NORMAL_FORMAT};
-    Pipeline.DepthFormat  = Configs::Static::Graphics::DEPTH_FORMAT;
+    Pipeline.ColorFormats = {Project::Configs::Static::Graphics::GBUFFER_ALBEDO_FORMAT, Project::Configs::Static::Graphics::GBUFFER_NORMAL_FORMAT};
+    Pipeline.DepthFormat  = Project::Configs::Static::Graphics::DEPTH_FORMAT;
     Pipeline.DynamicFaces = true;
 
     Pipeline.PushConstantSize   = sizeof(Resources::Models::DrawConstants);
@@ -182,7 +182,7 @@ void Init()
 
     Resources::Shaders::ShaderCreateInfo Transparent = Shader;
     Transparent.FragmentFile = "Materials/StdModel/Service/Transparent.frag";
-    Transparent.Graphics.ColorFormats = {Configs::Static::Graphics::SCENE_COLOR_FORMAT};
+    Transparent.Graphics.ColorFormats = {Project::Configs::Static::Graphics::SCENE_COLOR_FORMAT};
     Transparent.Graphics.SetLayouts.push_back(Resources::GetLightSetLayout());
     Transparent.Graphics.AlphaBlend = true;
     Transparent.Graphics.DepthWrite = false;
@@ -193,7 +193,7 @@ void Init()
     Lighting.FragmentFile = "Materials/StdModel/Light.frag";
 
     auto& LightPipeline = Lighting.Graphics;
-    LightPipeline.ColorFormats = {Configs::Static::Graphics::SCENE_COLOR_FORMAT};
+    LightPipeline.ColorFormats = {Project::Configs::Static::Graphics::SCENE_COLOR_FORMAT};
     LightPipeline.CullMode     = VK_CULL_MODE_NONE;
     LightPipeline.DepthWrite   = false;
     LightPipeline.SetLayouts   = {
@@ -208,7 +208,7 @@ void Init()
     const Util::Applied::ResourceHandle<Resources::Shaders::Shader> TransparentShader(std::move(Transparent));
     const Util::Applied::ResourceHandle<Resources::Shaders::Shader> LightShader(      std::move(Lighting));
 
-    const std::string& ModelsDir = Configs::Static::Contents::GLTF_MODELS_DIR;
+    const std::string& ModelsDir = Project::Configs::Static::Contents::GLTF_MODELS_DIR;
 
     const ModelInfo Sponza{ModelsDir + "Sponza/Sponza.gltf",                                    ModelShader, TransparentShader, LightShader};
     const ModelInfo Dagger{ModelsDir + "ornate_medieval_dagger/ornate_medieval_dagger_1k.gltf", ModelShader, TransparentShader, LightShader};

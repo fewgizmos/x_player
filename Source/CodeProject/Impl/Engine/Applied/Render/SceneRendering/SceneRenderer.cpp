@@ -24,7 +24,7 @@ namespace
 
 namespace RenderBase = ::Engine::Base::Render;
 namespace Vk         = RenderBase::Vk;
-namespace Graphics   = Configs::Static::Graphics;
+namespace Graphics   = Project::Configs::Static::Graphics;
 
 using Phase = SceneRenderPassPool::Phase;
 

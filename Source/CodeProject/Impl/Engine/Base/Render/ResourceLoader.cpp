@@ -208,15 +208,15 @@ bool CanFitBudget(
     if (p_AllowOversized) { return true; }
 
     return p_Usage.UploadBytes + p_Job.UploadBytes
-        <= ::Engine::Configs::Static::ResourceLoader::GPU_UPLOAD_BYTES_PER_FRAME
+        <= ::Project::Configs::Static::ResourceLoader::GPU_UPLOAD_BYTES_PER_FRAME
         && p_Usage.CopyCommands + p_Job.CopyCommands
-        <= ::Engine::Configs::Static::ResourceLoader::GPU_COPY_COMMANDS_PER_FRAME
+        <= ::Project::Configs::Static::ResourceLoader::GPU_COPY_COMMANDS_PER_FRAME
         && p_Usage.ResourceCreates + p_Job.ResourceCreates
-        <= ::Engine::Configs::Static::ResourceLoader::GPU_RESOURCE_CREATES_PER_FRAME
+        <= ::Project::Configs::Static::ResourceLoader::GPU_RESOURCE_CREATES_PER_FRAME
         && p_Usage.ResourceDestroys + p_Job.ResourceDestroys
-        <= ::Engine::Configs::Static::ResourceLoader::GPU_RESOURCE_DESTROYS_PER_FRAME
+        <= ::Project::Configs::Static::ResourceLoader::GPU_RESOURCE_DESTROYS_PER_FRAME
         && p_Usage.DescriptorUpdates + p_Job.DescriptorUpdates
-        <= ::Engine::Configs::Static::ResourceLoader::GPU_DESCRIPTOR_UPDATES_PER_FRAME;
+        <= ::Project::Configs::Static::ResourceLoader::GPU_DESCRIPTOR_UPDATES_PER_FRAME;
 }
 
 void AddBudget(GpuResourceOpsBudget& p_Target, const GpuResourceOpsBudget& p_Source)
@@ -232,7 +232,7 @@ int GetEffectiveOrder(int p_Order, uint32_t p_Age)
 {
     const int Boost = static_cast<int>(std::min<uint32_t>(
         p_Age,
-        static_cast<uint32_t>(::Engine::Configs::Static::ResourceLoader::GPU_OPS_MAX_AGING_BOOST)
+        static_cast<uint32_t>(::Project::Configs::Static::ResourceLoader::GPU_OPS_MAX_AGING_BOOST)
     ));
 
     return p_Order + Boost;
@@ -541,8 +541,8 @@ StagingUse AllocateStaging(bool p_Image, VkDeviceSize p_Size)
         p_Image ? m_ImageStaging : m_BufferStaging;
 
     const VkDeviceSize ConfiguredBlockSize = p_Image
-        ? ::Engine::Configs::Static::ResourceLoader::IMAGE_STAGING_BLOCK_SIZE
-        : ::Engine::Configs::Static::ResourceLoader::BUFFER_STAGING_BLOCK_SIZE;
+        ? ::Project::Configs::Static::ResourceLoader::IMAGE_STAGING_BLOCK_SIZE
+        : ::Project::Configs::Static::ResourceLoader::BUFFER_STAGING_BLOCK_SIZE;
 
     const VkDeviceSize BlockSize = p_Size > ConfiguredBlockSize ? p_Size : ConfiguredBlockSize;
     const VkSemaphore Timeline = p_Image ? m_GraphicsTimeline : m_TransferTimeline;
@@ -1000,9 +1000,9 @@ void Init()
     m_TransferTimeline = MakeTimelineSemaphore();
     m_GraphicsTimeline = MakeTimelineSemaphore();
 
-    m_Batches.reserve(::Engine::Configs::Static::ResourceLoader::BATCH_COUNT);
+    m_Batches.reserve(::Project::Configs::Static::ResourceLoader::BATCH_COUNT);
 
-    for (uint32_t I = 0; I < ::Engine::Configs::Static::ResourceLoader::BATCH_COUNT; ++I) {
+    for (uint32_t I = 0; I < ::Project::Configs::Static::ResourceLoader::BATCH_COUNT; ++I) {
         m_Batches.push_back(std::make_unique<Batch>());
 
         Batch& BatchValue = *m_Batches.back();

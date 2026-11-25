@@ -11,3 +11,4 @@
 
 #cmakedefine X_DEV_MODE
 #define X_PLATFORM_ID "@X_PLATFORM_ID@"
+#cmakedefine X_PLAYING_MODE

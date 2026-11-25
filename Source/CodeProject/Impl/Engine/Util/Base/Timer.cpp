@@ -21,7 +21,7 @@ bool m_IsStarted = false;
 
 constexpr float MAX_DELTA = 0.1f;
 
-constexpr float MIN_FRAME_MS = 1000.0f / Configs::Static::TARGET_FPS;
+constexpr float MIN_FRAME_MS = 1000.0f / Project::Configs::Static::TARGET_FPS;
 
 constexpr std::chrono::microseconds SPIN_MARGIN{1000};
 

@@ -135,7 +135,7 @@ std::vector<uint32_t> Compile(const std::string& p_File, ::Engine::Base::Render:
     if (p_File.empty()) { return {}; }
 
     return ::Engine::Base::Render::Vk::Shader::CompileGlsl(
-        ::Engine::Util::File::ReadRaw(std::string(::Engine::Configs::Static::Contents::SHADERS_DIR) + p_File),
+        ::Engine::Util::File::ReadRaw(std::string(::Project::Configs::Static::Contents::SHADERS_DIR) + p_File),
         p_Stage, p_File, p_Defines
     );
 }

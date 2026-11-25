@@ -46,7 +46,7 @@ uint32_t Make(const SamplerCreateInfo& p_CreateInfo)
         }
     }
 
-    X_ASSERT(m_Samplers.size() >= Configs::Static::Graphics::MAX_SAMPLERS, "samplers limit exceeded");
+    X_ASSERT(m_Samplers.size() >= Project::Configs::Static::Graphics::MAX_SAMPLERS, "samplers limit exceeded");
 
     VkSamplerCreateInfo VkCreateInfo = {};
 
