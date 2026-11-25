@@ -2,14 +2,14 @@
 
 #include "X/Engine/Applied/Render/Resources/Textures.hpp"
 
-#include <glm/mat4x4.hpp>
+#include "X/Engine/Applied/Render/Resources/Shaders.hpp"
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 
 #include <cstdint>
 #include <string>
 
-namespace Engine::Applied::Render::SceneRendering::Resources
+namespace Engine::Applied::Render::Resources
 {
 
 enum class LightType : uint32_t
@@ -25,10 +25,11 @@ enum class LightType : uint32_t
     Sky
 };
 
-struct LightPoint
+struct LightPointCreateInfo
 {
     using Texture = ::Engine::Applied::Render::Resources::Textures::Texture;
 
+    ::Engine::Util::Applied::ResourceHandle<Shaders::Shader> Shader;
     LightType Type = LightType::Point;
     bool Enabled   = true;
 
@@ -39,10 +40,6 @@ struct LightPoint
     float InnerConeAngle = 0.0f;
     float OuterConeAngle = 0.78539816f;
 
-    glm::vec2 Size = glm::vec2(1.0f);
-    float Radius   = 0.5f;
-    float Length   = 1.0f;
-
     ::Engine::Util::Applied::ResourceHandle<Texture> Hdri;
     glm::vec3 SkyColor     = {0.22f, 0.42f, 0.80f};
     glm::vec3 HorizonColor = {0.65f, 0.72f, 0.82f};
@@ -52,10 +49,30 @@ struct LightPoint
     void LoadHdri(std::string p_Path);
 };
 
-struct LightInstance
+class LightPoint final : public ::Engine::Util::Applied::Resource
 {
-    LightPoint Light;
-    glm::mat4 AppliedTransform{1.0f};
+public:
+    using CreateInfo = LightPointCreateInfo;
+
+    explicit LightPoint(CreateInfo p_Info);
+
+    const CreateInfo& GetInfo() const { return m_Info; }
+
+    void BeginLoad() override;
+    void Update() override;
+    void Unload() override;
+
+    std::string GetTypeName() const override { return "LightPoint"; }
+
+    bool AllowsCaching() const override { return false; }
+
+private:
+    CreateInfo m_Info;
 };
+
+VkDescriptorSetLayout GetLightSetLayout();
+VkDescriptorSetLayout GetGeometrySetLayout();
+
+::Engine::Util::Applied::ResourceHandle<Shaders::Shader> MakeStdLightShader();
 
 }

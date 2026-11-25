@@ -67,7 +67,7 @@ void AddMergedFonts(FontGroup& p_Group)
             Source.GlyphRanges
         );
 
-        X_ASSERT(Font == nullptr, "Failed to add merged font: " + Source.Path);
+        X_ASSERT(Font == nullptr, "failed to add merged font: " + Source.Path);
     }
 }
 
@@ -99,7 +99,7 @@ const ::Engine::Base::BootstrapManager::DeferredBootstrapRegistration::InitRegis
 
 void Init()
 {
-    X_ASSERT(m_Initialized, "Fonts are already initialized");
+    X_ASSERT(m_Initialized, "fonts are already initialized");
 
     m_Initialized = true;
 }
@@ -117,10 +117,10 @@ void Cleanup()
 
 void AddGroup(std::string p_Name, float p_Size)
 {
-    X_ASSERT(!m_Initialized, "Fonts must be initialized before adding a group");
-    X_ASSERT(p_Name.empty(), "Font group name is empty");
-    X_ASSERT(FindGroup(p_Name) != nullptr, "Font group already exists: " + p_Name);
-    X_ASSERT(p_Size <= 0.0f, "Font group size must be positive");
+    X_ASSERT(!m_Initialized, "fonts must be initialized before adding a group");
+    X_ASSERT(p_Name.empty(), "font group name is empty");
+    X_ASSERT(FindGroup(p_Name) != nullptr, "font group already exists: " + p_Name);
+    X_ASSERT(p_Size <= 0.0f, "font group size must be positive");
 
     m_Groups.push_back({ std::move(p_Name), p_Size });
 
@@ -131,21 +131,21 @@ void AddGroup(std::string p_Name, float p_Size)
 
 void AddMergedFont(std::string_view p_GroupName, std::string p_FontPath, float p_Size)
 {
-    X_ASSERT(!m_Initialized, "Fonts must be initialized before adding a font");
+    X_ASSERT(!m_Initialized, "fonts must be initialized before adding a font");
 
     FontGroup* Group = FindGroup(p_GroupName);
 
-    X_ASSERT(Group == nullptr, "Font group does not exist: " + std::string(p_GroupName));
-    X_ASSERT(p_FontPath.empty(), "Font path is empty");
-    X_ASSERT(!std::filesystem::exists(p_FontPath), "Font file does not exist: " + p_FontPath);
-    X_ASSERT(p_Size <= 0.0f, "Font size must be positive");
+    X_ASSERT(Group == nullptr, "font group does not exist: " + std::string(p_GroupName));
+    X_ASSERT(p_FontPath.empty(), "font path is empty");
+    X_ASSERT(!std::filesystem::exists(p_FontPath), "font file does not exist: " + p_FontPath);
+    X_ASSERT(p_Size <= 0.0f, "font size must be positive");
 
     Group->MergedFonts.push_back({ std::move(p_FontPath), p_Size });
 }
 
 void RemoveGroup(std::string_view p_Name)
 {
-    X_ASSERT(!m_Initialized, "Fonts must be initialized before removing a group");
+    X_ASSERT(!m_Initialized, "fonts must be initialized before removing a group");
 
     const auto Found = std::find_if(
         m_Groups.begin(),
@@ -167,7 +167,7 @@ void RemoveGroup(std::string_view p_Name)
 
 void RemoveAllGroups()
 {
-    X_ASSERT(!m_Initialized, "Fonts must be initialized before removing groups");
+    X_ASSERT(!m_Initialized, "fonts must be initialized before removing groups");
 
     m_Groups.clear();
     m_ActiveGroup.clear();
@@ -175,8 +175,8 @@ void RemoveAllGroups()
 
 void SetActiveGroup(std::string_view p_Name)
 {
-    X_ASSERT(!m_Initialized, "Fonts must be initialized before selecting a group");
-    X_ASSERT(FindGroup(p_Name) == nullptr, "Font group does not exist: " + std::string(p_Name));
+    X_ASSERT(!m_Initialized, "fonts must be initialized before selecting a group");
+    X_ASSERT(FindGroup(p_Name) == nullptr, "font group does not exist: " + std::string(p_Name));
 
     m_ActiveGroup = p_Name;
 }
@@ -190,14 +190,14 @@ ImFont* GetFont(std::string_view p_Name)
 {
     FontGroup* Group = FindGroup(p_Name);
 
-    X_ASSERT(Group == nullptr, "Font group does not exist: " + std::string(p_Name));
+    X_ASSERT(Group == nullptr, "font group does not exist: " + std::string(p_Name));
 
     return Group->Font;
 }
 
 void RebuildAtlas()
 {
-    X_ASSERT(!m_Initialized, "Fonts must be initialized before rebuilding the atlas");
+    X_ASSERT(!m_Initialized, "fonts must be initialized before rebuilding the atlas");
 
     ImFontAtlas* Atlas = ImGui::GetIO().Fonts;
     Atlas->Clear();

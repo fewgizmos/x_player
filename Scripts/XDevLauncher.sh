@@ -21,8 +21,8 @@ usage() {
 }
 
 bad_arg() {
-    echo "Unknown argument: $1" >&2
-    echo "Run '$0 --help' for usage." >&2
+    echo "unknown argument: $1" >&2
+    echo "run '$0 --help' for usage." >&2
     exit 1
 }
 

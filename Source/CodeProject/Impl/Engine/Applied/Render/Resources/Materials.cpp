@@ -10,13 +10,15 @@
 
 #include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
 #include "X/Engine/Base/JobSystem/JobManager.hpp"
+#include "X/Engine/Base/Runtime/BaseEngineThreadIDs.hpp"
+
 #include "X/Engine/Base/Render/RenderingPool.hpp"
 #include "X/Engine/Base/Render/ResourceLoader.hpp"
+
 #include "X/Engine/Base/Render/Vulkan/Frame.hpp"
 #include "X/Engine/Base/Render/Vulkan/GpuResources.hpp"
 #include "X/Engine/Base/Render/Vulkan/Samplers.hpp"
 #include "X/Engine/Base/Render/Vulkan/Shader.hpp"
-#include "X/Engine/Base/Runtime/BaseEngineThreadIDs.hpp"
 
 #include <glm/vec4.hpp>
 
@@ -36,7 +38,7 @@ namespace Engine::Applied::Render::Resources::Materials
 
 struct Material::LoadData
 {
-    std::mutex Mutex;
+    std::mutex   Mutex;
     MaterialData Data = {};
 
     uint64_t VersionChecksum = 0;
@@ -44,7 +46,7 @@ struct Material::LoadData
     std::string FailureReason;
 
     bool Finished = false;
-    bool Failed = false;
+    bool Failed   = false;
 };
 
 namespace
@@ -81,55 +83,82 @@ void ValidateLayout()
         offsetof(MaterialData, Emissive),
         offsetof(MaterialData, Metallic),
         offsetof(MaterialData, Roughness),
+
         offsetof(MaterialData, NormalScale),
+
         offsetof(MaterialData, OcclusionStrength),
+
         offsetof(MaterialData, AlphaCutoff),
+
         offsetof(MaterialData, BaseColorTexture),
         offsetof(MaterialData, BaseColorSampler),
-        offsetof(MaterialData, MetallicRoughnessTexture),
+
+        offsetof(MaterialData,  MetallicRoughnessTexture),
         offsetof(MaterialData, MetallicRoughnessSampler),
+
         offsetof(MaterialData, NormalTexture),
         offsetof(MaterialData, NormalSampler),
+
         offsetof(MaterialData, OcclusionTexture),
         offsetof(MaterialData, OcclusionSampler),
+
         offsetof(MaterialData, EmissiveTexture),
         offsetof(MaterialData, EmissiveSampler),
+
         offsetof(MaterialData, AlphaMode),
+
         offsetof(MaterialData, SpecularTexture),
         offsetof(MaterialData, SpecularSampler),
         offsetof(MaterialData, SpecularColorTexture),
         offsetof(MaterialData, SpecularColorSampler),
+
         offsetof(MaterialData, DiffuseTransmissionTexture),
         offsetof(MaterialData, DiffuseTransmissionSampler),
         offsetof(MaterialData, DiffuseTransmissionColorTexture),
         offsetof(MaterialData, DiffuseTransmissionColorSampler),
+
         offsetof(MaterialData, ClearcoatTexture),
         offsetof(MaterialData, ClearcoatSampler),
+
         offsetof(MaterialData, ClearcoatRoughnessTexture),
         offsetof(MaterialData, ClearcoatRoughnessSampler),
         offsetof(MaterialData, ClearcoatNormalTexture),
         offsetof(MaterialData, ClearcoatNormalSampler),
+
         offsetof(MaterialData, SheenColorTexture),
         offsetof(MaterialData, SheenColorSampler),
+
         offsetof(MaterialData, SheenRoughnessTexture),
         offsetof(MaterialData, SheenRoughnessSampler),
+
         offsetof(MaterialData, HeightTexture),
         offsetof(MaterialData, HeightSampler),
+
         offsetof(MaterialData, Padding0),
+
         offsetof(MaterialData, UvTransforms),
+
         offsetof(MaterialData, SpecularColor),
         offsetof(MaterialData, SpecularFactor),
+
         offsetof(MaterialData, Ior),
+
         offsetof(MaterialData, EmissiveStrength),
+
         offsetof(MaterialData, ClearcoatFactor),
         offsetof(MaterialData, ClearcoatRoughness),
+
         offsetof(MaterialData, DiffuseTransmissionColor),
         offsetof(MaterialData, DiffuseTransmissionFactor),
+
         offsetof(MaterialData, SheenColor),
         offsetof(MaterialData, SheenRoughness),
+
         offsetof(MaterialData, ClearcoatNormalScale),
+
         offsetof(MaterialData, HeightScale),
         offsetof(MaterialData, HeightWorld),
+
         offsetof(MaterialData, Padding1)
     };
 
@@ -186,9 +215,9 @@ void ValidateAbi()
     std::call_once(m_Validated, ValidateLayout);
 }
 
-std::mutex m_RegistryMutex;
+std::mutex                m_RegistryMutex;
 std::vector<MaterialData> m_Data;
-std::vector<uint32_t> m_FreeIndices;
+std::vector<uint32_t>     m_FreeIndices;
 
 struct ErasedMaterial
 {
@@ -197,7 +226,7 @@ struct ErasedMaterial
 };
 
 std::vector<ErasedMaterial> m_ErasedMaterials;
-std::vector<Material*> m_PendingGpuMaterials;
+std::vector<Material*>      m_PendingGpuMaterials;
 
 ::Engine::Base::Render::Buffer m_Buffers[::Engine::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT];
 
@@ -208,7 +237,7 @@ std::shared_ptr<::Engine::Base::Render::ResourceLoader::ResourceJobTicket>
     m_BufferCreateTickets[::Engine::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT];
 
 std::atomic<std::shared_ptr<const MaterialBufferSnapshot>> m_BufferSnapshot;
-std::shared_ptr<const MaterialBufferSnapshot> m_FrameBufferSnapshot;
+std::shared_ptr<const MaterialBufferSnapshot>              m_FrameBufferSnapshot;
 
 uint64_t m_Version = 0;
 uint64_t m_BufferVersions[::Engine::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT] = {};
@@ -229,8 +258,11 @@ std::string MakeKey(const MaterialCreateInfo& p_CreateInfo)
     std::string Key;
 
     const std::string ShaderKey = p_CreateInfo.TargetShader ? p_CreateInfo.TargetShader->GetKey() : std::string();
+
     Key += std::to_string(ShaderKey.size()) + ":" + ShaderKey;
+
     std::ostringstream ExtraSetKey;
+
     ExtraSetKey << p_CreateInfo.ExtraSet;
     Key += ":" + ExtraSetKey.str();
 
@@ -253,6 +285,7 @@ std::string MakeKey(const MaterialCreateInfo& p_CreateInfo)
 
     AddVector4(p_CreateInfo.BaseColor);
     AddVector3(p_CreateInfo.Emissive);
+
     Add(p_CreateInfo.Metallic);
     Add(p_CreateInfo.Roughness);
     Add(p_CreateInfo.NormalScale);
@@ -266,32 +299,44 @@ std::string MakeKey(const MaterialCreateInfo& p_CreateInfo)
     Add(p_CreateInfo.Ior);
     Add(p_CreateInfo.SpecularFactor);
     Add(p_CreateInfo.EmissiveStrength);
+
     AddVector3(p_CreateInfo.SpecularColor);
+
     Add(p_CreateInfo.DiffuseTransmissionFactor);
+
     AddVector3(p_CreateInfo.DiffuseTransmissionColor);
+
     Add(p_CreateInfo.ClearcoatFactor);
     Add(p_CreateInfo.ClearcoatRoughness);
     Add(p_CreateInfo.ClearcoatNormalScale);
+
     AddVector3(p_CreateInfo.SheenColor);
+
     Add(p_CreateInfo.SheenRoughness);
     Add(p_CreateInfo.HeightScale);
     Add(p_CreateInfo.HeightWorld);
 
     const MaterialTexture* Textures[MATERIAL_TEXTURES_COUNT + 1] = {
         &p_CreateInfo.BaseColorTexture,
+
         &p_CreateInfo.MetallicRoughnessTexture,
         &p_CreateInfo.NormalTexture,
         &p_CreateInfo.OcclusionTexture,
         &p_CreateInfo.EmissiveTexture,
+
         &p_CreateInfo.SpecularTexture,
         &p_CreateInfo.SpecularColorTexture,
+
         &p_CreateInfo.DiffuseTransmissionTexture,
         &p_CreateInfo.DiffuseTransmissionColorTexture,
+
         &p_CreateInfo.ClearcoatTexture,
         &p_CreateInfo.ClearcoatRoughnessTexture,
         &p_CreateInfo.ClearcoatNormalTexture,
+
         &p_CreateInfo.SheenColorTexture,
         &p_CreateInfo.SheenRoughnessTexture,
+
         &p_CreateInfo.HeightTexture
     };
 
@@ -305,6 +350,7 @@ std::string MakeKey(const MaterialCreateInfo& p_CreateInfo)
         Key += ":" + std::to_string(static_cast<int>(Texture->Sampler.WrapV));
         Key += ":" + std::to_string(static_cast<int>(Texture->Sampler.WrapW));
         Key += ":" + std::to_string(Texture->Sampler.Anisotropy);
+
         Add(Texture->UvOffset.x);
         Add(Texture->UvOffset.y);
         Add(Texture->UvScale.x);
@@ -321,7 +367,7 @@ void WriteUvTransform(const MaterialTexture& p_Source, glm::vec4& p_Row0, glm::v
     const float SinRotation = std::sin(p_Source.UvRotation);
 
     p_Row0 = glm::vec4(
-        CosRotation * p_Source.UvScale.x,
+        CosRotation  * p_Source.UvScale.x,
         -SinRotation * p_Source.UvScale.y,
         p_Source.UvOffset.x,
         0.0f
@@ -339,13 +385,15 @@ MaterialData BuildBaseData(const MaterialCreateInfo& p_CreateInfo)
     MaterialData Result = {};
 
     Result.BaseColor = p_CreateInfo.BaseColor;
-    Result.Emissive = p_CreateInfo.Emissive;
-    Result.Metallic = p_CreateInfo.Metallic;
+    Result.Emissive  = p_CreateInfo.Emissive;
+    Result.Metallic  = p_CreateInfo.Metallic;
     Result.Roughness = p_CreateInfo.Roughness;
-    Result.NormalScale = p_CreateInfo.NormalScale;
+
+    Result.NormalScale       = p_CreateInfo.NormalScale;
     Result.OcclusionStrength = p_CreateInfo.OcclusionStrength;
+
     Result.AlphaCutoff = p_CreateInfo.AlphaCutoff;
-    Result.AlphaMode = static_cast<uint32_t>(p_CreateInfo.Alpha);
+    Result.AlphaMode   = static_cast<uint32_t>(p_CreateInfo.Alpha);
 
     const MaterialTexture* Textures[MATERIAL_TEXTURES_COUNT] = {
         &p_CreateInfo.BaseColorTexture,
@@ -353,13 +401,17 @@ MaterialData BuildBaseData(const MaterialCreateInfo& p_CreateInfo)
         &p_CreateInfo.NormalTexture,
         &p_CreateInfo.OcclusionTexture,
         &p_CreateInfo.EmissiveTexture,
+
         &p_CreateInfo.SpecularTexture,
         &p_CreateInfo.SpecularColorTexture,
+
         &p_CreateInfo.DiffuseTransmissionTexture,
         &p_CreateInfo.DiffuseTransmissionColorTexture,
+
         &p_CreateInfo.ClearcoatTexture,
         &p_CreateInfo.ClearcoatRoughnessTexture,
         &p_CreateInfo.ClearcoatNormalTexture,
+
         &p_CreateInfo.SheenColorTexture,
         &p_CreateInfo.SheenRoughnessTexture
     };
@@ -368,34 +420,46 @@ MaterialData BuildBaseData(const MaterialCreateInfo& p_CreateInfo)
         WriteUvTransform(*Textures[I], Result.UvTransforms[I * 2], Result.UvTransforms[I * 2 + 1]);
     }
 
-    Result.SpecularColor = p_CreateInfo.SpecularColor;
+    Result.SpecularColor  = p_CreateInfo.SpecularColor;
     Result.SpecularFactor = p_CreateInfo.SpecularFactor;
+
     Result.Ior = p_CreateInfo.Ior;
+
     Result.EmissiveStrength = p_CreateInfo.EmissiveStrength;
-    Result.ClearcoatFactor = p_CreateInfo.ClearcoatFactor;
+
+    Result.ClearcoatFactor    = p_CreateInfo.ClearcoatFactor;
     Result.ClearcoatRoughness = p_CreateInfo.ClearcoatRoughness;
-    Result.DiffuseTransmissionColor = p_CreateInfo.DiffuseTransmissionColor;
+    Result.DiffuseTransmissionColor  = p_CreateInfo.DiffuseTransmissionColor;
     Result.DiffuseTransmissionFactor = p_CreateInfo.DiffuseTransmissionFactor;
-    Result.SheenColor = p_CreateInfo.SheenColor;
+
+    Result.SheenColor     = p_CreateInfo.SheenColor;
     Result.SheenRoughness = p_CreateInfo.SheenRoughness;
+
     Result.ClearcoatNormalScale = p_CreateInfo.ClearcoatNormalScale;
+
     Result.HeightScale = p_CreateInfo.HeightScale;
     Result.HeightWorld = p_CreateInfo.HeightWorld;
 
-    Result.BaseColorTexture = NO_TEXTURE;
+    Result.BaseColorTexture         = NO_TEXTURE;
     Result.MetallicRoughnessTexture = NO_TEXTURE;
-    Result.NormalTexture = NO_TEXTURE;
+    Result.NormalTexture            = NO_TEXTURE;
+
     Result.OcclusionTexture = NO_TEXTURE;
-    Result.EmissiveTexture = NO_TEXTURE;
+    Result.EmissiveTexture  = NO_TEXTURE;
+
     Result.SpecularTexture = NO_TEXTURE;
     Result.SpecularColorTexture = NO_TEXTURE;
+
     Result.DiffuseTransmissionTexture = NO_TEXTURE;
     Result.DiffuseTransmissionColorTexture = NO_TEXTURE;
-    Result.ClearcoatTexture = NO_TEXTURE;
+
+    Result.ClearcoatTexture          = NO_TEXTURE;
     Result.ClearcoatRoughnessTexture = NO_TEXTURE;
-    Result.ClearcoatNormalTexture = NO_TEXTURE;
-    Result.SheenColorTexture = NO_TEXTURE;
+    Result.ClearcoatNormalTexture    = NO_TEXTURE;
+
+    Result.SheenColorTexture     = NO_TEXTURE;
     Result.SheenRoughnessTexture = NO_TEXTURE;
+
     Result.HeightTexture = NO_TEXTURE;
 
     return Result;
@@ -407,12 +471,14 @@ uint32_t TakeIndex()
 
     if (!m_FreeIndices.empty()) {
         const uint32_t Index = m_FreeIndices.back();
+
         m_FreeIndices.pop_back();
 
         return Index;
     }
 
     X_ASSERT(m_Data.size() >= ::Engine::Configs::Static::Graphics::MAX_MATERIALS, "materials limit exceeded");
+
     m_Data.push_back({});
 
     return static_cast<uint32_t>(m_Data.size() - 1);
@@ -420,11 +486,10 @@ uint32_t TakeIndex()
 
 void ReleaseIndex(uint32_t p_Index)
 {
-    if (p_Index == UINT32_MAX) {
-        return;
-    }
+    if (p_Index == UINT32_MAX) { return; }
 
     std::lock_guard<std::mutex> Lock(m_RegistryMutex);
+
     m_ErasedMaterials.push_back({ p_Index, ::Engine::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT });
 }
 
@@ -434,16 +499,13 @@ bool TextureFailed(
     bool& p_Rejected
 )
 {
-    if (!p_Texture.Target || p_Texture.Target.IsReady()) {
-        return false;
-    }
+    if (!p_Texture.Target || p_Texture.Target.IsReady()) { return false; }
 
     if (p_Texture.Target.GetState() == ::Engine::Util::Applied::ResourceState::Failed
         || p_Texture.Target.GetState() == ::Engine::Util::Applied::ResourceState::Rejected) {
         p_Reason = p_Texture.Target->GetKey() + ": " + p_Texture.Target->GetFailureReason();
 
-        p_Rejected = p_Texture.Target.GetState()
-            == ::Engine::Util::Applied::ResourceState::Rejected;
+        p_Rejected = p_Texture.Target.GetState() == ::Engine::Util::Applied::ResourceState::Rejected;
 
         return true;
     }
@@ -463,15 +525,20 @@ bool TexturesReady(
         &p_CreateInfo.NormalTexture,
         &p_CreateInfo.OcclusionTexture,
         &p_CreateInfo.EmissiveTexture,
+
         &p_CreateInfo.SpecularTexture,
         &p_CreateInfo.SpecularColorTexture,
+
         &p_CreateInfo.DiffuseTransmissionTexture,
         &p_CreateInfo.DiffuseTransmissionColorTexture,
+
         &p_CreateInfo.ClearcoatTexture,
         &p_CreateInfo.ClearcoatRoughnessTexture,
         &p_CreateInfo.ClearcoatNormalTexture,
+
         &p_CreateInfo.SheenColorTexture,
         &p_CreateInfo.SheenRoughnessTexture,
+
         &p_CreateInfo.HeightTexture
     };
 
@@ -512,6 +579,7 @@ void SetTexture(MaterialData& p_Data, uint32_t p_Slot, const MaterialTexture& p_
     p_SamplerIndex = ::Engine::Base::Render::Vk::Samplers::Make(p_Source.Sampler);
 
     ::Engine::Applied::Render::Resources::Textures::SyncSamplers();
+
     WriteUvTransform(p_Source, p_Data.UvTransforms[p_Slot * 2], p_Data.UvTransforms[p_Slot * 2 + 1]);
 }
 
@@ -554,6 +622,7 @@ void Material::BeginLoad()
     }
 
     const std::shared_ptr<LoadData> DataState = LoadState;
+
     const MaterialCreateInfo Info = m_CreateInfo;
 
     DataState->VersionChecksum = GetVersionChecksum();
@@ -578,6 +647,7 @@ void Material::BeginLoad()
             }
 
             std::lock_guard<std::mutex> Lock(DataState->Mutex);
+
             DataState->Finished = true;
         }
     );
@@ -615,8 +685,9 @@ void Material::Update()
 
         const std::shared_ptr<MaterialSnapshot> Snapshot = std::make_shared<MaterialSnapshot>();
 
-        Snapshot->Data = Data;
+        Snapshot->Data  = Data;
         Snapshot->Index = Index;
+
         Snapshot->VersionChecksum = GetVersionChecksum();
 
         m_Snapshot.store(
@@ -628,13 +699,13 @@ void Material::Update()
     }
 
     if (m_CreateInfo.TargetShader.GetState() == ::Engine::Util::Applied::ResourceState::Failed) {
-        SetFailed("Shader dependency failed: " + m_CreateInfo.TargetShader->GetFailureReason());
+        SetFailed("shader dependency failed: " + m_CreateInfo.TargetShader->GetFailureReason());
 
         return;
     }
 
     if (m_CreateInfo.TargetShader.GetState() == ::Engine::Util::Applied::ResourceState::Rejected) {
-        SetRejected("Shader dependency rejected: " + m_CreateInfo.TargetShader->GetFailureReason());
+        SetRejected("shader dependency rejected: " + m_CreateInfo.TargetShader->GetFailureReason());
 
         return;
     }
@@ -651,7 +722,7 @@ void Material::Update()
         }
 
         if (LoadState->VersionChecksum != GetVersionChecksum()) {
-            SetRejected("material CPU job version is stale");
+            SetRejected("material cpu job version is stale");
 
             return;
         }
@@ -666,6 +737,7 @@ void Material::Update()
     }
 
     std::string FailureReason;
+
     bool DependencyRejected = false;
 
     if (!TexturesReady(m_CreateInfo, FailureReason, DependencyRejected)) {
@@ -696,14 +768,14 @@ void Material::Update()
     SetTexture(Data, 13, m_CreateInfo.SheenRoughnessTexture, Data.SheenRoughnessTexture, Data.SheenRoughnessSampler);
 
     if (m_CreateInfo.HeightTexture.Target) {
-        const std::shared_ptr<const ::Engine::Applied::Render::Resources::Textures::TextureSnapshot> Snapshot =
-            m_CreateInfo.HeightTexture.Target->GetSnapshot();
-        if (!Snapshot) {
-            return;
-        }
+        const std::shared_ptr<const ::Engine::Applied::Render::Resources::Textures::TextureSnapshot> Snapshot = m_CreateInfo.HeightTexture.Target->GetSnapshot();
+
+        if (!Snapshot) { return; }
 
         Data.HeightTexture = Snapshot->Index;
+
         Data.HeightSampler = ::Engine::Base::Render::Vk::Samplers::Make(m_CreateInfo.HeightTexture.Sampler);
+
         ::Engine::Applied::Render::Resources::Textures::SyncSamplers();
     }
 
@@ -712,6 +784,7 @@ void Material::Update()
     {
         std::lock_guard<std::mutex> Lock(m_RegistryMutex);
         m_Data[Index] = Data;
+
         ++m_Version;
     }
 
@@ -761,8 +834,7 @@ bool Material::CastsShadows() const { return m_CreateInfo.CastShadows; }
 
 AlphaMode Material::GetAlphaMode() const { return m_CreateInfo.Alpha; }
 
-const ::Engine::Util::Applied::ResourceHandle<
-    ::Engine::Applied::Render::Resources::Shaders::Shader>& Material::GetShader() const { return m_CreateInfo.TargetShader; }
+const ::Engine::Util::Applied::ResourceHandle<::Engine::Applied::Render::Resources::Shaders::Shader>& Material::GetShader() const { return m_CreateInfo.TargetShader; }
 
 VkDescriptorSet Material::GetExtraSet() const { return m_CreateInfo.ExtraSet; }
 
@@ -794,9 +866,7 @@ void Cleanup()
 {
     m_PendingGpuMaterials.clear();
 
-    for (auto& Buffer : m_Buffers) {
-        ::Engine::Base::Render::ResourceLoader::DestroyBuffer(Buffer);
-    }
+    for (auto& Buffer : m_Buffers) { ::Engine::Base::Render::ResourceLoader::DestroyBuffer(Buffer); }
 
     std::lock_guard<std::mutex> Lock(m_RegistryMutex);
 
@@ -804,6 +874,7 @@ void Cleanup()
     m_FreeIndices.clear();
     m_ErasedMaterials.clear();
     m_FrameBufferSnapshot.reset();
+
     m_Version = 0;
 
     for (auto& Version : m_BufferVersions) { Version = 0; }
@@ -823,7 +894,9 @@ void Flush()
 
         m_Data[It->Index] = {};
         m_FreeIndices.push_back(It->Index);
+
         It = m_ErasedMaterials.erase(It);
+
         ++m_Version;
     }
 
@@ -833,10 +906,9 @@ void Flush()
         && !m_BufferTickets[Frame]->Failed.load(std::memory_order_acquire)
         && !m_BufferTickets[Frame]->Rejected.load(std::memory_order_acquire)) {
 
-        const std::shared_ptr<MaterialBufferSnapshot> Snapshot =
-            std::make_shared<MaterialBufferSnapshot>();
+        const std::shared_ptr<MaterialBufferSnapshot> Snapshot = std::make_shared<MaterialBufferSnapshot>();
 
-        Snapshot->Buffer = m_Buffers[Frame];
+        Snapshot->Buffer  = m_Buffers[Frame];
         Snapshot->Address = m_Buffers[Frame].Address;
         Snapshot->Version = m_BufferVersions[Frame];
 
@@ -872,9 +944,7 @@ void Flush()
         return;
     }
 
-    if (m_BufferVersions[Frame] == m_Version || m_Data.empty()) {
-        return;
-    }
+    if (m_BufferVersions[Frame] == m_Version || m_Data.empty()) { return; }
 
     const ::Engine::Base::Render::Buffer Buffer = m_Buffers[Frame];
 

@@ -1,6 +1,7 @@
 #pragma once
 
-#include "X/Engine/Applied/Render/SceneRendering/Resources/LightPoint.hpp"
+#include "X/Engine/Applied/Render/Resources/LightPoint.hpp"
+
 #include "X/Engine/Applied/Scene/Volume/Volume.hpp"
 
 namespace Engine::Applied::Scene::Volume
@@ -9,7 +10,7 @@ namespace Engine::Applied::Scene::Volume
 class SceneVolLightPoint final : public VolumeComponent
 {
 public:
-    using LightPoint = ::Engine::Applied::Render::SceneRendering::Resources::LightPoint;
+    using LightPoint = ::Engine::Util::Applied::ResourceHandle<::Engine::Applied::Render::Resources::LightPoint>;
 
     explicit SceneVolLightPoint(
         LightPoint p_Light = {},

@@ -27,21 +27,25 @@ struct GraphicsPipelineCreateInfo
     VkFrontFace FrontFace    = VK_FRONT_FACE_CLOCKWISE;
 
     bool ModelInstanceTransforms = false;
+
     bool DynamicFaces = false;
+
     bool DepthWrite = true;
     bool DepthClamp = false;
     bool AlphaBlend = false;
+
     VkBlendFactor SrcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    VkBlendFactor DstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
 
     float DepthBiasConstant = 0.0f;
     float DepthBiasSlope    = 0.0f;
 
     std::vector<VkDescriptorSetLayout> SetLayouts;
 
-    uint32_t PushConstantSize = 0;
+    uint32_t PushConstantSize             = 0;
     VkShaderStageFlags PushConstantStages = 0;
 
-    std::vector<VkVertexInputBindingDescription> VertexBindings;
+    std::vector<VkVertexInputBindingDescription>   VertexBindings;
     std::vector<VkVertexInputAttributeDescription> VertexAttributes;
 
     std::vector<std::string> Defines;
@@ -58,7 +62,7 @@ struct ComputePipelineCreateInfo
 
 struct Pipeline
 {
-    VkPipeline Handle = VK_NULL_HANDLE;
+    VkPipeline Handle       = VK_NULL_HANDLE;
     VkPipelineLayout Layout = VK_NULL_HANDLE;
 };
 
@@ -85,6 +89,7 @@ Pipeline CreateComputePipeline(const std::string& p_CompFile, const ComputePipel
 
 Pipeline CreateGraphicsPipeline(const std::vector<uint32_t>& p_Vertex, const std::vector<uint32_t>& p_Fragment,
     const GraphicsPipelineCreateInfo& p_CreateInfo);
+
 Pipeline CreateComputePipeline(const std::vector<uint32_t>& p_Compute, const ComputePipelineCreateInfo& p_CreateInfo);
 
 void DestroyPipeline(const Pipeline& p_Target);

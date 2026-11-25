@@ -30,9 +30,11 @@ struct Shader::LoadData
 
     ::Engine::Base::Render::Pipeline Graphics;
     ::Engine::Base::Render::Pipeline ComputePipeline;
+
     uint64_t VersionChecksum = 0;
 
     std::string FailureReason;
+
     bool Finished = false;
 };
 
@@ -75,6 +77,7 @@ std::string MakeKey(const ShaderCreateInfo& p_Info)
     Append(Key, Graphics.DepthClamp);
     Append(Key, Graphics.AlphaBlend);
     Append(Key, Graphics.SrcColorBlendFactor);
+    Append(Key, Graphics.DstColorBlendFactor);
     Append(Key, Graphics.DepthBiasConstant);
     Append(Key, Graphics.DepthBiasSlope);
     Append(Key, Graphics.SetLayouts.size());
@@ -129,9 +132,7 @@ std::string MakeKey(const ShaderCreateInfo& p_Info)
 std::vector<uint32_t> Compile(const std::string& p_File, ::Engine::Base::Render::ShaderStage p_Stage,
     const std::vector<std::string>& p_Defines)
 {
-    if (p_File.empty()) {
-        return {};
-    }
+    if (p_File.empty()) { return {}; }
 
     return ::Engine::Base::Render::Vk::Shader::CompileGlsl(
         ::Engine::Util::File::ReadRaw(std::string(::Engine::Configs::Static::Contents::SHADERS_DIR) + p_File),
@@ -354,9 +355,10 @@ void Shader::Unload()
     }
 }
 
-const Shader::CreateInfo& Shader::GetCreateInfo() const { return m_CreateInfo; }
+const Shader::CreateInfo&               Shader::GetCreateInfo()       const { return m_CreateInfo; }
 const ::Engine::Base::Render::Pipeline& Shader::GetGraphicsPipeline() const { return Graphics; }
-const ::Engine::Base::Render::Pipeline& Shader::GetComputePipeline() const { return Compute; }
+const ::Engine::Base::Render::Pipeline& Shader::GetComputePipeline()  const { return Compute; }
+
 RenderQueue Shader::GetRenderQueue() const { return m_CreateInfo.Queue; }
 
 std::shared_ptr<const ShaderSnapshot> Shader::GetSnapshot() const

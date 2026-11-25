@@ -17,7 +17,6 @@ void Cleanup();
 
 void Prepare(const SceneList::Frame& p_Frame, VkImageView p_Albedo, VkImageView p_Normal, VkImageView p_Depth);
 
-VkDescriptorSetLayout GetSetLayout();
 VkDescriptorSet GetSet();
 
 }

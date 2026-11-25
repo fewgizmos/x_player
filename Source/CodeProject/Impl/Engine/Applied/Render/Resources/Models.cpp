@@ -44,19 +44,18 @@ std::string MakeKey(const ModelCreateInfo& p_Info)
     std::string Key = p_Info.GltfPath + ":";
 
     if (p_Info.Shader) { Key += p_Info.Shader->GetKey(); }
-    if (p_Info.BlendedShader) { Key += ":" + p_Info.BlendedShader->GetKey(); }
 
     return Key;
 }
 
 PunctualLight MakeLight(const fastgltf::Light& p_Light, const glm::mat4& p_Transform)
 {
-    PunctualLight Light;
+    LightPointCreateInfo Light;
 
     switch (p_Light.type) {
-    case fastgltf::LightType::Point:       Light.Type = PunctualLight::Kind::Point;       break;
-    case fastgltf::LightType::Spot:        Light.Type = PunctualLight::Kind::Spot;        break;
-    case fastgltf::LightType::Directional: Light.Type = PunctualLight::Kind::Directional; break;
+    case fastgltf::LightType::Point:       Light.Type = LightType::Point;       break;
+    case fastgltf::LightType::Spot:        Light.Type = LightType::Spot;        break;
+    case fastgltf::LightType::Directional: Light.Type = LightType::Directional; break;
     }
 
     Light.Color          = glm::vec3(p_Light.color[0], p_Light.color[1], p_Light.color[2]);
@@ -64,16 +63,14 @@ PunctualLight MakeLight(const fastgltf::Light& p_Light, const glm::mat4& p_Trans
     Light.Range          = p_Light.range.value_or(0.0f);
     Light.InnerConeAngle = p_Light.innerConeAngle.value_or(Light.InnerConeAngle);
     Light.OuterConeAngle = p_Light.outerConeAngle.value_or(Light.OuterConeAngle);
-    Light.NodeTransform  = p_Transform;
-
-    return Light;
+    return {::Engine::Util::Applied::ResourceHandle<LightPoint>(std::move(Light)), p_Transform};
 }
 
-::Engine::Util::Applied::ResourceHandle<Shaders::Shader> MakeBlendedShader(const ModelCreateInfo& p_Info)
+::Engine::Util::Applied::ResourceHandle<Shaders::Shader> MakeTransparentVariant(const ModelCreateInfo& p_Info)
 {
-    if (p_Info.BlendedShader) { return p_Info.BlendedShader; }
-
     Shaders::ShaderCreateInfo Variant = p_Info.Shader->GetCreateInfo();
+    Variant.Graphics.Defines.push_back("X_SHADE_SERVICE_TRANSPARENT");
+    Variant.Graphics.ColorFormats = {Configs::Static::Graphics::SCENE_COLOR_FORMAT};
     Variant.Graphics.AlphaBlend = true;
     Variant.Graphics.DepthWrite = false;
     Variant.Queue = Shaders::RenderQueue::Blended;
@@ -518,7 +515,7 @@ void Model::BeginLoad()
                         MaterialInfo.Alpha = Materials::AlphaMode::Mask;
                     } else if (SourceMaterial.alphaMode == fastgltf::AlphaMode::Blend && Info.Shader) {
                         MaterialInfo.Alpha = Materials::AlphaMode::Blend;
-                        MaterialInfo.TargetShader = MakeBlendedShader(Info);
+                        MaterialInfo.TargetShader = MakeTransparentVariant(Info);
                     }
 
                     MaterialInfo.AlphaCutoff = SourceMaterial.alphaCutoff;
@@ -1021,8 +1018,7 @@ std::shared_ptr<const ModelSnapshot> Model::GetSnapshot() const
     return m_Snapshot.load(std::memory_order_acquire);
 }
 
-const ::Engine::Util::Applied::ResourceHandle<
-    ::Engine::Applied::Render::Resources::Shaders::Shader>& Model::GetShader() const
+const ::Engine::Util::Applied::ResourceHandle<::Engine::Applied::Render::Resources::Shaders::Shader>& Model::GetShader() const
 {
     return m_CreateInfo.Shader;
 }

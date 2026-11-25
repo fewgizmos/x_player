@@ -8,7 +8,6 @@
 #include "X/Engine/Applied/Scene/Volume/SceneVolLightPoint.hpp"
 
 #include "X/Engine/Applied/Render/Resources/Textures.hpp"
-#include "X/Engine/Applied/Render/SceneRendering/Passes/ModelPass.hpp"
 
 #include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
 #include "X/Engine/Base/JobSystem/DeferredTaskRegistration.hpp"
@@ -35,8 +34,8 @@ namespace Inputs    = Base::Viewport::Inputs;
 
 using ModelInfo       = Resources::Models::ModelCreateInfo;
 using CameraComponent = Scene::Volume::SceneVolCameraInstance;
-using LightPoint      = Applied::Render::SceneRendering::Resources::LightPoint;
-using LightType       = Applied::Render::SceneRendering::Resources::LightType;
+using LightPoint      = Applied::Render::Resources::LightPointCreateInfo;
+using LightType       = Applied::Render::Resources::LightType;
 using Key             = Inputs::KeyboardInputCodes;
 
 using Configs::Static::Scene::UnitsPerMeter;
@@ -67,7 +66,7 @@ public:
         Transform.SetPosition(p_Position * UnitsPerMeter);
         Transform.SetRotation(p_Rotation);
 
-        Volume.EmplaceComponent<Scene::Volume::SceneVolLightPoint>(p_Light);
+        Volume.EmplaceComponent<Scene::Volume::SceneVolLightPoint>(Util::Applied::ResourceHandle<Resources::LightPoint>(p_Light));
     }
 };
 
@@ -156,16 +155,17 @@ void Init()
     using Vertex = Resources::Meshes::Vertex;
 
     Resources::Shaders::ShaderCreateInfo Shader;
-    Shader.VertexFile   = "Materials/BaseModel.vert";
-    Shader.FragmentFile = "Materials/BaseModel.frag";
+    Shader.VertexFile   = "Materials/StdModel/Geometry.vert";
+    Shader.FragmentFile = "Materials/StdModel/Geometry.frag";
 
     auto& Pipeline = Shader.Graphics;
-    Applied::Render::SceneRendering::Passes::ModelPass::ConfigureGeometry(Pipeline);
+    Pipeline.ColorFormats = {Configs::Static::Graphics::GBUFFER_ALBEDO_FORMAT, Configs::Static::Graphics::GBUFFER_NORMAL_FORMAT};
+    Pipeline.DepthFormat = Configs::Static::Graphics::DEPTH_FORMAT;
     Pipeline.DepthCompare            = VK_COMPARE_OP_GREATER;
     Pipeline.DynamicFaces            = true;
     Pipeline.PushConstantSize        = 128;
     Pipeline.PushConstantStages      = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-    Pipeline.SetLayouts              = {Resources::Textures::GetBindlessSetLayout()};
+    Pipeline.SetLayouts              = {Resources::Textures::GetBindlessSetLayout(), Resources::GetLightSetLayout()};
     Pipeline.ModelInstanceTransforms = true;
 
     Pipeline.VertexBindings = {
@@ -185,20 +185,12 @@ void Init()
         });
     }
 
-    Resources::Shaders::ShaderCreateInfo Blended = Shader;
-    Blended.Queue = Resources::Shaders::RenderQueue::Blended;
-    Blended.Graphics.AlphaBlend = true;
-    Blended.Graphics.DepthWrite = false;
-
-    Applied::Render::SceneRendering::Passes::ModelPass::ConfigureTransparency(Blended.Graphics);
-
     const Util::Applied::ResourceHandle<Resources::Shaders::Shader> ModelShader(std::move(Shader));
-    const Util::Applied::ResourceHandle<Resources::Shaders::Shader> BlendedShader(std::move(Blended));
 
     const std::string& ModelsDir = Configs::Static::Contents::GLTF_MODELS_DIR;
 
-    const ModelInfo Sponza{ModelsDir + "Sponza/Sponza.gltf",                                    ModelShader, BlendedShader};
-    const ModelInfo Dagger{ModelsDir + "ornate_medieval_dagger/ornate_medieval_dagger_1k.gltf", ModelShader, BlendedShader};
+    const ModelInfo Sponza{ModelsDir + "Sponza/Sponza.gltf",                                    ModelShader};
+    const ModelInfo Dagger{ModelsDir + "ornate_medieval_dagger/ornate_medieval_dagger_1k.gltf", ModelShader};
 
     m_ModeledEntities = {
         Scene::It::CreateEntity<ModeledEntity>(

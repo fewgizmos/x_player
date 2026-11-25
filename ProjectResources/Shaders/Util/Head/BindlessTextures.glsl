@@ -14,7 +14,8 @@ vec4 SampleTextureLod(uint p_Texture, uint p_Sampler, vec2 p_Uv, float p_Lod)
     ), p_Uv, p_Lod);
 }
 
-#ifdef X_FRAGMENT_STAGE
+#ifdef X_SHADE_SERVICE_FRAGMENT
+
 vec4 SampleTexture(uint p_Texture, uint p_Sampler, vec2 p_Uv)
 {
     return texture(sampler2D(
@@ -22,6 +23,7 @@ vec4 SampleTexture(uint p_Texture, uint p_Sampler, vec2 p_Uv)
         SceneSamplers[nonuniformEXT(p_Sampler)]
     ), p_Uv);
 }
+
 #endif
 
 #endif

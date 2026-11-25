@@ -66,7 +66,7 @@ void JobThread::QueueRemove(std::string p_Name)
 
 void JobThread::PushBackground(Job p_Job)
 {
-    X_ASSERT(m_IsAttached, "Background jobs are not supported on the attached thread: " + p_Job.Name);
+    X_ASSERT(m_IsAttached, "background jobs are not supported on the attached thread: " + p_Job.Name);
 
     {
         std::lock_guard<std::mutex> Lock(m_Mutex);

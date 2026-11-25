@@ -1,7 +1,6 @@
 #include "X/Engine/Applied/Scene/SceneRenderProxy.hpp"
-#include "X/Project/Configs/Static.hpp"
 
-#include <glm/ext/matrix_transform.hpp>
+#include "X/Project/Configs/Static.hpp"
 
 #include "X/Engine/Util/Applied/Scene/Transform/CameraApplier.hpp"
 #include "X/Engine/Util/Applied/Scene/Transform/ModelApplier.hpp"
@@ -16,6 +15,8 @@
 
 #include "X/Engine/Base/JobSystem/DeferredTaskRegistration.hpp"
 #include "X/Engine/Base/Runtime/BaseEngineThreadIDs.hpp"
+
+#include <glm/ext/matrix_transform.hpp>
 
 namespace Engine::Applied::Scene::RenderProxy
 {
@@ -33,8 +34,6 @@ using ModelInstance   = ::Engine::Applied::Scene::Volume::SceneVolModelInstance;
 
 using Camera          = ::Engine::Applied::Render::SceneRendering::Resources::Camera;
 using ModelEntry      = ::Engine::Applied::Render::SceneRendering::SceneList::ModelEntry;
-using LightPoint      = ::Engine::Applied::Render::SceneRendering::Resources::LightPoint;
-using LightType       = ::Engine::Applied::Render::SceneRendering::Resources::LightType;
 using PunctualLight   = ::Engine::Applied::Render::Resources::Models::PunctualLight;
 
 const ::Engine::Base::JobSystem::DeferredTaskRegistration::Registrar RegisterTask(
@@ -78,21 +77,7 @@ void CaptureCamera(SceneList::Frame& p_Frame)
 void CaptureModelLights(SceneList::Frame& p_Frame, const ModelEntry& p_Model)
 {
     for (const PunctualLight& Source : p_Model.Snapshot->Lights) {
-        LightPoint Light;
-
-        switch (Source.Type) {
-        case PunctualLight::Kind::Point:       Light.Type = LightType::Point;       break;
-        case PunctualLight::Kind::Spot:        Light.Type = LightType::Spot;        break;
-        case PunctualLight::Kind::Directional: Light.Type = LightType::Directional; break;
-        }
-
-        Light.Color          = Source.Color;
-        Light.Intensity      = Source.Intensity;
-        Light.Range          = Source.Range;
-        Light.InnerConeAngle = Source.InnerConeAngle;
-        Light.OuterConeAngle = Source.OuterConeAngle;
-
-        p_Frame.Lights.push_back({std::move(Light), p_Model.AppliedTransform * Source.NodeTransform});
+        p_Frame.Lights.push_back({Source.Light, p_Model.AppliedTransform * Source.NodeTransform});
     }
 }
 
@@ -100,7 +85,7 @@ void CaptureVolume(SceneList::Frame& p_Frame, const SceneVolume& p_Volume)
 {
     for (const std::unique_ptr<VolumeComponent>& Component : p_Volume.GetComponents()) {
         if (const auto* Light = dynamic_cast<const LightComponent*>(Component.get())) {
-            if (Light->GetLight().Enabled) {
+            if (Light->GetLight().IsReady() && Light->GetLight()->GetInfo().Enabled) {
                 p_Frame.Lights.push_back({
                     Light->GetLight(), p_Volume.GetWorldTransform().ToMatrix() * Light->GetLocalTransform().ToMatrix()
                 });
@@ -114,7 +99,7 @@ void CaptureVolume(SceneList::Frame& p_Frame, const SceneVolume& p_Volume)
         if (ModelComponent == nullptr || !ModelComponent->GetModel().IsReady()) { continue; }
 
         ModelEntry Entry;
-        Entry.Target = ModelComponent->GetModel();
+        Entry.Target   = ModelComponent->GetModel();
         Entry.Snapshot = Entry.Target->GetSnapshot();
 
         if (!Entry.Snapshot) { continue; }
@@ -129,7 +114,6 @@ void CaptureVolume(SceneList::Frame& p_Frame, const SceneVolume& p_Volume)
             p_Volume.GetWorldTransform()
         );
 
-        // glTF geometry and node translations are expressed in meters.
         Entry.AppliedTransform = glm::scale(Entry.AppliedTransform, glm::vec3(Configs::Static::Scene::UnitsPerMeter));
         CaptureModelLights(p_Frame, Entry);
 

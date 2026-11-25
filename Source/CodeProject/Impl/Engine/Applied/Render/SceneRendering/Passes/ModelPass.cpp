@@ -106,8 +106,7 @@ struct InstanceBuffers
 
 std::array<InstanceBuffers, Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT> m_InstanceBuffers;
 
-constexpr const char* GeometryDefine = "X_BASE_MODEL_GEOMETRY_PASS";
-constexpr const char* TransparentDefine = "X_BASE_MODEL_TRANSPARENT_PASS";
+
 
 void Cleanup();
 
@@ -201,8 +200,7 @@ void CollectDraws(const SceneList::Frame& p_Scene, std::vector<Draw>& p_Draws, b
             Item.DoubleSided  = Part.Material->IsDoubleSided();
             Item.DynamicFaces = Graphics.DynamicFaces;
             Item.Instanced    = Graphics.ModelInstanceTransforms;
-            Item.SceneLights  = p_Transparent && Graphics.SetLayouts.size() > 1
-                && Graphics.SetLayouts[1] == LightPass::GetSetLayout();
+            Item.SceneLights  = p_Transparent && Graphics.SetLayouts.size() > 1 && Graphics.SetLayouts[1] == ::Engine::Applied::Render::Resources::GetLightSetLayout();
             Item.Depth        = -(Camera.View * World * glm::vec4(Center, 1.0f)).z;
         }
     }
@@ -218,8 +216,9 @@ void Cleanup()
 
 VkBuffer UploadInstances(const std::vector<Draw>& p_Draws, bool p_Transparent)
 {
-    auto& Buffers = m_InstanceBuffers[RenderBase::Vk::Frame::GetCurrentFrameIndex()];
+    auto& Buffers   = m_InstanceBuffers[RenderBase::Vk::Frame::GetCurrentFrameIndex()];
     auto& Buffer = p_Transparent ? Buffers.Transparent : Buffers.Geometry;
+
     const VkDeviceSize Bytes = p_Draws.size() * sizeof(Instance);
 
     if (Buffer.Size < Bytes) {
@@ -229,6 +228,7 @@ VkBuffer UploadInstances(const std::vector<Draw>& p_Draws, bool p_Transparent)
         );
 
         RenderBase::ResourceLoader::DestroyBuffer(Buffer);
+
         Buffer = Replacement;
     }
 
@@ -236,6 +236,7 @@ VkBuffer UploadInstances(const std::vector<Draw>& p_Draws, bool p_Transparent)
 
     for (const auto& Entry : p_Draws) {
         std::memcpy(Destination, &Entry.Data, sizeof(Instance));
+
         Destination += sizeof(Instance);
     }
 
@@ -306,16 +307,18 @@ void Render(const SceneList::Frame& p_Scene, bool p_Transparent)
 
         if (VertexBuffer != Entry.Mesh->VertexBuffer.Handle) {
             VertexBuffer = Entry.Mesh->VertexBuffer.Handle;
+
             Disp.cmdBindVertexBuffers(Cmd, 0, 1, &VertexBuffer, &Offset);
         }
 
         if (IndexBuffer != Entry.Mesh->IndexBuffer.Handle) {
             IndexBuffer = Entry.Mesh->IndexBuffer.Handle;
+
             Disp.cmdBindIndexBuffer(Cmd, IndexBuffer, 0, VK_INDEX_TYPE_UINT32);
         }
 
         const auto& Material = Entry.Material->Data;
-        glm::mat4 Transform = p_Scene.ActiveCamera->ViewProjection;
+        glm::mat4 Transform                        = p_Scene.ActiveCamera->ViewProjection;
 
         if (!Entry.Instanced) { Transform *= Entry.Data.World; }
 
@@ -357,29 +360,9 @@ void Init()
 {
     SceneRenderPassPool::Register("model", SceneRenderPassPool::Phase::Geometry,
         [](const SceneList::Frame& p_Frame) { Render(p_Frame, false); }, 900);
+
     SceneRenderPassPool::Register("transparent_model", SceneRenderPassPool::Phase::Transparent,
         [](const SceneList::Frame& p_Frame) { Render(p_Frame, true); }, 900);
-}
-
-void ConfigureGeometry(RenderBase::GraphicsPipelineCreateInfo& p_Pipeline)
-{
-    p_Pipeline.ColorFormats = {
-        Configs::Static::Graphics::GBUFFER_ALBEDO_FORMAT, Configs::Static::Graphics::GBUFFER_NORMAL_FORMAT
-    };
-    p_Pipeline.DepthFormat = Configs::Static::Graphics::DEPTH_FORMAT;
-    p_Pipeline.Defines.push_back(GeometryDefine);
-}
-
-void ConfigureTransparency(RenderBase::GraphicsPipelineCreateInfo& p_Pipeline)
-{
-    const auto Define = std::find(p_Pipeline.Defines.begin(), p_Pipeline.Defines.end(), GeometryDefine);
-
-    if (Define == p_Pipeline.Defines.end()) { return; }
-
-    *Define = TransparentDefine;
-
-    p_Pipeline.ColorFormats = {Configs::Static::Graphics::SCENE_COLOR_FORMAT};
-    p_Pipeline.SetLayouts.push_back(LightPass::GetSetLayout());
 }
 
 }

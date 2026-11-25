@@ -6,6 +6,8 @@
 #include "X/Engine/Applied/Render/Resources/Meshes.hpp"
 #include "X/Engine/Applied/Render/Resources/Shaders.hpp"
 
+#include "X/Engine/Applied/Render/Resources/LightPoint.hpp"
+
 #include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
 
@@ -23,8 +25,6 @@ struct ModelCreateInfo
     std::string GltfPath;
     ::Engine::Util::Applied::ResourceHandle<
         ::Engine::Applied::Render::Resources::Shaders::Shader> Shader;
-    ::Engine::Util::Applied::ResourceHandle<
-        ::Engine::Applied::Render::Resources::Shaders::Shader> BlendedShader{};
 };
 
 struct ModelPart
@@ -49,28 +49,13 @@ struct ModelPart
 
 struct PunctualLight
 {
-    enum class Kind
-    {
-        Point,
-        Spot,
-        Directional
-    };
-
-    Kind Type = Kind::Point;
-
-    glm::vec3 Color = glm::vec3(1.0f);
-   
-    float Intensity = 1.0f;
-    float Range = 0.0f;
-    float InnerConeAngle = 0.0f;
-    float OuterConeAngle = 0.78539816f;
-
+    ::Engine::Util::Applied::ResourceHandle<LightPoint> Light;
     glm::mat4 NodeTransform{1.0f};
 };
 
 struct ModelSnapshot
 {
-    std::vector<ModelPart> Parts;
+    std::vector<ModelPart>     Parts;
     std::vector<PunctualLight> Lights;
 
     glm::vec3 BoundsCenter = glm::vec3(0.0f);

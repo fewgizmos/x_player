@@ -30,6 +30,7 @@ public:
     Resource(const Resource&) = delete;
     Resource& operator=(const Resource&) = delete;
 
+    virtual bool AllowsCaching() const { return true; }
     virtual void BeginLoad() = 0;
     virtual void Update();
     virtual void Unload() = 0;
@@ -37,11 +38,16 @@ public:
     virtual std::string GetTypeName() const = 0;
 
     const std::string& GetKey() const;
+
     uint64_t GetVersionChecksum() const;
     uint64_t AdvanceVersionChecksum();
+
     ResourceState GetState() const;
+
     bool IsReady() const;
+
     const std::string& GetFailureReason() const;
+
     void SetState(ResourceState p_State);
     void SetFailed(std::string p_Reason);
     void SetRejected(std::string p_Reason);
@@ -52,10 +58,12 @@ private:
 
     bool TryMarkFailureReported();
 
-    std::string m_Key;
+    std::string           m_Key;
     std::atomic<uint64_t> m_VersionChecksum = 0;
+
     std::atomic<ResourceState> m_State = ResourceState::LoadingCpu;
-    std::string FailureReason;
+
+    std::string       FailureReason;
     std::atomic<bool> FailureReported = false;
 };
 

@@ -22,7 +22,7 @@ namespace Engine::Base::Render::Vk::Shader
 namespace
 {
 
-constexpr const char* FRAGMENT_STAGE_DEFINE = "X_FRAGMENT_STAGE";
+constexpr const char* FRAGMENT_STAGE_DEFINE = "X_SHADE_SERVICE_FRAGMENT";
 
 shaderc_shader_kind GetShadercKind(ShaderStage p_Stage)
 {
@@ -230,7 +230,7 @@ Pipeline CreateGraphicsPipeline(const std::vector<uint32_t>& p_Vertex, const std
     const GraphicsPipelineCreateInfo& p_CreateInfo)
 {
     const vkb::DispatchTable& Disp = Device::GetDisp();
-    const uint32_t ColorCount = static_cast<uint32_t>(p_CreateInfo.ColorFormats.size());
+    const uint32_t ColorCount      = static_cast<uint32_t>(p_CreateInfo.ColorFormats.size());
 
     VkShaderModule VertModule = CreateModule(p_Vertex);
     VkShaderModule FragModule = VK_NULL_HANDLE;
@@ -247,108 +247,99 @@ Pipeline CreateGraphicsPipeline(const std::vector<uint32_t>& p_Vertex, const std
     }
 
     VkPipelineShaderStageCreateInfo VertStageCreateInfo = {};
-
-    VertStageCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    VertStageCreateInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+    VertStageCreateInfo.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    VertStageCreateInfo.stage  = VK_SHADER_STAGE_VERTEX_BIT;
     VertStageCreateInfo.module = VertModule;
-    VertStageCreateInfo.pName = "main";
+    VertStageCreateInfo.pName  = "main";
 
     std::vector<VkPipelineShaderStageCreateInfo> ShaderStages = { VertStageCreateInfo };
 
     if (FragModule != VK_NULL_HANDLE) {
         VkPipelineShaderStageCreateInfo FragStageCreateInfo = {};
 
-        FragStageCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-        FragStageCreateInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+        FragStageCreateInfo.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        FragStageCreateInfo.stage  = VK_SHADER_STAGE_FRAGMENT_BIT;
         FragStageCreateInfo.module = FragModule;
-        FragStageCreateInfo.pName = "main";
+        FragStageCreateInfo.pName  = "main";
 
         ShaderStages.push_back(FragStageCreateInfo);
     }
 
     VkPipelineVertexInputStateCreateInfo VertexInputCreateInfo = {};
-
-    VertexInputCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    VertexInputCreateInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(p_CreateInfo.VertexBindings.size());
-    VertexInputCreateInfo.pVertexBindingDescriptions = p_CreateInfo.VertexBindings.data();
+    VertexInputCreateInfo.sType                           = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    VertexInputCreateInfo.vertexBindingDescriptionCount   = static_cast<uint32_t>(p_CreateInfo.VertexBindings.size());
+    VertexInputCreateInfo.pVertexBindingDescriptions      = p_CreateInfo.VertexBindings.data();
     VertexInputCreateInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(p_CreateInfo.VertexAttributes.size());
-    VertexInputCreateInfo.pVertexAttributeDescriptions = p_CreateInfo.VertexAttributes.data();
+    VertexInputCreateInfo.pVertexAttributeDescriptions    = p_CreateInfo.VertexAttributes.data();
 
     VkPipelineInputAssemblyStateCreateInfo InputAssembly = {};
-
-    InputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    InputAssembly.sType    = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
     InputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
     InputAssembly.primitiveRestartEnable = VK_FALSE;
 
     VkPipelineViewportStateCreateInfo ViewportState = {};
-
     ViewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
     ViewportState.viewportCount = 1;
-    ViewportState.scissorCount = 1;
+    ViewportState.scissorCount  = 1;
 
     VkPipelineRasterizationStateCreateInfo Rasterizer = {};
-
-    Rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    Rasterizer.depthClampEnable = p_CreateInfo.DepthClamp ? VK_TRUE : VK_FALSE;
+    Rasterizer.sType                   = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    Rasterizer.depthClampEnable        = p_CreateInfo.DepthClamp ? VK_TRUE : VK_FALSE;
     Rasterizer.rasterizerDiscardEnable = VK_FALSE;
-    Rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
-    Rasterizer.lineWidth = 1.0f;
-    Rasterizer.cullMode = p_CreateInfo.CullMode;
+    Rasterizer.polygonMode             = VK_POLYGON_MODE_FILL;
+    Rasterizer.lineWidth               = 1.0f;
+
+    Rasterizer.cullMode  = p_CreateInfo.CullMode;
     Rasterizer.frontFace = p_CreateInfo.FrontFace;
-    Rasterizer.depthBiasEnable = p_CreateInfo.DepthBiasConstant != 0.0f || p_CreateInfo.DepthBiasSlope != 0.0f ? VK_TRUE : VK_FALSE;
+   
+    Rasterizer.depthBiasEnable         = p_CreateInfo.DepthBiasConstant != 0.0f || p_CreateInfo.DepthBiasSlope != 0.0f ? VK_TRUE : VK_FALSE;
     Rasterizer.depthBiasConstantFactor = p_CreateInfo.DepthBiasConstant;
-    Rasterizer.depthBiasSlopeFactor = p_CreateInfo.DepthBiasSlope;
+    Rasterizer.depthBiasSlopeFactor    = p_CreateInfo.DepthBiasSlope;
 
     VkPipelineMultisampleStateCreateInfo Multisampling = {};
-
     Multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    Multisampling.sampleShadingEnable = VK_FALSE;
+    Multisampling.sampleShadingEnable  = VK_FALSE;
     Multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
     VkPipelineDepthStencilStateCreateInfo DepthStencil = {};
-
     DepthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    DepthStencil.depthTestEnable = VK_TRUE;
+    DepthStencil.depthTestEnable  = VK_TRUE;
     DepthStencil.depthWriteEnable = p_CreateInfo.DepthWrite ? VK_TRUE : VK_FALSE;
-    DepthStencil.depthCompareOp = p_CreateInfo.DepthCompare;
+    DepthStencil.depthCompareOp   = p_CreateInfo.DepthCompare;
 
     VkPipelineColorBlendAttachmentState ColorBlendAttachment = {};
+    ColorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 
-    ColorBlendAttachment.colorWriteMask =
-    VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-
-    ColorBlendAttachment.blendEnable = p_CreateInfo.AlphaBlend ? VK_TRUE : VK_FALSE;
+    ColorBlendAttachment.blendEnable         = p_CreateInfo.AlphaBlend ? VK_TRUE : VK_FALSE;
     ColorBlendAttachment.srcColorBlendFactor = p_CreateInfo.SrcColorBlendFactor;
-    ColorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    ColorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+    ColorBlendAttachment.dstColorBlendFactor = p_CreateInfo.DstColorBlendFactor;
+
+    ColorBlendAttachment.colorBlendOp        = VK_BLEND_OP_ADD;
     ColorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
     ColorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    ColorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+    ColorBlendAttachment.alphaBlendOp        = VK_BLEND_OP_ADD;
 
     VkPipelineColorBlendStateCreateInfo ColorBlending = {};
-
-    ColorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    ColorBlending.sType         = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     ColorBlending.logicOpEnable = VK_FALSE;
-    ColorBlending.logicOp = VK_LOGIC_OP_COPY;
+    ColorBlending.logicOp       = VK_LOGIC_OP_COPY;
 
     const std::vector<VkPipelineColorBlendAttachmentState> ColorBlendAttachments(ColorCount, ColorBlendAttachment);
-
     ColorBlending.attachmentCount = ColorCount;
-    ColorBlending.pAttachments = ColorCount > 0 ? ColorBlendAttachments.data() : nullptr;
+    ColorBlending.pAttachments    = ColorCount > 0 ? ColorBlendAttachments.data() : nullptr;
 
     VkPushConstantRange PushRange = {};
-
     PushRange.stageFlags = p_CreateInfo.PushConstantStages;
-    PushRange.offset = 0;
-    PushRange.size = p_CreateInfo.PushConstantSize;
+    PushRange.offset     = 0;
+    PushRange.size       = p_CreateInfo.PushConstantSize;
 
     VkPipelineLayoutCreateInfo PipelineLayoutCreateInfo = {};
-
-    PipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    PipelineLayoutCreateInfo.setLayoutCount = static_cast<uint32_t>(p_CreateInfo.SetLayouts.size());
-    PipelineLayoutCreateInfo.pSetLayouts = p_CreateInfo.SetLayouts.data();
+    PipelineLayoutCreateInfo.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    PipelineLayoutCreateInfo.setLayoutCount         = static_cast<uint32_t>(p_CreateInfo.SetLayouts.size());
+    PipelineLayoutCreateInfo.pSetLayouts            = p_CreateInfo.SetLayouts.data();
     PipelineLayoutCreateInfo.pushConstantRangeCount = p_CreateInfo.PushConstantSize > 0 ? 1 : 0;
-    PipelineLayoutCreateInfo.pPushConstantRanges = &PushRange;
+    PipelineLayoutCreateInfo.pPushConstantRanges    = &PushRange;
 
     Pipeline ResultPipeline;
 
@@ -369,13 +360,11 @@ Pipeline CreateGraphicsPipeline(const std::vector<uint32_t>& p_Vertex, const std
     };
 
     VkPipelineDynamicStateCreateInfo DynamicCreateInfo = {};
-
-    DynamicCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    DynamicCreateInfo.sType             = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
     DynamicCreateInfo.dynamicStateCount = p_CreateInfo.DynamicFaces ? 4 : 2;
-    DynamicCreateInfo.pDynamicStates = DynamicStates;
+    DynamicCreateInfo.pDynamicStates    = DynamicStates;
 
     VkPipelineRenderingCreateInfo RenderingCreateInfo = {};
-
     RenderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
     RenderingCreateInfo.colorAttachmentCount = ColorCount;
     RenderingCreateInfo.pColorAttachmentFormats = ColorCount > 0 ? p_CreateInfo.ColorFormats.data() : nullptr;
@@ -463,8 +452,8 @@ Pipeline CreateComputePipeline(const std::vector<uint32_t>& p_Compute, const Com
 
     VkComputePipelineCreateInfo PipelineCreateInfo = {};
 
-    PipelineCreateInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-    PipelineCreateInfo.stage = StageCreateInfo;
+    PipelineCreateInfo.sType  = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    PipelineCreateInfo.stage  = StageCreateInfo;
     PipelineCreateInfo.layout = ResultPipeline.Layout;
 
     Result = Disp.createComputePipelines(
@@ -485,7 +474,7 @@ Pipeline CreateComputePipeline(const std::vector<uint32_t>& p_Compute, const Com
 
 void DestroyPipeline(const Pipeline& p_Target)
 {
-    Device::GetDisp().destroyPipeline(p_Target.Handle, nullptr);
+    Device::GetDisp().destroyPipeline(            p_Target.Handle, nullptr);
     Device::GetDisp().destroyPipelineLayout(p_Target.Layout, nullptr);
 }
 

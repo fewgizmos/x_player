@@ -41,7 +41,7 @@ std::string DescribeThread(unsigned char p_Thread)
 
 JobThread& Register(unsigned char p_Thread, bool p_IsAttached)
 {
-    X_ASSERT(m_ThreadsByIndex[p_Thread] != nullptr, "Job thread already exists: " + DescribeThread(p_Thread));
+    X_ASSERT(m_ThreadsByIndex[p_Thread] != nullptr, "job thread already exists: " + DescribeThread(p_Thread));
 
     m_ThreadsByIndex[p_Thread] = std::make_unique<JobThread>(p_Thread, p_IsAttached, m_Sync);
 
@@ -59,7 +59,7 @@ JobThread& CreateThread(unsigned char p_Thread)
 
 JobThread& AttachCurrentThread(unsigned char p_Thread)
 {
-    X_ASSERT(m_Attached != nullptr, "Only one thread can be attached to the job system");
+    X_ASSERT(m_Attached != nullptr, "only one thread can be attached to the job system");
 
     JobThread& Thread = Register(p_Thread, true);
 
@@ -72,7 +72,7 @@ JobThread& GetThread(unsigned char p_Thread)
 {
     JobThread* Thread = m_ThreadsByIndex[p_Thread].get();
 
-    X_ASSERT(Thread == nullptr, "Job thread does not exist: " + DescribeThread(p_Thread));
+    X_ASSERT(Thread == nullptr, "job thread does not exist: " + DescribeThread(p_Thread));
 
     return *Thread;
 }
@@ -86,7 +86,7 @@ void AddTask(unsigned char p_Thread, std::string p_Name, std::function<void()> p
 
         const bool Inserted = m_TaskNames.emplace(p_Name, p_Thread).second;
 
-        X_ASSERT(!Inserted, "Job name is already used: " + p_Name);
+        X_ASSERT(!Inserted, "job name is already used: " + p_Name);
     }
 
     Job Item;

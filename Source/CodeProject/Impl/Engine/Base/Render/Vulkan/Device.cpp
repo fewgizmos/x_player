@@ -28,21 +28,30 @@ namespace
 VkSurfaceKHR m_Surface = VK_NULL_HANDLE;
 
 vkb::PhysicalDevice m_Physical;
-vkb::Device m_Device;
+vkb::Device         m_Device;
+
 vkb::DispatchTable m_Disp;
 
 QueueSet m_Queues;
+
 std::mutex m_QueueSubmitMutex;
 std::mutex m_VulkanQueueCallMutex;
-std::atomic<uint64_t> m_NextQueueOperation = 0;
+
+std::atomic<uint64_t> m_NextQueueOperation        = 0;
 std::atomic<uint64_t> m_NextRenderCompletionValue = 0;
+
 VkSemaphore m_RenderCompletionSemaphore = VK_NULL_HANDLE;
+
 std::mutex m_QueueExecutorMutex;
+
 std::condition_variable m_QueueExecutorCv;
+
 std::deque<std::function<void()>> m_QueueExecutorJobs;
-std::jthread m_QueueExecutorThread;
+
+std::jthread    m_QueueExecutorThread;
 std::thread::id m_QueueExecutorThreadId;
-bool m_QueueExecutorStarted = false;
+
+bool m_QueueExecutorStarted  = false;
 bool m_QueueExecutorStopping = false;
 
 bool m_HasMemoryBudget = false;
@@ -113,16 +122,14 @@ void StopQueueExecutorInternal()
     {
         std::lock_guard<std::mutex> Lock(m_QueueExecutorMutex);
 
-        if (!m_QueueExecutorStarted) {
-            return;
-        }
+        if (!m_QueueExecutorStarted) { return; }
 
         m_QueueExecutorStopping = true;
     }
 
     {
         std::lock_guard<std::mutex> Lock(m_QueueExecutorMutex);
-        m_QueueExecutorStarted = false;
+        m_QueueExecutorStarted  = false;
         m_QueueExecutorThreadId = {};
         m_QueueExecutorJobs.clear();
     }
@@ -135,19 +142,18 @@ void PushQueueExecutorJob(std::function<void()> p_Job)
     {
         std::lock_guard<std::mutex> Lock(m_QueueExecutorMutex);
 
-        if (m_QueueExecutorStarted
-            && std::this_thread::get_id() == m_QueueExecutorThreadId) {
+        if (m_QueueExecutorStarted && std::this_thread::get_id() == m_QueueExecutorThreadId) {
             ExecuteImmediately = true;
         }
     }
 
     if (ExecuteImmediately) {
         p_Job();
+
         return;
     }
 
-    const std::string Name = "render_ops_vk_"
-        + std::to_string(m_NextQueueOperation.fetch_add(1, std::memory_order_relaxed));
+    const std::string Name = "render_ops_vk_" + std::to_string(m_NextQueueOperation.fetch_add(1, std::memory_order_relaxed));
 
     ::Engine::Base::JobSystem::It::PushBackground(
         ::Engine::Base::Runtime::EngineThreadID::RenderOpsDedicatedTh,
@@ -171,7 +177,7 @@ void WaitIdle()
 
         X_ASSERT(
             m_Disp.deviceWaitIdle() != VK_SUCCESS,
-            "Failed to wait for Vulkan device"
+            "failed to wait for Vulkan device"
         );
     });
 }
@@ -220,9 +226,7 @@ void AcquireNextImageAsync(
                 );
             }
 
-            if (Completion) {
-                Completion(Result, ImageIndex);
-            }
+            if (Completion) { Completion(Result, ImageIndex); }
         }
     );
 }
@@ -249,6 +253,7 @@ void ConsumeSemaphore(VkSemaphore p_Semaphore)
             ) != VK_SUCCESS,
             "failed to consume acquire semaphore"
         );
+
         X_ASSERT(
             m_Disp.deviceWaitIdle() != VK_SUCCESS,
             "failed to wait after consuming acquire semaphore"
@@ -264,8 +269,8 @@ void ExecuteQueueOperation(std::function<void()> p_Operation)
         return;
     }
 
-    const std::shared_ptr<std::promise<void>> Promise =
-        std::make_shared<std::promise<void>>();
+    const std::shared_ptr<std::promise<void>> Promise = std::make_shared<std::promise<void>>();
+
     std::future<void> Future = Promise->get_future();
 
     PushQueueExecutorJob(
@@ -274,6 +279,7 @@ void ExecuteQueueOperation(std::function<void()> p_Operation)
                 Operation();
                 Promise->set_value();
             }
+
             catch (...) {
                 Promise->set_exception(std::current_exception());
             }
@@ -290,8 +296,8 @@ VkResult QueueSubmitLegacy(
     VkFence p_Fence
 )
 {
-    const std::shared_ptr<std::promise<VkResult>> Promise =
-        std::make_shared<std::promise<VkResult>>();
+    const std::shared_ptr<std::promise<VkResult>> Promise = std::make_shared<std::promise<VkResult>>();
+
     std::future<VkResult> Future = Promise->get_future();
 
     ExecuteQueueOperation(
@@ -354,6 +360,7 @@ void CreateSurface(const vkb::Instance& p_Instance)
 
     ArtifactsDeletor::Push([p_Instance, Surface = m_Surface]() {
         vkb::destroy_surface(p_Instance, Surface);
+
         m_Surface = VK_NULL_HANDLE;
     });
 }
@@ -361,14 +368,12 @@ void CreateSurface(const vkb::Instance& p_Instance)
 void CreateDevice(const vkb::Instance& p_Instance)
 {
     VkPhysicalDeviceVulkan13Features Features13 = {};
-
     Features13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
     Features13.dynamicRendering = VK_TRUE;
     Features13.synchronization2 = VK_TRUE;
     Features13.shaderDemoteToHelperInvocation = VK_TRUE;
 
     VkPhysicalDeviceVulkan12Features Features12 = {};
-
     Features12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
     Features12.bufferDeviceAddress = VK_TRUE;
     Features12.timelineSemaphore = VK_TRUE;
@@ -380,7 +385,6 @@ void CreateDevice(const vkb::Instance& p_Instance)
     Features12.drawIndirectCount = VK_TRUE;
 
     VkPhysicalDeviceFeatures Features = {};
-
     Features.samplerAnisotropy = VK_TRUE;
     Features.shaderSampledImageArrayDynamicIndexing = VK_TRUE;
     Features.depthClamp = VK_TRUE;
@@ -397,8 +401,8 @@ void CreateDevice(const vkb::Instance& p_Instance)
         .set_surface(m_Surface)
         .set_minimum_version(1, 3)
         .set_required_features(Features)
-    .set_required_features_12(Features12)
-    .set_required_features_13(Features13)
+        .set_required_features_12(Features12)
+        .set_required_features_13(Features13)
         .select();
 
     if (!PhysDeviceRet) {
@@ -438,10 +442,11 @@ void CreateDevice(const vkb::Instance& p_Instance)
 
     VkSemaphoreTypeCreateInfo TypeInfo{ VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO };
     TypeInfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
-    TypeInfo.initialValue = 0;
+    TypeInfo.initialValue  = 0;
 
     VkSemaphoreCreateInfo SemaphoreInfo{ VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
     SemaphoreInfo.pNext = &TypeInfo;
+
     X_ASSERT(
         m_Disp.createSemaphore(&SemaphoreInfo, nullptr, &m_RenderCompletionSemaphore) != VK_SUCCESS,
         "failed to create render completion semaphore"
@@ -453,8 +458,9 @@ void CreateDevice(const vkb::Instance& p_Instance)
 
     ArtifactsDeletor::Push([]() {
         vkb::destroy_device(m_Device);
+
         m_Device = {};
-        m_Disp = {};
+        m_Disp   = {};
     });
 }
 
@@ -477,11 +483,11 @@ void MakeQueues()
 
     const vkb::Result<VkQueue> Tq = m_Device.get_queue(vkb::QueueType::transfer);
     if (Tq.has_value()) {
-        m_Queues.Transfer = Tq.value();
-        m_Queues.TransferFamily = m_Device.get_queue_index(vkb::QueueType::transfer).value();
+        m_Queues.Transfer          = Tq.value();
+        m_Queues.TransferFamily    = m_Device.get_queue_index(vkb::QueueType::transfer).value();
         m_Queues.DedicatedTransfer = m_Queues.TransferFamily != m_Queues.GraphicsFamily;
     } else {
-        m_Queues.Transfer = m_Queues.Graphics;
+        m_Queues.Transfer       = m_Queues.Graphics;
         m_Queues.TransferFamily = m_Queues.GraphicsFamily;
     }
 }
@@ -533,27 +539,30 @@ void QueueSubmit2Async(
     {
         VkQueue Queue = VK_NULL_HANDLE;
         VkFence Fence = VK_NULL_HANDLE;
-        std::vector<VkSubmitInfo2> Submits;
+
+        std::vector<VkSubmitInfo2>             Submits;
         std::vector<VkCommandBufferSubmitInfo> Commands;
+
         std::vector<VkSemaphoreSubmitInfo> Waits;
         std::vector<VkSemaphoreSubmitInfo> Signals;
+
         std::function<void(VkResult)> Completion;
     };
 
-    const std::shared_ptr<SubmitOperation> Operation =
-        std::make_shared<SubmitOperation>();
+    const std::shared_ptr<SubmitOperation> Operation = std::make_shared<SubmitOperation>();
     Operation->Queue = p_Queue;
     Operation->Fence = p_Fence;
     Operation->Submits.resize(p_SubmitCount);
     Operation->Completion = std::move(p_Completion);
 
     std::size_t CommandCount = 0;
-    std::size_t WaitCount = 0;
-    std::size_t SignalCount = 0;
+    std::size_t WaitCount    = 0;
+    std::size_t SignalCount  = 0;
+
     for (uint32_t I = 0; I < p_SubmitCount; ++I) {
         CommandCount += p_Submits[I].commandBufferInfoCount;
-        WaitCount += p_Submits[I].waitSemaphoreInfoCount;
-        SignalCount += p_Submits[I].signalSemaphoreInfoCount;
+        WaitCount    += p_Submits[I].waitSemaphoreInfoCount;
+        SignalCount  += p_Submits[I].signalSemaphoreInfoCount;
     }
 
     Operation->Commands.reserve(CommandCount);
@@ -562,24 +571,26 @@ void QueueSubmit2Async(
 
     for (uint32_t I = 0; I < p_SubmitCount; ++I) {
         const VkSubmitInfo2& Source = p_Submits[I];
-        VkSubmitInfo2& Target = Operation->Submits[I];
 
+        VkSubmitInfo2& Target = Operation->Submits[I];
         Target = Source;
 
         const std::size_t CommandOffset = Operation->Commands.size();
-        const std::size_t WaitOffset = Operation->Waits.size();
-        const std::size_t SignalOffset = Operation->Signals.size();
+        const std::size_t WaitOffset    = Operation->Waits.size();
+        const std::size_t SignalOffset  = Operation->Signals.size();
 
         Operation->Commands.insert(
             Operation->Commands.end(),
             Source.pCommandBufferInfos,
             Source.pCommandBufferInfos + Source.commandBufferInfoCount
         );
+
         Operation->Waits.insert(
             Operation->Waits.end(),
             Source.pWaitSemaphoreInfos,
             Source.pWaitSemaphoreInfos + Source.waitSemaphoreInfoCount
         );
+
         Operation->Signals.insert(
             Operation->Signals.end(),
             Source.pSignalSemaphoreInfos,
@@ -589,9 +600,11 @@ void QueueSubmit2Async(
         Target.pCommandBufferInfos = Source.commandBufferInfoCount > 0
             ? Operation->Commands.data() + CommandOffset
             : nullptr;
+
         Target.pWaitSemaphoreInfos = Source.waitSemaphoreInfoCount > 0
             ? Operation->Waits.data() + WaitOffset
             : nullptr;
+
         Target.pSignalSemaphoreInfos = Source.signalSemaphoreInfoCount > 0
             ? Operation->Signals.data() + SignalOffset
             : nullptr;
@@ -608,17 +621,15 @@ void QueueSubmit2Async(
                 Operation->Fence
             );
 
-            if (Operation->Completion) {
-                Operation->Completion(Result);
-            }
+            if (Operation->Completion) { Operation->Completion(Result); }
         }
     );
 }
 
 VkResult QueuePresent(const VkPresentInfoKHR* p_PresentInfo)
 {
-    const std::shared_ptr<std::promise<VkResult>> Promise =
-        std::make_shared<std::promise<VkResult>>();
+    const std::shared_ptr<std::promise<VkResult>> Promise = std::make_shared<std::promise<VkResult>>();
+
     std::future<VkResult> Future = Promise->get_future();
 
     PushQueueExecutorJob(
@@ -634,20 +645,19 @@ VkResult QueuePresent(const VkPresentInfoKHR* p_PresentInfo)
 
 void DrainRenderOperations()
 {
-    const ::Engine::Base::JobSystem::JobThread& OperationsThread =
-        ::Engine::Base::JobSystem::It::GetThread(
-            ::Engine::Base::Runtime::EngineThreadID::RenderOpsDedicatedTh
-        );
+    const ::Engine::Base::JobSystem::JobThread& OperationsThread = ::Engine::Base::JobSystem::It::GetThread(
+        ::Engine::Base::Runtime::EngineThreadID::RenderOpsDedicatedTh
+    );
 
     if (std::this_thread::get_id() == OperationsThread.GetThreadId()) {
         return;
     }
 
-    const std::shared_ptr<std::promise<void>> Promise =
-        std::make_shared<std::promise<void>>();
+    const std::shared_ptr<std::promise<void>> Promise = std::make_shared<std::promise<void>>();
+
     std::future<void> Future = Promise->get_future();
-    const std::string Name = "render_ops_drain_"
-        + std::to_string(m_NextQueueOperation.fetch_add(1, std::memory_order_relaxed));
+
+    const std::string Name = "render_ops_drain_" + std::to_string(m_NextQueueOperation.fetch_add(1, std::memory_order_relaxed));
 
     ::Engine::Base::JobSystem::It::PushBackground(
         ::Engine::Base::Runtime::EngineThreadID::RenderOpsDedicatedTh,
@@ -668,26 +678,33 @@ uint64_t QueueSubmitAndPresentAsync(
 {
     struct QueueOperation
     {
-        VkSubmitInfo2 Submit = { VK_STRUCTURE_TYPE_SUBMIT_INFO_2 };
+        VkSubmitInfo2 Submit              = { VK_STRUCTURE_TYPE_SUBMIT_INFO_2 };
         VkCommandBufferSubmitInfo Command = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO };
-        VkSemaphoreSubmitInfo Waits[4] = {};
+
+        VkSemaphoreSubmitInfo Waits[4]   = {};
         VkSemaphoreSubmitInfo Signals[2] = {};
+
         VkPresentInfoKHR Present = { VK_STRUCTURE_TYPE_PRESENT_INFO_KHR };
-        VkSemaphore PresentWait = VK_NULL_HANDLE;
+        VkSemaphore PresentWait  = VK_NULL_HANDLE;
         VkSwapchainKHR Swapchain = VK_NULL_HANDLE;
+
         uint32_t ImageIndex = 0;
+
         VkQueue Queue = VK_NULL_HANDLE;
         VkFence Fence = VK_NULL_HANDLE;
+
         uint64_t CompletionValue = 0;
     };
 
     const std::shared_ptr<QueueOperation> Operation = std::make_shared<QueueOperation>();
     Operation->Queue = p_Queue;
     Operation->Fence = p_Fence;
+
     Operation->CompletionValue = m_NextRenderCompletionValue.fetch_add(
         1,
         std::memory_order_acq_rel
     ) + 1;
+
     Operation->Submit = *p_Submit;
     Operation->Submit.pCommandBufferInfos = &Operation->Command;
     Operation->Submit.pWaitSemaphoreInfos = Operation->Waits;

@@ -183,11 +183,13 @@ void Resource::SetRejected(std::string p_Reason)
 bool Resource::TryMarkFailureReported()
 {
     bool Expected = false;
+
     return FailureReported.compare_exchange_strong(Expected, true);
 }
 
 std::shared_ptr<Resource> Acquire(std::unique_ptr<Resource> p_Resource, ResourceManageInfo p_ManageInfo)
 {
+    p_ManageInfo.UsingCache &= p_Resource->AllowsCaching();
     const std::string CacheKey = MakeCacheKey(*p_Resource);
 
     std::lock_guard<std::mutex> Lock(m_ResourcesMutex);

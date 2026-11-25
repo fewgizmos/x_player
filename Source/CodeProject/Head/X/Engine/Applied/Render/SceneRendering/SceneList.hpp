@@ -2,7 +2,8 @@
 
 #include "X/Engine/Applied/Render/Resources/Models.hpp"
 #include "X/Engine/Applied/Render/SceneRendering/Resources/Camera.hpp"
-#include "X/Engine/Applied/Render/SceneRendering/Resources/LightPoint.hpp"
+
+#include "X/Engine/Applied/Render/Resources/LightPoint.hpp"
 
 #include <glm/mat4x4.hpp>
 
@@ -16,7 +17,13 @@ namespace Engine::Applied::Render::SceneRendering::SceneList
 using Model         = ::Engine::Applied::Render::Resources::Models::Model;
 using ModelSnapshot = ::Engine::Applied::Render::Resources::Models::ModelSnapshot;
 using Camera        = ::Engine::Applied::Render::SceneRendering::Resources::Camera;
-using LightInstance = ::Engine::Applied::Render::SceneRendering::Resources::LightInstance;
+
+struct LightInstance
+{
+    ::Engine::Util::Applied::ResourceHandle<::Engine::Applied::Render::Resources::LightPoint> Light;
+
+    glm::mat4 AppliedTransform{1.0f};
+};
 
 struct ModelEntry
 {

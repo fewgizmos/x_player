@@ -31,13 +31,13 @@ Registry& GetRegistry()
 
 void Add(std::vector<Entry>& p_Entries, std::string p_Name, std::function<void()> p_Callback, int p_Order)
 {
-    X_ASSERT(!p_Callback, "Bootstrap callback is empty: " + p_Name);
+    X_ASSERT(!p_Callback, "bootstrap callback is empty: " + p_Name);
 
     X_ASSERT(std::any_of(p_Entries.begin(), p_Entries.end(),
         [&p_Name](const Entry& Item) {
             return Item.Name == p_Name;
         }),
-        "Bootstrap name is already used: " + p_Name);
+        "bootstrap name is already used: " + p_Name);
 
     p_Entries.push_back({std::move(p_Name), p_Order, std::move(p_Callback), GetRegistry().NextSequence++});
 }

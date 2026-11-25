@@ -1,6 +1,7 @@
 #pragma once
 
 #include "X/Engine/Applied/Render/SceneRendering/Resources/Camera.hpp"
+
 #include "X/Engine/Applied/Scene/Volume/Volume.hpp"
 
 namespace Engine::Applied::Scene::Volume

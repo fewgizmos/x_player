@@ -12,7 +12,7 @@ inline std::string ReadRaw(const std::string& p_Path)
 {
     std::ifstream File(p_Path, std::ios::ate | std::ios::binary);
 
-    X_ASSERT(!File.is_open(), "Failed to open file: " + p_Path);
+    X_ASSERT(!File.is_open(), "failed to open file: " + p_Path);
 
     std::string Content(static_cast<size_t>(File.tellg()), '\0');
 
