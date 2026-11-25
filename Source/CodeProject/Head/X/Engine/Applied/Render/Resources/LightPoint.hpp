@@ -73,6 +73,4 @@ private:
 VkDescriptorSetLayout GetLightSetLayout();
 VkDescriptorSetLayout GetGeometrySetLayout();
 
-::Engine::Util::Applied::ResourceHandle<Shaders::Shader> MakeStdLightShader();
-
 }

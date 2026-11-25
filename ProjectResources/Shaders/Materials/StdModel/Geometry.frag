@@ -1,6 +1,6 @@
 #version 450
 
-#include "Materials/StdModel/Surface.glsl"
+#include "Materials/StdModel/Service/Surface.glsl"
 
 layout(location = 0) out vec4 OutColor;
 layout(location = 1) out vec4 OutNormal;

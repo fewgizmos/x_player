@@ -1,7 +1,7 @@
 #ifndef X_STD_MODEL_SURFACE
 #define X_STD_MODEL_SURFACE
 
-#include "Materials/StdModel/ModelDraw.glsl"
+#include "Materials/StdModel/Service/ModelDraw.glsl"
 
 #include "Util/Head/BindlessTextures.glsl"
 

@@ -46,6 +46,8 @@ struct ModelCreateInfo
         ::Engine::Applied::Render::Resources::Shaders::Shader> Shader;
     ::Engine::Util::Applied::ResourceHandle<
         ::Engine::Applied::Render::Resources::Shaders::Shader> TransparentShader;
+    ::Engine::Util::Applied::ResourceHandle<
+        ::Engine::Applied::Render::Resources::Shaders::Shader> LightShader;
 };
 
 struct ModelPart

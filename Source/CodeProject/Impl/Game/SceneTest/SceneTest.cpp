@@ -164,12 +164,12 @@ void Init()
     auto& Pipeline = Shader.Graphics;
     Pipeline.ColorFormats = {Configs::Static::Graphics::GBUFFER_ALBEDO_FORMAT, Configs::Static::Graphics::GBUFFER_NORMAL_FORMAT};
     Pipeline.DepthFormat  = Configs::Static::Graphics::DEPTH_FORMAT;
-    Pipeline.DynamicFaces            = true;
+    Pipeline.DynamicFaces = true;
 
-    Pipeline.PushConstantSize        = sizeof(Resources::Models::DrawConstants);
-    Pipeline.PushConstantStages      = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    Pipeline.PushConstantSize   = sizeof(Resources::Models::DrawConstants);
+    Pipeline.PushConstantStages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 
-    Pipeline.SetLayouts              = {Resources::Textures::GetBindlessSetLayout()};
+    Pipeline.SetLayouts = {Resources::Textures::GetBindlessSetLayout()};
 
     Pipeline.ModelInstanceTransforms = true;
     Pipeline.VertexBindings = {{1, sizeof(DrawInstance), VK_VERTEX_INPUT_RATE_INSTANCE}};
@@ -181,20 +181,37 @@ void Init()
     }
 
     Resources::Shaders::ShaderCreateInfo Transparent = Shader;
-    Transparent.FragmentFile = "Materials/StdModel/Transparent.frag";
+    Transparent.FragmentFile = "Materials/StdModel/Service/Transparent.frag";
     Transparent.Graphics.ColorFormats = {Configs::Static::Graphics::SCENE_COLOR_FORMAT};
     Transparent.Graphics.SetLayouts.push_back(Resources::GetLightSetLayout());
     Transparent.Graphics.AlphaBlend = true;
     Transparent.Graphics.DepthWrite = false;
     Transparent.Queue = Resources::Shaders::RenderQueue::Blended;
 
-    const Util::Applied::ResourceHandle<Resources::Shaders::Shader> ModelShader(std::move(Shader));
+    Resources::Shaders::ShaderCreateInfo Lighting;
+    Lighting.VertexFile   = "Materials/StdModel/Light.vert";
+    Lighting.FragmentFile = "Materials/StdModel/Light.frag";
+
+    auto& LightPipeline = Lighting.Graphics;
+    LightPipeline.ColorFormats = {Configs::Static::Graphics::SCENE_COLOR_FORMAT};
+    LightPipeline.CullMode     = VK_CULL_MODE_NONE;
+    LightPipeline.DepthWrite   = false;
+    LightPipeline.SetLayouts   = {
+        Resources::Textures::GetBindlessSetLayout(), Resources::GetLightSetLayout(), Resources::GetGeometrySetLayout()
+    };
+    LightPipeline.AlphaBlend = true;
+
+    LightPipeline.SrcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+    LightPipeline.DstColorBlendFactor = VK_BLEND_FACTOR_ONE;
+
+    const Util::Applied::ResourceHandle<Resources::Shaders::Shader> ModelShader(      std::move(Shader));
     const Util::Applied::ResourceHandle<Resources::Shaders::Shader> TransparentShader(std::move(Transparent));
+    const Util::Applied::ResourceHandle<Resources::Shaders::Shader> LightShader(      std::move(Lighting));
 
     const std::string& ModelsDir = Configs::Static::Contents::GLTF_MODELS_DIR;
 
-    const ModelInfo Sponza{ModelsDir + "Sponza/Sponza.gltf",                                    ModelShader, TransparentShader};
-    const ModelInfo Dagger{ModelsDir + "ornate_medieval_dagger/ornate_medieval_dagger_1k.gltf", ModelShader, TransparentShader};
+    const ModelInfo Sponza{ModelsDir + "Sponza/Sponza.gltf",                                    ModelShader, TransparentShader, LightShader};
+    const ModelInfo Dagger{ModelsDir + "ornate_medieval_dagger/ornate_medieval_dagger_1k.gltf", ModelShader, TransparentShader, LightShader};
 
     m_ModeledEntities = {
         Scene::It::CreateEntity<ModeledEntity>(
@@ -206,17 +223,20 @@ void Init()
     };
 
     LightPoint KeyLight;
+    KeyLight.Shader    = LightShader;
     KeyLight.Type      = LightType::Directional;
     KeyLight.Color     = {1.0f, 0.94f, 0.85f};
     KeyLight.Intensity = 2.8f;
 
     LightPoint FillLight;
+    FillLight.Shader    = LightShader;
     FillLight.Type      = LightType::Point;
     FillLight.Color     = {0.08f, 0.225f, 1.0f};
     FillLight.Intensity = 0.85f;
     FillLight.Range     = 1.3f;
 
     LightPoint SkyLight;
+    SkyLight.Shader         = LightShader;
     SkyLight.Type           = LightType::Sky;
     SkyLight.Intensity      = 0.24f;
     SkyLight.ShowBackground = false;

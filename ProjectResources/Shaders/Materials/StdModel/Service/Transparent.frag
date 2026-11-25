@@ -1,6 +1,6 @@
 #version 450
 
-#include "Materials/StdModel/Surface.glsl"
+#include "Materials/StdModel/Service/Surface.glsl"
 
 #include "Materials/StdModel/Lighting.glsl"
 

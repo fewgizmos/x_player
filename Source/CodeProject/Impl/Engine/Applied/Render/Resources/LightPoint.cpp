@@ -1,7 +1,5 @@
 #include "X/Engine/Applied/Render/Resources/LightPoint.hpp"
 
-#include "X/Project/Configs/Static.hpp"
-
 #include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
 #include "X/Engine/Base/Render/Vulkan/Descriptors.hpp"
 
@@ -55,31 +53,20 @@ const CleanRegistrar CleanupRegistration("light_layouts_cleanup", CleanupLayouts
 VkDescriptorSetLayout GetLightSetLayout() { return m_LightLayout; }
 VkDescriptorSetLayout GetGeometrySetLayout() { return m_GeometryLayout; }
 
-::Engine::Util::Applied::ResourceHandle<Shaders::Shader> MakeStdLightShader()
-{
-    Shaders::ShaderCreateInfo Info;
-    Info.VertexFile   = "Materials/StdModel/Light.vert";
-    Info.FragmentFile = "Materials/StdModel/Light.frag";
-
-    auto& Pipeline = Info.Graphics;
-    Pipeline.ColorFormats = {Configs::Static::Graphics::SCENE_COLOR_FORMAT};
-    Pipeline.CullMode     = VK_CULL_MODE_NONE;
-    Pipeline.DepthWrite   = false;
-    Pipeline.SetLayouts   = {Textures::GetBindlessSetLayout(), m_LightLayout, m_GeometryLayout};
-    Pipeline.AlphaBlend   = true;
-
-    Pipeline.SrcColorBlendFactor = VK_BLEND_FACTOR_ONE;
-    Pipeline.DstColorBlendFactor = VK_BLEND_FACTOR_ONE;
-
-    return ::Engine::Util::Applied::ResourceHandle<Shaders::Shader>(std::move(Info));
-}
-
 LightPoint::LightPoint(CreateInfo p_Info) : Resource("light"), m_Info(std::move(p_Info))
 {
-    if (!m_Info.Shader) { m_Info.Shader = MakeStdLightShader(); }
 }
 
-void LightPoint::BeginLoad() { Update(); }
+void LightPoint::BeginLoad()
+{
+    if (!m_Info.Shader) {
+        SetFailed("light requires a shader resource");
+
+        return;
+    }
+
+    Update();
+}
 
 void LightPoint::Update()
 {

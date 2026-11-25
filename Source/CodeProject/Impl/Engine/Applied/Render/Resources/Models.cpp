@@ -46,16 +46,20 @@ namespace
 std::string MakeKey(const ModelCreateInfo& p_Info)
 {
     const std::string ShaderKey = p_Info.Shader ? p_Info.Shader->GetKey() : std::string();
+    const std::string TransparentKey = p_Info.TransparentShader ? p_Info.TransparentShader->GetKey() : std::string();
     std::string Key = p_Info.GltfPath + ":" + std::to_string(ShaderKey.size()) + ":" + ShaderKey;
+    Key += std::to_string(TransparentKey.size()) + ":" + TransparentKey;
 
-    if (p_Info.TransparentShader) { Key += p_Info.TransparentShader->GetKey(); }
+    if (p_Info.LightShader) { Key += p_Info.LightShader->GetKey(); }
 
     return Key;
 }
 
-PunctualLight MakeLight(const fastgltf::Light& p_Light, const glm::mat4& p_Transform)
+PunctualLight MakeLight(const fastgltf::Light& p_Light, const glm::mat4& p_Transform,
+    const ::Engine::Util::Applied::ResourceHandle<Shaders::Shader>& p_Shader)
 {
     LightPointCreateInfo Light;
+    Light.Shader = p_Shader;
 
     switch (p_Light.type) {
     case fastgltf::LightType::Point:       Light.Type = LightType::Point;       break;
@@ -1017,7 +1021,7 @@ void Model::BeginLoad()
                     const fastgltf::Scene& Scene = Asset.scenes[SceneIndex];
                     std::function<void(std::size_t, const glm::mat4&)> VisitNode;
 
-                    VisitNode = [&VisitNode, &Asset, &PartIndices, Data](
+                    VisitNode = [&VisitNode, &Asset, &PartIndices, &Info, Data](
                         std::size_t p_NodeIndex, const glm::mat4& p_ParentTransform
                     ) {
                         const fastgltf::Node& Node = Asset.nodes[p_NodeIndex];
@@ -1032,7 +1036,9 @@ void Model::BeginLoad()
                                 throw std::runtime_error("node light index is out of range");
                             }
 
-                            Data->Lights.push_back(MakeLight(Asset.lights[Node.lightIndex.value()], WorldTransform));
+                            Data->Lights.push_back(MakeLight(
+                                Asset.lights[Node.lightIndex.value()], WorldTransform, Info.LightShader
+                            ));
                         }
 
                         if (Node.meshIndex.has_value()) {
