@@ -16,7 +16,22 @@ file(GLOB_RECURSE XP_HEADERS CONFIGURE_DEPENDS
 )
 
 find_package(Threads REQUIRED)
-find_package(PNG REQUIRED)
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    find_library(X_PNG_STATIC_LIBRARY NAMES libpng.a libpng16.a REQUIRED)
+    find_library(X_ZLIB_STATIC_LIBRARY NAMES libz.a REQUIRED)
+
+    set(PNG_LIBRARY_RELEASE "${X_PNG_STATIC_LIBRARY}")
+    set(PNG_LIBRARY_DEBUG   "${X_PNG_STATIC_LIBRARY}")
+
+    set(ZLIB_LIBRARY_RELEASE "${X_ZLIB_STATIC_LIBRARY}")
+    set(ZLIB_LIBRARY_DEBUG   "${X_ZLIB_STATIC_LIBRARY}")
+
+    find_package(ZLIB REQUIRED MODULE)
+    find_package(PNG REQUIRED MODULE)
+else()
+    find_package(PNG REQUIRED)
+endif()
 
 add_executable(XProjectExecutable
     ${XP_SOURCES}
@@ -41,3 +56,7 @@ target_link_libraries(XProjectExecutable PRIVATE
     PNG::PNG
     ${CMAKE_DL_LIBS}
 )
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang)$")
+    target_link_options(XProjectExecutable PRIVATE -static-libstdc++ -static-libgcc)
+endif()
