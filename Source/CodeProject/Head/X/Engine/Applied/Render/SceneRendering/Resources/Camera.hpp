@@ -1,5 +1,7 @@
 #pragma once
 
+#include "X/Project/Configs/Static.hpp"
+
 #include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
 
@@ -17,9 +19,9 @@ struct Camera
 
     float Fov              = 1.04719755f;
     float Aspect           = 1.0f;
-    float NearPlane        = 0.1f;
-    float FarPlane         = 10000.0f;
-    float OrthographicSize = 10.0f;
+    float NearPlane        = 0.1f * Configs::Static::Scene::UnitsPerMeter;
+    float FarPlane         = 10000.0f * Configs::Static::Scene::UnitsPerMeter;
+    float OrthographicSize = 10.0f * Configs::Static::Scene::UnitsPerMeter;
 
     void Recalculate();
     void UpdatePerspectiveProjection();

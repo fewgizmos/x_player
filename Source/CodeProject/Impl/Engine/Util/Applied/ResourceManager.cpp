@@ -25,8 +25,9 @@ namespace
 {
 
 std::mutex m_ResourcesMutex;
+
 std::unordered_map<std::string, std::weak_ptr<Resource>> m_Resources;
-std::vector<std::weak_ptr<Resource>> m_ManagedResources;
+std::vector<std::weak_ptr<Resource>>                     m_ManagedResources;
 
 struct RetiredResource
 {
@@ -34,7 +35,7 @@ struct RetiredResource
     int FramesLeft = ::Engine::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT;
 };
 
-std::mutex m_RetiredMutex;
+std::mutex                   m_RetiredMutex;
 std::vector<RetiredResource> m_Retired;
 
 void Destroy(Resource* p_Resource)
@@ -244,14 +245,14 @@ void UpdateAll()
             Resource->SetFailed(Error.what());
         }
         catch (...) {
-            Resource->SetFailed("Unknown resource update failure");
+            Resource->SetFailed("unknown resource update failure");
         }
 
 #ifdef X_DEV_MODE
         if ((Resource->GetState() == ResourceState::Failed
                 || Resource->GetState() == ResourceState::Rejected)
             && Resource->TryMarkFailureReported()) {
-            std::cerr << "Resource failed: "
+            std::cerr << "resource failed: "
                       << Resource->GetTypeName() << ":" << Resource->GetKey();
 
             if (!Resource->GetFailureReason().empty()) {

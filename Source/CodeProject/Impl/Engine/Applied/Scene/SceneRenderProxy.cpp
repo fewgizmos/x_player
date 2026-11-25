@@ -1,4 +1,7 @@
 #include "X/Engine/Applied/Scene/SceneRenderProxy.hpp"
+#include "X/Project/Configs/Static.hpp"
+
+#include <glm/ext/matrix_transform.hpp>
 
 #include "X/Engine/Util/Applied/Scene/Transform/CameraApplier.hpp"
 #include "X/Engine/Util/Applied/Scene/Transform/ModelApplier.hpp"
@@ -126,6 +129,8 @@ void CaptureVolume(SceneList::Frame& p_Frame, const SceneVolume& p_Volume)
             p_Volume.GetWorldTransform()
         );
 
+        // glTF geometry and node translations are expressed in meters.
+        Entry.AppliedTransform = glm::scale(Entry.AppliedTransform, glm::vec3(Configs::Static::Scene::UnitsPerMeter));
         CaptureModelLights(p_Frame, Entry);
 
         if (!Entry.Snapshot->Parts.empty()) { p_Frame.Models.push_back(std::move(Entry)); }

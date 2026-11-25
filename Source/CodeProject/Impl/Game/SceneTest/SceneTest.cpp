@@ -31,14 +31,15 @@ namespace
 
 namespace Scene     = Applied::Scene;
 namespace Resources = Applied::Render::Resources;
+namespace Inputs    = Base::Viewport::Inputs;
 
 using ModelInfo       = Resources::Models::ModelCreateInfo;
 using CameraComponent = Scene::Volume::SceneVolCameraInstance;
 using LightPoint      = Applied::Render::SceneRendering::Resources::LightPoint;
 using LightType       = Applied::Render::SceneRendering::Resources::LightType;
+using Key             = Inputs::KeyboardInputCodes;
 
-namespace Inputs = Base::Viewport::Inputs;
-using Key        = Inputs::KeyboardInputCodes;
+using Configs::Static::Scene::UnitsPerMeter;
 
 class ModeledEntity final : public Scene::SceneEntity
 {
@@ -46,8 +47,9 @@ public:
     ModeledEntity(const ModelInfo& p_Model, glm::vec3 p_Position, glm::vec3 p_Rotation, float p_Scale)
     {
         auto& Volume = GetSceneVolume();
+
         auto& Transform = Volume.GetWorldTransform();
-        Transform.SetPosition(p_Position);
+        Transform.SetPosition(p_Position * UnitsPerMeter);
         Transform.SetRotation(p_Rotation);
         Transform.SetScale(glm::vec3(p_Scale));
 
@@ -62,7 +64,7 @@ public:
     {
         auto& Volume = GetSceneVolume();
         auto& Transform = Volume.GetWorldTransform();
-        Transform.SetPosition(p_Position);
+        Transform.SetPosition(p_Position * UnitsPerMeter);
         Transform.SetRotation(p_Rotation);
 
         Volume.EmplaceComponent<Scene::Volume::SceneVolLightPoint>(p_Light);
@@ -75,10 +77,9 @@ public:
     explicit CameraEntity(glm::vec3 p_Eye) : m_Component(GetSceneVolume().EmplaceComponent<CameraComponent>())
     {
         auto& Camera = m_Component.GetCamera();
-        Camera.Position  = p_Eye;
+        Camera.Position  = p_Eye * UnitsPerMeter;
         Camera.Fov       = glm::radians(50.0f);
-        Camera.NearPlane = 0.01f;
-        Camera.FarPlane  = 10.0f;
+        Camera.NearPlane = 0.01f * UnitsPerMeter;
 
         const glm::vec3 Forward = glm::normalize(glm::vec3(0, 0.13f, 0) - p_Eye);
         m_Yaw = std::atan2(Forward.z, Forward.x);
@@ -91,6 +92,10 @@ public:
     {
         auto& Camera = m_Component.GetCamera();
         const auto& Mouse = Inputs::GetMouse();
+
+        if (Mouse.ScrollY != 0.0f) {
+            m_MoveSpeed = glm::clamp(m_MoveSpeed * std::pow(1.25f, Mouse.ScrollY), 1.0f / 3.0f, 200.0f);
+        }
 
         if (Mouse.ButtonsInputCodes.IsStateSet(Inputs::MouseInputCodes::Right)) {
             constexpr float Sensitivity = 0.003f;
@@ -111,9 +116,7 @@ public:
             + Up * (KeyDown(Key::E) - KeyDown(Key::Q));
 
         if (glm::dot(Movement, Movement) > 0.0f) {
-            constexpr float Speed = 1.0f;
-
-            Camera.Position += glm::normalize(Movement) * Speed * Util::Base::Timer::Delta;
+            Camera.Position += glm::normalize(Movement) * (m_MoveSpeed * UnitsPerMeter) * Util::Base::Timer::Delta;
         }
 
         Camera.View = glm::lookAtRH(Camera.Position, Camera.Position + Forward, Up);
@@ -134,11 +137,12 @@ private:
     }
 
     CameraComponent& m_Component;
+    float m_MoveSpeed = 2.0f;
     float m_Yaw;
     float m_Pitch;
 };
 
-std::array<ModeledEntity*, 4> m_ModeledEntities{};
+std::array<ModeledEntity*, 2> m_ModeledEntities{};
 std::array<LightEntity*, 3>   m_LightEntities{};
 CameraEntity*                 m_Camera = nullptr;
 
@@ -185,6 +189,7 @@ void Init()
     Blended.Queue = Resources::Shaders::RenderQueue::Blended;
     Blended.Graphics.AlphaBlend = true;
     Blended.Graphics.DepthWrite = false;
+
     Applied::Render::SceneRendering::Passes::ModelPass::ConfigureTransparency(Blended.Graphics);
 
     const Util::Applied::ResourceHandle<Resources::Shaders::Shader> ModelShader(std::move(Shader));
@@ -192,20 +197,12 @@ void Init()
 
     const std::string& ModelsDir = Configs::Static::Contents::GLTF_MODELS_DIR;
 
-    const ModelInfo CoastalCliff{ModelsDir + "nordic_coastal_cliff_ulejebpfa_mid.glb",                ModelShader, BlendedShader};
-    const ModelInfo ForestCliff{ ModelsDir + "nordic_forest_cliff_large_xibsff1_mid.glb",             ModelShader, BlendedShader};
-    const ModelInfo Pistol{      ModelsDir + "service_pistol/service_pistol_1k.gltf",                 ModelShader, BlendedShader};
-    const ModelInfo Dagger{      ModelsDir + "ornate_medieval_dagger/ornate_medieval_dagger_1k.gltf", ModelShader, BlendedShader};
+    const ModelInfo Sponza{ModelsDir + "Sponza/Sponza.gltf",                                    ModelShader, BlendedShader};
+    const ModelInfo Dagger{ModelsDir + "ornate_medieval_dagger/ornate_medieval_dagger_1k.gltf", ModelShader, BlendedShader};
 
     m_ModeledEntities = {
         Scene::It::CreateEntity<ModeledEntity>(
-            CoastalCliff, glm::vec3(-0.32f, 0.22f, -0.46f), glm::vec3(0.0f), 0.11f
-        ),
-        Scene::It::CreateEntity<ModeledEntity>(
-            ForestCliff, glm::vec3(0.25f, 0.20f, -0.56f), glm::vec3(0.0f), 0.045f
-        ),
-        Scene::It::CreateEntity<ModeledEntity>(
-            Pistol, glm::vec3(-0.165f, 0.050f, 0.32f), glm::vec3(-35.0f, 8.0f, 0.0f), 1.0f
+            Sponza, glm::vec3(0.0f), glm::vec3(0.0f), 1.0f
         ),
         Scene::It::CreateEntity<ModeledEntity>(
             Dagger, glm::vec3(0.17f, 0.071f, 0.34f), glm::vec3(-35.0f, -8.0f, -12.0f), 1.0f

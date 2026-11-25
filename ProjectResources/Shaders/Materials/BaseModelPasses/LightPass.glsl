@@ -224,7 +224,7 @@ vec4 ResolveLighting()
             const LightData Light = Scene.Lights[Index];
 
             if (Light.Options.x >= LightHdri && Light.Options.z != 0u) {
-                const vec3 Direction = normalize(ReconstructWorld(Clip, 0.0) - ReconstructWorld(Clip, 1.0));
+                const vec3 Direction = normalize(ReconstructWorld(Clip, 0.5) - ReconstructWorld(Clip, 1.0));
 
                 return vec4(EnvironmentColor(Light, Direction) * Light.Color.rgb * Light.DirectionIntensity.w, 1.0);
             }

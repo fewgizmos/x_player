@@ -1,3 +1,5 @@
+#include <glm/ext/matrix_transform.hpp>
+
 #include "X/Engine/Applied/Render/SceneRendering/Passes/LightPass.hpp"
 
 #include "X/Project/Configs/Static.hpp"
@@ -123,7 +125,7 @@ GpuLight PackLight(const LightInstance& p_Instance, uint32_t p_TextureIndex)
     const float InnerAngle = std::clamp(Light.InnerConeAngle, 0.0f, OuterAngle);
 
     return {
-        glm::vec4(glm::vec3(Transform[3]), std::max(Light.Range, 0.0f)),
+        glm::vec4(glm::vec3(Transform[3]) * Configs::Static::Scene::MetersPerUnit, std::max(Light.Range, 0.0f)),
         glm::vec4(Direction, std::max(Light.Intensity, 0.0f)),
         glm::vec4(glm::max(Light.Color, glm::vec3(0.0f)), 0.0f),
         glm::vec4(AxisX, std::max(Light.Size.x, 0.0f)),
@@ -247,8 +249,9 @@ void Prepare(const SceneList::Frame& p_Frame, VkImageView p_Albedo, VkImageView 
         Lights.push_back(PackLight(Instance, TextureIndex));
     }
 
+    const glm::mat4 WorldToMeters = glm::scale(glm::mat4(1.0f), glm::vec3(Configs::Static::Scene::MetersPerUnit));
     const FrameData Header{
-        p_Frame.ActiveCamera->InverseViewProjection,
+        WorldToMeters * p_Frame.ActiveCamera->InverseViewProjection,
         glm::uvec4(static_cast<uint32_t>(Lights.size()), m_HdriSampler, 0u, 0u)
     };
 

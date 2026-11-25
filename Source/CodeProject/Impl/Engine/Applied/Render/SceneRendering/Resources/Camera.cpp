@@ -1,5 +1,7 @@
 #include "X/Engine/Applied/Render/SceneRendering/Resources/Camera.hpp"
 
+#include <cmath>
+
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/matrix.hpp>
 
@@ -14,8 +16,14 @@ void Camera::Recalculate()
 
 void Camera::UpdatePerspectiveProjection()
 {
-    Projection = glm::perspectiveRH_ZO(Fov, Aspect, FarPlane, NearPlane);
-    Projection[1][1] *= -1.0f;
+    const float FocalLength = 1.0f / std::tan(Fov * 0.5f);
+
+    Projection = glm::mat4(0.0f);
+    Projection[0][0] = FocalLength / Aspect;
+    Projection[1][1] = -FocalLength;
+    Projection[2][3] = -1.0f;
+    Projection[3][2] = NearPlane;
+
     Recalculate();
 }
 
@@ -61,6 +69,7 @@ Camera BuildOrthographic(
         -HalfHeight, HalfHeight,
         p_FarPlane, p_NearPlane
     );
+
     Result.Projection[1][1] *= -1.0f;
 
     Result.Position = glm::vec3(p_Local[3]);

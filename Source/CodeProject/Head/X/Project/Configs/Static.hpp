@@ -84,6 +84,8 @@ namespace Scene
 {
 
 inline constexpr float MetersPerUnit = 1.0f;
+static_assert(MetersPerUnit > 0.0f);
+inline constexpr float UnitsPerMeter = 1.0f / MetersPerUnit;
 
 }
 
