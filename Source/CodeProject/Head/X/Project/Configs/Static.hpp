@@ -30,9 +30,9 @@ inline constexpr bool WINDOW_CURSOR_CAPTURED = false;
 namespace Contents
 {
 
-inline const std::string BASE_CONTENT_DIR = "Resources/";
+inline const std::string BASE_CONTENT_DIR = "raw_contents/";
 
-inline const std::string SHADERS_DIR     = BASE_CONTENT_DIR + "Shaders/";
+inline const std::string SHADERS_DIR     = BASE_CONTENT_DIR + "Shader/";
 inline const std::string GLTF_MODELS_DIR = BASE_CONTENT_DIR + "3D/";
 
 }
@@ -41,7 +41,7 @@ inline const std::string GLTF_MODELS_DIR = BASE_CONTENT_DIR + "3D/";
 namespace Graphics
 {
 
-inline constexpr unsigned char BACKGROUND_RGB[3] = {13, 17, 23};
+inline constexpr unsigned char BACKGROUND_RGB[3] = {0x0d, 0x11, 0x17};
 
 inline constexpr int MAX_FRAMES_IN_FLIGHT = 4;
 inline constexpr bool VSYNC               = true;

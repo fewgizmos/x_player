@@ -41,26 +41,28 @@ namespace
 namespace RenderBase = ::Engine::Base::Render;
 
 using ModelPart        = ::Engine::Applied::Render::Resources::Models::ModelPart;
+using Vertex           = ::Engine::Applied::Render::Resources::Meshes::Vertex;
 using MeshSnapshot     = ::Engine::Applied::Render::Resources::Meshes::MeshSnapshot;
 using MaterialSnapshot = ::Engine::Applied::Render::Resources::Materials::MaterialSnapshot;
 using ShaderSnapshot   = ::Engine::Applied::Render::Resources::Shaders::ShaderSnapshot;
 using AlphaMode        = ::Engine::Applied::Render::Resources::Materials::AlphaMode;
 using DrawConstants    = ::Engine::Applied::Render::Resources::Models::DrawConstants;
 using Instance         = ::Engine::Applied::Render::Resources::Models::DrawInstance;
-using Vertex = ::Engine::Applied::Render::Resources::Meshes::Vertex;
 
-static_assert(sizeof(Instance) == 7 * sizeof(glm::vec4));
+static_assert(sizeof(Instance)      == 7 * sizeof(glm::vec4));
 static_assert(sizeof(DrawConstants) == 96);
-static_assert(offsetof(DrawConstants, Materials) == 64);
-static_assert(offsetof(DrawConstants, Vertices) == 72);
+
+static_assert(offsetof(DrawConstants, Materials)      == 64);
+static_assert(offsetof(DrawConstants, Vertices)       == 72);
 static_assert(offsetof(DrawConstants, ExtraTexCoords) == 80);
-static_assert(offsetof(DrawConstants, MaterialIndex) == 88);
+static_assert(offsetof(DrawConstants, MaterialIndex)  == 88);
 
 static_assert(sizeof(Vertex) == 96);
-static_assert(offsetof(Vertex, Normal) == 16);
+
+static_assert(offsetof(Vertex, Normal)  == 16);
 static_assert(offsetof(Vertex, Tangent) == 32);
-static_assert(offsetof(Vertex, Color) == 48);
-static_assert(offsetof(Vertex, Joints) == 64);
+static_assert(offsetof(Vertex, Color)   == 48);
+static_assert(offsetof(Vertex, Joints)  == 64);
 static_assert(offsetof(Vertex, Weights) == 80);
 
 struct Draw
@@ -97,8 +99,6 @@ struct InstanceBuffers
 };
 
 std::array<InstanceBuffers, Project::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT> m_InstanceBuffers;
-
-
 
 void Cleanup();
 
@@ -258,14 +258,18 @@ void Render(const SceneList::Frame& p_Scene, bool p_Transparent)
     });
 
     const VkCommandBuffer Cmd = RenderBase::Vk::Frame::GetCurrentFrame().CommandBuffer;
+
     const auto& Disp = RenderBase::Vk::Device::GetDisp();
     const VkBuffer InstanceBuffer = UploadInstances(Draws, p_Transparent);
+
     const VkDeviceSize Offset = 0;
+
     const VkDeviceAddress Materials = ::Engine::Applied::Render::Resources::Materials::GetBufferAddress();
 
     Disp.cmdBindVertexBuffers(Cmd, 1, 1, &InstanceBuffer, &Offset);
 
     RenderBase::Pipeline BoundPipeline{};
+
     VkBuffer IndexBuffer = VK_NULL_HANDLE;
 
     const VkDescriptorSet Sets[] = {
@@ -274,7 +278,7 @@ void Render(const SceneList::Frame& p_Scene, bool p_Transparent)
 
     for (std::size_t First = 0; First < Draws.size();) {
         const Draw& Entry = Draws[First];
-        std::size_t End = First + 1;
+        std::size_t End   = First + 1;
 
         while (Entry.Instanced && End < Draws.size() && Draws[End].GetBatchKey() == Entry.GetBatchKey()) {
             ++End;
@@ -306,17 +310,20 @@ void Render(const SceneList::Frame& p_Scene, bool p_Transparent)
             Disp.cmdBindIndexBuffer(Cmd, IndexBuffer, 0, VK_INDEX_TYPE_UINT32);
         }
 
-        glm::mat4 Transform                        = p_Scene.ActiveCamera->ViewProjection;
+        glm::mat4 Transform = p_Scene.ActiveCamera->ViewProjection;
 
         if (!Entry.Instanced) { Transform *= Entry.Data.World; }
 
         const DrawConstants Constants{
             Transform,
             Materials,
+
             Entry.Mesh->VertexBuffer.Address,
-            Entry.Mesh->ExtraTexCoordCount == 0 ? 0 : Entry.Mesh->VertexBuffer.Address
-                + sizeof(Vertex) * Entry.Mesh->VertexCount,
+
+            Entry.Mesh->ExtraTexCoordCount == 0 ? 0 : Entry.Mesh->VertexBuffer.Address + sizeof(Vertex) * Entry.Mesh->VertexCount,
+
             Entry.Material->Index,
+
             Entry.Mesh->ExtraTexCoordCount
         };
 

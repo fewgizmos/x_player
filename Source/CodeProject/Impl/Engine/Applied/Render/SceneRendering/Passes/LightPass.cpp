@@ -36,11 +36,13 @@ namespace
 
 namespace RenderBase = ::Engine::Base::Render;
 namespace Vk         = RenderBase::Vk;
-namespace Textures   = ::Engine::Applied::Render::Resources::Textures;
+
+namespace Textures = ::Engine::Applied::Render::Resources::Textures;
 
 namespace LightResources = ::Engine::Applied::Render::Resources;
-using LightInstance      = SceneList::LightInstance;
-using LightType          = LightResources::LightType;
+
+using LightInstance = SceneList::LightInstance;
+using LightType     = LightResources::LightType;
 
 constexpr uint32_t FrameCount = Project::Configs::Static::Graphics::MAX_FRAMES_IN_FLIGHT;
 
@@ -70,14 +72,17 @@ struct alignas(16) GpuLight
 };
 
 static_assert(sizeof(FrameData) == 80);
-static_assert(sizeof(GpuLight) == 160);
+static_assert(sizeof(GpuLight)  == 160);
 
 struct FrameResources
 {
     std::vector<::Engine::Util::Applied::ResourceHandle<LightResources::Shaders::Shader>> Shaders;
+
     RenderBase::Buffer Buffer;
-    VkDescriptorSet    LightSet = VK_NULL_HANDLE;
-    VkDescriptorSet    GeometrySet = VK_NULL_HANDLE;
+
+    VkDescriptorSet LightSet    = VK_NULL_HANDLE;
+    VkDescriptorSet GeometrySet = VK_NULL_HANDLE;
+
     std::vector<::Engine::Util::Applied::ResourceHandle<Textures::Texture>> Textures;
 };
 
@@ -104,15 +109,14 @@ glm::vec3 NormalizeAxis(glm::vec3 p_Axis, glm::vec3 p_Fallback)
 
 GpuLight PackLight(const LightInstance& p_Instance, uint32_t p_TextureIndex)
 {
-    const auto& Light = p_Instance.Light->GetInfo();
+    const auto& Light    = p_Instance.Light->GetInfo();
     const auto& Transform = p_Instance.AppliedTransform;
 
     const glm::vec3 Direction = NormalizeAxis(-glm::vec3(Transform[2]), {0.0f, 0.0f, -1.0f});
 
     const glm::vec3 WorldX(Transform[0]);
 
-    const glm::vec3 Reference = std::abs(Direction.y) < 0.99f
-        ? glm::vec3(0.0f, 1.0f, 0.0f) : glm::vec3(0.0f, 0.0f, 1.0f);
+    const glm::vec3 Reference = std::abs(Direction.y) < 0.99f ? glm::vec3(0.0f, 1.0f, 0.0f) : glm::vec3(0.0f, 0.0f, 1.0f);
 
     const glm::vec3 AxisX = NormalizeAxis(WorldX - Direction * glm::dot(WorldX, Direction),
         glm::normalize(glm::cross(Direction, Reference)));
@@ -127,34 +131,47 @@ GpuLight PackLight(const LightInstance& p_Instance, uint32_t p_TextureIndex)
 
     return {
         glm::vec4(glm::vec3(Transform[3]) * Project::Configs::Static::Scene::MetersPerUnit, std::max(Light.Range, 0.0f)),
+
         glm::vec4(Direction, std::max(Light.Intensity, 0.0f)),
+
         glm::vec4(glm::max(Light.Color, glm::vec3(0.0f)), 0.0f),
+
         glm::vec4(AxisX, Size.x),
         glm::vec4(AxisY, Size.y),
-        glm::vec4(std::cos(InnerAngle), std::cos(OuterAngle),
-            (Light.Type == LightType::Tube ? Size.y : Size.x) * 0.5f, Size.x),
+
+        glm::vec4(std::cos(InnerAngle), std::cos(OuterAngle), (Light.Type == LightType::Tube ? Size.y : Size.x) * 0.5f, Size.x),
+
         glm::vec4(Light.SkyColor, 0.0f),
         glm::vec4(Light.HorizonColor, 0.0f),
         glm::vec4(Light.GroundColor, 0.0f),
+
         glm::uvec4(static_cast<uint32_t>(Light.Type), p_TextureIndex, Light.ShowBackground ? 1u : 0u, 0u)
     };
 }
 
 void Render(const SceneList::Frame&)
 {
-    const auto& Frame = Vk::Frame::GetCurrentFrame();
-    const auto& Disp = Vk::Device::GetDisp();
+    const auto& Frame          = Vk::Frame::GetCurrentFrame();
+    const auto& Disp  = Vk::Device::GetDisp();
+
     const auto& Resources = m_Frames[Vk::Frame::GetCurrentFrameIndex()];
 
     const VkDescriptorSet Sets[] = { Textures::GetBindlessSet(), Resources.LightSet, Resources.GeometrySet };
 
     for (uint32_t Index = 0; Index < Resources.Shaders.size(); ++Index) {
         const auto Shader = Resources.Shaders[Index]->GetSnapshot();
+
         if (!Shader) { continue; }
+
         const auto& Pipeline = Shader->Graphics;
+
         Disp.cmdBindPipeline(Frame.CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, Pipeline.Handle);
-        Disp.cmdBindDescriptorSets(Frame.CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, Pipeline.Layout,
-            0, 3, Sets, 0, nullptr);
+
+        Disp.cmdBindDescriptorSets(
+            Frame.CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, Pipeline.Layout,
+            0, 3, Sets, 0, nullptr
+        );
+
         Disp.cmdDraw(Frame.CommandBuffer, 3, 1, 0, Index);
     }
 }
@@ -169,19 +186,21 @@ void Init()
     });
 
     for (auto& Frame : m_Frames) {
-        Frame.LightSet = Vk::Descriptors::AllocateSet(m_Pool, LightResources::GetLightSetLayout());
+        Frame.LightSet    = Vk::Descriptors::AllocateSet(m_Pool, LightResources::GetLightSetLayout());
         Frame.GeometrySet = Vk::Descriptors::AllocateSet(m_Pool, LightResources::GetGeometrySetLayout());
     }
 
     RenderBase::SamplerCreateInfo Sampler;
-    Sampler.WrapV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    Sampler.WrapV      = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     Sampler.Anisotropy = false;
+
     m_HdriSampler = Vk::Samplers::Make(Sampler);
 
     Sampler.MagFilter = VK_FILTER_NEAREST;
     Sampler.MinFilter = VK_FILTER_NEAREST;
-    Sampler.MipMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
-    Sampler.WrapU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    Sampler.MipMode   = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    Sampler.WrapU     = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+
     m_GeometrySampler = Vk::Samplers::Get(Vk::Samplers::Make(Sampler));
 
     SceneRenderPassPool::Register("light", SceneRenderPassPool::Phase::Light, Render, 900);
@@ -193,6 +212,7 @@ void Cleanup()
 
     for (auto& Frame : m_Frames) {
         RenderBase::ResourceLoader::DestroyBuffer(Frame.Buffer);
+
         Frame = {};
     }
 
@@ -214,8 +234,11 @@ void Prepare(const SceneList::Frame& p_Frame, VkImageView p_Albedo, VkImageView 
         uint32_t TextureIndex = UINT32_MAX;
 
         if (!Instance.Light.IsReady()) { continue; }
+
         const auto& Light = Instance.Light->GetInfo();
+
         if (!Light.Shader.IsReady()) { continue; }
+
         if (Light.Type == LightType::Hdri) {
             const auto& Hdri = Light.Hdri;
 
@@ -240,8 +263,8 @@ void Prepare(const SceneList::Frame& p_Frame, VkImageView p_Albedo, VkImageView 
     };
 
     const VkDeviceSize LightBytes = Lights.size() * sizeof(GpuLight);
-    const VkDeviceSize Bytes = sizeof(Header) + LightBytes;
-    const VkDeviceSize MaxSize = Vk::Device::GetPhysical().properties.limits.maxStorageBufferRange;
+    const VkDeviceSize Bytes      = sizeof(Header) + LightBytes;
+    const VkDeviceSize MaxSize    = Vk::Device::GetPhysical().properties.limits.maxStorageBufferRange;
 
     X_ASSERT(Bytes > MaxSize, "scene lights exceed the storage buffer range");
 
@@ -251,6 +274,7 @@ void Prepare(const SceneList::Frame& p_Frame, VkImageView p_Albedo, VkImageView 
         );
 
         RenderBase::ResourceLoader::DestroyBuffer(Frame.Buffer);
+
         Frame.Buffer = Buffer;
 
         Vk::Descriptors::WriteBuffer(Frame.LightSet, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, Frame.Buffer);
@@ -266,8 +290,10 @@ void Prepare(const SceneList::Frame& p_Frame, VkImageView p_Albedo, VkImageView 
     const VkImageView Views[] = {p_Albedo, p_Normal, p_Depth};
 
     for (uint32_t Index = 0; Index < 3; ++Index) {
-        Vk::Descriptors::WriteImage(Frame.GeometrySet, Index, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-            Views[Index], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, m_GeometrySampler);
+        Vk::Descriptors::WriteImage(
+            Frame.GeometrySet, Index, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            Views[Index], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, m_GeometrySampler
+        );
     }
 }
 

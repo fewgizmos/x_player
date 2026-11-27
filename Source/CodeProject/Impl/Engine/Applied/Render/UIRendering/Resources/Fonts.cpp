@@ -1,5 +1,7 @@
 #include "X/Engine/Applied/Render/UIRendering/Resources/Fonts.hpp"
 
+#include "X/Project/Configs/Static.hpp"
+
 #include "X/Engine/Base/BootstrapManager/DeferredBootstrapRegistration.hpp"
 
 #include "X/Engine/Util/Base/Assert.hpp"
@@ -22,22 +24,30 @@ namespace
 struct FontSource
 {
     std::string Path;
+
     float Size = 0.0f;
+
     ImFontConfig Config;
-    ImWchar GlyphRanges[3] = { 0x0400, 0x052F, 0 };
+
+    ImWchar GlyphRanges[3]        = { 0x0400, 0x052F, 0 };
     ImWchar GlyphExcludeRanges[3] = { 0x0020, 0x024F, 0 };
 };
 
 struct FontGroup
 {
     std::string Name;
+
     float Size = 0.0f;
+
     std::vector<FontSource> MergedFonts;
+
     ImFont* Font = nullptr;
 };
 
 std::vector<FontGroup> m_Groups;
-std::string m_ActiveGroup;
+std::string            m_ActiveGroup;
+
+
 bool m_Initialized = false;
 
 ImFont* AddDefaultFont(FontGroup& p_Group)
@@ -53,12 +63,12 @@ ImFont* AddDefaultFont(FontGroup& p_Group)
 void AddMergedFonts(FontGroup& p_Group)
 {
     for (FontSource& Source : p_Group.MergedFonts) {
-        Source.Config.MergeMode = true;
-        Source.Config.SizePixels = Source.Size;
-        Source.Config.DstFont = p_Group.Font;
-        Source.Config.GlyphRanges = Source.GlyphRanges;
+        Source.Config.MergeMode          = true;
+        Source.Config.SizePixels         = Source.Size;
+        Source.Config.DstFont            = p_Group.Font;
+        Source.Config.GlyphRanges        = Source.GlyphRanges;
         Source.Config.GlyphExcludeRanges = Source.GlyphExcludeRanges;
-        Source.Config.GlyphOffset.y = -1.0f;
+        Source.Config.GlyphOffset.y      = -1.0f;
 
         ImFont* Font = ImGui::GetIO().Fonts->AddFontFromFileTTF(
             Source.Path.c_str(),
@@ -85,7 +95,8 @@ FontGroup* FindGroup(std::string_view p_Name)
 void BuildStdGroup()
 {
     AddGroup("Std", 13.05f);
-    AddMergedFont("Std", "Resources/Fonts/IBMPlexSans-Regular.ttf", 15.05f);
+    AddMergedFont("Std", Project::Configs::Static::Contents::BASE_CONTENT_DIR + "Font/IBMPlexSans-Regular.ttf", 15.05f);
+
     RebuildAtlas();
 }
 

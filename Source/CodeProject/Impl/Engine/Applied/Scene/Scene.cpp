@@ -49,6 +49,21 @@ bool IsEntityPendingErase(const SceneEntity* p_Entity)
     return std::find(m_PendingErase.begin(), m_PendingErase.end(), p_Entity) != m_PendingErase.end();
 }
 
+void EraseEntitiesMatching(bool (*p_Matches)(const SceneEntity&))
+{
+    std::erase_if(m_PendingCreate, [p_Matches](const std::unique_ptr<SceneEntity>& p_Entity) {
+        return p_Matches(*p_Entity);
+    });
+
+    for (const std::unique_ptr<SceneEntity>& Entity : m_Entities) {
+        if (p_Matches(*Entity) && !IsEntityPendingErase(Entity.get())) {
+            m_PendingErase.push_back(Entity.get());
+        }
+    }
+
+    CheckPlayerEntityAlive();
+}
+
 }
 
 void EraseEntity(SceneEntity* p_Entity)
@@ -79,13 +94,7 @@ void EraseEntity(SceneEntity* p_Entity)
 
 void EraseAllEntities()
 {
-    m_PendingCreate.clear();
-
-    for (const std::unique_ptr<SceneEntity>& Entity : m_Entities) {
-        if (!Service::IsEntityPendingErase(Entity.get())) { m_PendingErase.push_back(Entity.get()); }
-    }
-
-    CheckPlayerEntityAlive();
+    Service::EraseEntitiesMatching([](const SceneEntity&) { return true; });
 }
 
 const std::vector<std::unique_ptr<SceneEntity>>& GetAllEntities()

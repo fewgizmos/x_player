@@ -71,7 +71,7 @@ mkdir -p "$out_dir"
 
 cp "$cmake_build_dir/bin/XProjectExecutable" "$out_dir/$X_ARTIFACT_NAME"
 
-ln -sfn "$(realpath --relative-to="$out_dir" "$ROOT_DIR/ProjectResources")" "$out_dir/Resources"
+ln -sfnT "$(realpath --relative-to="$out_dir" "$ROOT_DIR/ProjectResources")" "$out_dir/raw_contents"
 
 echo "Compiled Executable: '$out_dir/$X_ARTIFACT_NAME'"
 

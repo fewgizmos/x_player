@@ -46,6 +46,7 @@ namespace Service
 
 SceneEntity* PushBuiltEntity(std::unique_ptr<SceneEntity>&& p_Entity);
 bool IsEntityPendingErase(const SceneEntity* p_Entity);
+void EraseEntitiesMatching(bool (*p_Matches)(const SceneEntity&));
 
 }
 
@@ -61,6 +62,16 @@ EntityType* CreateEntity(ArgumentTypes&&... p_Arguments)
 
 void EraseEntity(SceneEntity* p_Entity);
 void EraseAllEntities();
+
+template<typename EntityType>
+void EraseAllEntitiesTyped()
+{
+    static_assert(std::is_base_of_v<SceneEntity, EntityType>);
+
+    Service::EraseEntitiesMatching([](const SceneEntity& p_Entity) {
+        return dynamic_cast<const EntityType*>(&p_Entity) != nullptr;
+    });
+}
 
 const std::vector<std::unique_ptr<SceneEntity>>& GetAllEntities();
 
